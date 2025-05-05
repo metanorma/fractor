@@ -5,10 +5,11 @@ require_relative '../lib/fractor'
 module ProducerSubscriber
   # Define work types
   class InitialWork < Fractor::Work
+    work_type :initial_processing
     attr_reader :data, :depth
 
     def initialize(data, depth = 0)
-      super(work_type: :initial_processing)
+      super(data: { data: data, depth: depth })
       @data = data
       @depth = depth
       @retry_count = 0
@@ -25,10 +26,11 @@ module ProducerSubscriber
   end
 
   class SubWork < Fractor::Work
+    work_type :sub_processing
     attr_reader :data, :parent_id, :depth
 
     def initialize(data, parent_id, depth)
-      super(work_type: :sub_processing)
+      super(data: { data: data, parent_id: parent_id, depth: depth })
       @data = data
       @parent_id = parent_id
       @depth = depth
@@ -50,7 +52,7 @@ module ProducerSubscriber
     attr_reader :processed_data, :sub_works
 
     def initialize(work, processed_data, sub_works = [])
-      super(work)
+      super(work, processed_data)
       @processed_data = processed_data
       @sub_works = sub_works
     end
@@ -60,7 +62,7 @@ module ProducerSubscriber
     attr_reader :processed_data, :parent_id
 
     def initialize(work, processed_data)
-      super(work)
+      super(work, processed_data)
       @processed_data = processed_data
       @parent_id = work.parent_id
     end

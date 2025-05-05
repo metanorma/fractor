@@ -5,10 +5,11 @@ require_relative '../lib/fractor'
 
 module HierarchicalHasher
   class ChunkWork < Fractor::Work
+    work_type :chunk_hash
     attr_reader :start, :length, :data
 
     def initialize(start, length, data)
-      super(work_type: :chunk_hash)
+      super(nil, { start: start, length: length, data: data })
       @start = start
       @length = length
       @data = data
@@ -29,7 +30,7 @@ module HierarchicalHasher
     attr_reader :start, :length, :hash_result
 
     def initialize(work, hash_result)
-      super(work)
+      super(work, hash_result)
       @start = work.start
       @length = work.length
       @hash_result = hash_result
@@ -102,7 +103,7 @@ module HierarchicalHasher
     end
 
     def process_results
-      until @queues.all?(&:empty?) && @pools.all?(&:all_idle?)
+      until @result_queue.empty? && @queues.all?(&:empty?) && @idle_workers == @active_workers.size
         result_data = next_result
         next if result_data.nil?
 

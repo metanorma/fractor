@@ -14,6 +14,32 @@ process it in parallel using Ractors, and aggregate the results, while
 abstracting away much of the boilerplate code involved in Ractor management and
 communication.
 
+== Installation
+
+=== Using RubyGems
+
+[source,sh]
+----
+gem install fractor
+----
+
+=== Using Bundler
+
+Add this line to your application's Gemfile:
+
+[source,ruby]
+----
+gem 'fractor'
+----
+
+And then execute:
+
+[source,sh]
+----
+bundle install
+----
+
+
 === Key concepts
 
 * *Function-driven:* You define the core processing logic by subclassing
@@ -169,7 +195,7 @@ encapsulates the input data needed for processing.
 
 [source,ruby]
 ----
-require_relative 'fractor'
+require 'fractor'
 
 class MyWork < Fractor::Work
   # The base class already provides input storage and basic functionality
@@ -662,16 +688,58 @@ end
 
 == Running the example
 
-. Save the framework code as `fractor.rb`.
+. Install the gem as described in the Installation section.
 
-. Save the client code (including `MyWork`, `MyWorker`, and the main execution
-  block) as `sample.rb` in the same directory.
+. Create a new Ruby file (e.g., `my_fractor_example.rb`) with your implementation:
 
-. Run the sample from your terminal:
+[source,ruby]
+----
+require 'fractor'
+
+# Define your Work class
+class MyWork < Fractor::Work
+  def to_s
+    "MyWork: #{@input}"
+  end
+end
+
+# Define your Worker class
+class MyWorker < Fractor::Worker
+  def process(work)
+    if work.input == 5
+      # Return a Fractor::WorkResult for errors
+      return Fractor::WorkResult.new(error: "Error processing work #{work.input}", work: work)
+    end
+
+    calculated = work.input * 2
+    # Return a Fractor::WorkResult for success
+    Fractor::WorkResult.new(result: calculated, work: work)
+  end
+end
+
+# Create supervisor
+supervisor = Fractor::Supervisor.new(
+  worker_class: MyWorker,
+  work_class: MyWork,
+  num_workers: 2
+)
+
+# Add work items (1..10)
+supervisor.add_work((1..10).to_a)
+
+# Run processing
+supervisor.run
+
+# Display results
+puts "Results: #{supervisor.results.results.map(&:result).join(', ')}"
+puts "Errors: #{supervisor.results.errors.map { |e| e.work.input }.join(', ')}"
+----
+
+. Run the example from your terminal:
 
 [source,sh]
 ----
-ruby sample.rb
+ruby my_fractor_example.rb
 ----
 
 You will see output showing Ractors starting, receiving work, processing it, and

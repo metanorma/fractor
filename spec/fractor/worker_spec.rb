@@ -1,0 +1,29 @@
+# frozen_string_literal: true
+
+RSpec.describe Fractor::Worker do
+  describe "#process" do
+    it "raises NotImplementedError when not overridden" do
+      worker = Fractor::Worker.new
+      work = Fractor::Work.new("test")
+
+      expect { worker.process(work) }.to raise_error(NotImplementedError, "Subclasses must implement the 'process' method.")
+    end
+
+    it "can be overridden by a subclass" do
+      # Define a test subclass inside the test
+      class TestWorker < Fractor::Worker
+        def process(work)
+          Fractor::WorkResult.new(result: work.input + " processed", work: work)
+        end
+      end
+
+      worker = TestWorker.new
+      work = Fractor::Work.new("test")
+      result = worker.process(work)
+
+      expect(result).to be_a(Fractor::WorkResult)
+      expect(result.success?).to be true
+      expect(result.result).to eq("test processed")
+    end
+  end
+end

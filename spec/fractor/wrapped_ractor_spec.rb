@@ -50,6 +50,9 @@ RSpec.describe Fractor::WrappedRactor do
 
   describe "#send and processing" do
     it "sends work to the Ractor and receives results" do
+      # Skip this test on Windows with Ruby 3.4
+      skip "This test hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
+
       wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
 

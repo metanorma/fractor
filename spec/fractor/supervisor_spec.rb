@@ -2,8 +2,8 @@
 
 require "timeout"
 
-RSpec.describe Fractor::Supervisor do
-  # Define test classes
+# Define test classes
+module SupervisorSpec
   class TestWorker < Fractor::Worker
     def process(work)
       # Simple multiplication
@@ -20,17 +20,19 @@ RSpec.describe Fractor::Supervisor do
       "TestWork: #{@input}"
     end
   end
+end
 
+RSpec.describe Fractor::Supervisor do
   describe "#initialize" do
     it "initializes with required parameters" do
       supervisor = Fractor::Supervisor.new(
-        worker_class: TestWorker,
-        work_class: TestWork,
+        worker_class: SupervisorSpec::TestWorker,
+        work_class: SupervisorSpec::TestWork,
         num_workers: 2
       )
 
-      expect(supervisor.worker_class).to eq(TestWorker)
-      expect(supervisor.work_class).to eq(TestWork)
+      expect(supervisor.worker_class).to eq(SupervisorSpec::TestWorker)
+      expect(supervisor.work_class).to eq(SupervisorSpec::TestWork)
       expect(supervisor.work_queue).to be_a(Queue)
       expect(supervisor.work_queue).to be_empty
       expect(supervisor.results).to be_a(Fractor::ResultAggregator)
@@ -40,7 +42,7 @@ RSpec.describe Fractor::Supervisor do
       expect do
         Fractor::Supervisor.new(
           worker_class: Class.new,
-          work_class: TestWork
+          work_class: SupervisorSpec::TestWork
         )
       end.to raise_error(ArgumentError, /must inherit from Fractor::Worker/)
     end
@@ -48,7 +50,7 @@ RSpec.describe Fractor::Supervisor do
     it "raises error if work_class does not inherit from Fractor::Work" do
       expect do
         Fractor::Supervisor.new(
-          worker_class: TestWorker,
+          worker_class: SupervisorSpec::TestWorker,
           work_class: Class.new
         )
       end.to raise_error(ArgumentError, /must inherit from Fractor::Work/)
@@ -56,7 +58,9 @@ RSpec.describe Fractor::Supervisor do
   end
 
   describe "#add_work" do
-    let(:supervisor) { Fractor::Supervisor.new(worker_class: TestWorker, work_class: TestWork) }
+    let(:supervisor) do
+      Fractor::Supervisor.new(worker_class: SupervisorSpec::TestWorker, work_class: SupervisorSpec::TestWork)
+    end
 
     it "adds work items to the queue" do
       expect do
@@ -79,8 +83,8 @@ RSpec.describe Fractor::Supervisor do
       # This test simulates a simple workflow with a supervisor
       # It's a small-scale integration test
       supervisor = Fractor::Supervisor.new(
-        worker_class: TestWorker,
-        work_class: TestWork,
+        worker_class: SupervisorSpec::TestWorker,
+        work_class: SupervisorSpec::TestWork,
         num_workers: 2
       )
 
@@ -97,7 +101,7 @@ RSpec.describe Fractor::Supervisor do
       expect(supervisor.results.results.size + supervisor.results.errors.size).to eq(5)
 
       # Verify that all results were processed correctly
-      success_values = supervisor.results.results.map(&:result)
+      supervisor.results.results.map(&:result)
       # For any item that had error, the input would be 5
       expect(supervisor.results.errors.map { |e| e.work.input }).to include(5) if supervisor.results.errors.any?
 

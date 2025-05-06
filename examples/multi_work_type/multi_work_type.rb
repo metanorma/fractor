@@ -116,33 +116,33 @@ module MultiWorkType
     end
 
     # Format-specific processing methods
-    def process_markdown(text, options)
+    def process_markdown(text, _options)
       # Simulate Markdown processing
       headers = text.scan(/^#+\s+(.+)$/).flatten
       links = text.scan(/\[(.+?)\]\((.+?)\)/)
 
-      "Processed Markdown: #{text.length} chars, #{headers.size} headers, #{links.size} links\n" +
-        "Headers: #{headers.join(", ")}\n" +
+      "Processed Markdown: #{text.length} chars, #{headers.size} headers, #{links.size} links\n" \
+        "Headers: #{headers.join(", ")}\n" \
         "#{text.gsub(/^#+\s+(.+)$/, '💫 \1 💫')}"
     end
 
-    def process_html(text, options)
+    def process_html(text, _options)
       # Simulate HTML processing
       tags = text.scan(/<(\w+)[^>]*>/).flatten
 
-      "Processed HTML: #{text.length} chars, #{tags.size} tags\n" +
-        "Tags: #{tags.uniq.join(", ")}\n" +
+      "Processed HTML: #{text.length} chars, #{tags.size} tags\n" \
+        "Tags: #{tags.uniq.join(", ")}\n" \
         "#{text.gsub(%r{<(\w+)[^>]*>(.+?)</\1>}, '✨\2✨')}"
     end
 
-    def process_json(text, options)
+    def process_json(text, _options)
       # Simulate JSON processing
 
       data = text.nil? ? {} : eval(text) # WARNING: Using eval for demonstration only
       keys = data.keys
 
-      "Processed JSON: #{keys.size} top-level keys\n" +
-        "Keys: #{keys.join(", ")}\n" +
+      "Processed JSON: #{keys.size} top-level keys\n" \
+        "Keys: #{keys.join(", ")}\n" \
         "Pretty-printed: #{data}"
     rescue StandardError => e
       "Invalid JSON: #{e.message}"

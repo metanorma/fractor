@@ -61,7 +61,7 @@ RSpec.describe Fractor::ResultAggregator do
 
       # Add some results
       2.times { aggregator.add_result(success_result) }
-      1.times { aggregator.add_result(error_result) }
+      aggregator.add_result(error_result)
 
       expect(aggregator.to_s).to eq("Results: 2, Errors: 1")
     end

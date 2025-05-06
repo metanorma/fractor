@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-RSpec.describe Fractor::WrappedRactor do
-  # Simple test worker class
+# Simple test worker class
+module WrappedRactorSpec
   class TestWorker < Fractor::Worker
     def process(work)
       # Convert to integer to ensure multiplication works
@@ -9,10 +9,12 @@ RSpec.describe Fractor::WrappedRactor do
       Fractor::WorkResult.new(result: input_value * 2, work: work)
     end
   end
+end
 
+RSpec.describe Fractor::WrappedRactor do
   describe "#initialize" do
     it "initializes with a name and worker class" do
-      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", TestWorker)
+      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
 
       expect(wrapped_ractor.name).to eq("test_ractor")
       expect(wrapped_ractor.ractor).to be_nil # Ractor not started yet
@@ -21,7 +23,7 @@ RSpec.describe Fractor::WrappedRactor do
 
   describe "#start" do
     it "creates and starts a new Ractor" do
-      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", TestWorker)
+      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
 
       expect(wrapped_ractor.ractor).to be_a(Ractor)
@@ -32,7 +34,7 @@ RSpec.describe Fractor::WrappedRactor do
     end
 
     it "allows the Ractor to receive initialization message" do
-      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", TestWorker)
+      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
 
       # The initialization message should be available to take
@@ -48,7 +50,7 @@ RSpec.describe Fractor::WrappedRactor do
 
   describe "#send and processing" do
     it "sends work to the Ractor and receives results" do
-      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", TestWorker)
+      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
 
       # Take the initialization message
@@ -83,7 +85,7 @@ RSpec.describe Fractor::WrappedRactor do
 
   describe "#close" do
     it "closes the Ractor" do
-      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", TestWorker)
+      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
 
       # Take the initialization message
@@ -99,14 +101,14 @@ RSpec.describe Fractor::WrappedRactor do
 
   describe "#closed?" do
     it "returns true if the Ractor is nil" do
-      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", TestWorker)
+      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       # Don't start the Ractor
 
       expect(wrapped_ractor.closed?).to be true
     end
 
     it "returns true if the Ractor is closed" do
-      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", TestWorker)
+      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
 
       # Take the initialization message
@@ -119,7 +121,7 @@ RSpec.describe Fractor::WrappedRactor do
     end
 
     it "returns false if the Ractor is active" do
-      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", TestWorker)
+      wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
 
       # Take the initialization message

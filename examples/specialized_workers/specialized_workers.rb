@@ -84,21 +84,21 @@ module SpecializedWorkers
     # Computation methods
     private
 
-    def matrix_multiply(data, params)
+    def matrix_multiply(_data, params)
       # Simulate matrix multiplication
       sleep(rand(0.05..0.2))
       size = params[:size] || [3, 3]
       "Matrix multiplication result: #{size[0]}x#{size[1]} matrix, determinant=#{rand(1..100)}"
     end
 
-    def image_transform(data, params)
+    def image_transform(_data, params)
       # Simulate image transformation
       sleep(rand(0.1..0.3))
       transforms = params[:transforms] || %i[rotate scale]
       "Image transformation applied: #{transforms.join(", ")} with parameters #{params}"
     end
 
-    def path_finding(data, params)
+    def path_finding(_data, params)
       # Simulate path finding algorithm
       sleep(rand(0.2..0.5))
       algorithm = params[:algorithm] || :a_star
@@ -106,7 +106,7 @@ module SpecializedWorkers
       "Path found using #{algorithm}: #{rand(1..nodes)} steps, cost=#{rand(10..100)}"
     end
 
-    def default_computation(data, params)
+    def default_computation(data, _params)
       # Default computation
       sleep(rand(0.01..0.1))
       "Default computation result for input: #{data}"
@@ -153,7 +153,7 @@ module SpecializedWorkers
     # Database operation methods
     private
 
-    def perform_select(table, conditions)
+    def perform_select(_table, _conditions)
       # Select query simulation
       sleep(rand(0.01..0.1))
       record_count = rand(0..20)
@@ -164,7 +164,7 @@ module SpecializedWorkers
       }
     end
 
-    def perform_insert(table, data)
+    def perform_insert(_table, _data)
       # Insert query simulation
       sleep(rand(0.01..0.05))
       {
@@ -174,7 +174,7 @@ module SpecializedWorkers
       }
     end
 
-    def perform_update(table, data, conditions)
+    def perform_update(_table, _data, _conditions)
       # Update query simulation
       sleep(rand(0.01..0.1))
       affected = rand(0..10)
@@ -185,7 +185,7 @@ module SpecializedWorkers
       }
     end
 
-    def perform_delete(table, conditions)
+    def perform_delete(_table, _conditions)
       # Delete query simulation
       sleep(rand(0.01..0.05))
       affected = rand(0..5)
@@ -196,7 +196,7 @@ module SpecializedWorkers
       }
     end
 
-    def default_query(type, table, conditions)
+    def default_query(_type, _table, _conditions)
       # Default query handling
       sleep(rand(0.01..0.02))
       {

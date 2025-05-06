@@ -12,9 +12,7 @@ module Fractor
     # - continuous_mode: Whether to run in continuous mode without expecting a fixed work count.
     def initialize(worker_class:, work_class:, num_workers: 2, continuous_mode: false)
       raise ArgumentError, "#{worker_class} must inherit from Fractor::Worker" unless worker_class < Fractor::Worker
-      unless work_class.nil? || work_class < Fractor::Work
-        raise ArgumentError, "#{work_class} must inherit from Fractor::Work or be nil"
-      end
+      raise ArgumentError, "#{work_class} must inherit from Fractor::Work or be nil" unless work_class.nil? || work_class < Fractor::Work
 
       @worker_class = worker_class
       @work_class = work_class
@@ -35,9 +33,7 @@ module Fractor
     def add_work(items, specific_work_class = nil)
       work_class_to_use = specific_work_class || @work_class
 
-      unless work_class_to_use.nil? || work_class_to_use < Fractor::Work
-        raise ArgumentError, "#{work_class_to_use} must inherit from Fractor::Work or be nil"
-      end
+      raise ArgumentError, "#{work_class_to_use} must inherit from Fractor::Work or be nil" unless work_class_to_use.nil? || work_class_to_use < Fractor::Work
 
       items.each do |item|
         @work_queue << { data: item, work_class: work_class_to_use }

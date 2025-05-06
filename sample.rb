@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-require_relative 'fractor'
+require_relative "fractor"
 
 # Client-specific worker implementation inheriting from Fractor::Worker
 class MyWorker < Fractor::Worker
@@ -24,10 +25,6 @@ end
 
 # Client-specific work item implementation inheriting from Fractor::Work
 class MyWork < Fractor::Work
-  def initialize(input)
-    super
-  end
-
   def to_s
     "MyWork: #{@input}"
   end
@@ -36,7 +33,7 @@ end
 # --- Main Execution ---
 # This section demonstrates how to use the Fractor framework with custom
 # MyWorker and MyWork classes.
-if __FILE__ == $0
+if __FILE__ == $PROGRAM_NAME
   # Create supervisor, passing the client-specific worker and work classes
   supervisor = Fractor::Supervisor.new(
     worker_class: MyWorker,

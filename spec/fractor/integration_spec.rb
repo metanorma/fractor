@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'timeout'
+require "timeout"
 
 RSpec.describe "Fractor Integration" do
   # Define test classes based on sample.rb

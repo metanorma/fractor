@@ -204,7 +204,7 @@ module ProducerSubscriber
 
     def format_tree
       result = []
-      @result_tree.each do |id, node|
+      @result_tree.each_value do |node|
         result << "Root: #{node[:data]}"
         node[:children].each_with_index do |child, index|
           result << "  ├─ Child #{index + 1}: #{child}"

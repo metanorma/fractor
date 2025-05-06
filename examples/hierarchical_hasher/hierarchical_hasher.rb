@@ -94,7 +94,7 @@ module HierarchicalHasher
       File.open(@file_path, "rb") do |file|
         start_pos = 0
 
-        while chunk = file.read(@chunk_size)
+        while (chunk = file.read(@chunk_size))
           work_items << {
             start: start_pos,
             length: chunk.length,

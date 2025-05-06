@@ -58,7 +58,7 @@ module ScatterGather
 
     private
 
-    def setup_source(source)
+    def setup_source(_source)
       # Simulate connection/initialization time
       sleep(rand(0.01..0.05))
     end

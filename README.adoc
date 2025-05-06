@@ -181,7 +181,7 @@ Handles graceful shutdown on `SIGINT` (Ctrl+C).
 
 
 
-== Quick start guide
+== Quick start
 
 === General
 
@@ -292,7 +292,7 @@ That's it! With these three simple steps, you have a working parallel processing
 system using Fractor.
 
 
-== Detailed guides
+== Usage
 
 === Work class
 
@@ -345,9 +345,11 @@ end
 
 [TIP]
 ====
+====
 * Keep Work objects lightweight and serializable since they will be passed
   between Ractors
 * Implement a meaningful `to_s` method for better debugging
+====
 * Consider adding validation in the initializer to catch issues early
 ====
 
@@ -415,7 +417,7 @@ def process(work)
 end
 ----
 
-=== Unexpected errors caught by rescue
+===== Unexpected errors caught by rescue
 
 These are unexpected exceptions that may occur during processing. You should
 catch these and convert them into error results.
@@ -434,10 +436,12 @@ end
 ----
 
 [TIP]
+====
 * Keep the `process` method focused on a single responsibility
 * Use meaningful error messages that help diagnose issues
 * Consider adding logging within the `process` method for debugging
 * Ensure all paths return a valid `WorkResult` object
+====
 
 === WorkResult class
 
@@ -572,6 +576,7 @@ The WrappedRactor handles error propagation in two ways:
   yielded back
 . Unexpected errors in the Ractor itself are caught and logged
 
+
 === Supervisor class
 
 ==== Purpose and responsibilities
@@ -628,6 +633,7 @@ The Supervisor automatically handles:
 * Collecting results and errors
 * Graceful shutdown on completion or interruption (Ctrl+C)
 
+
 ==== Accessing results
 
 After processing completes:
@@ -652,9 +658,9 @@ aggregator.errors.each do |error_result|
 end
 ----
 
-==== Advanced usage patterns
+== Advanced usage patterns
 
-===== Custom work distribution
+=== Custom work distribution
 
 For more complex scenarios, you might want to prioritize certain work items:
 
@@ -671,7 +677,7 @@ supervisor.add_work(low_priority_items)
 supervisor.run
 ----
 
-===== Handling large datasets
+=== Handling large datasets
 
 For very large datasets, consider processing in batches:
 
@@ -686,11 +692,13 @@ large_dataset.each_slice(1000) do |batch|
 end
 ----
 
-== Running Basic Example
+
+== Running a basic example
 
 . Install the gem as described in the Installation section.
 
-. Create a new Ruby file (e.g., `my_fractor_example.rb`) with your implementation:
+. Create a new Ruby file (e.g., `my_fractor_example.rb`) with your
+implementation:
 
 [source,ruby]
 ----
@@ -746,61 +754,22 @@ You will see output showing Ractors starting, receiving work, processing it, and
 the final aggregated results, including any errors encountered. Press `Ctrl+C`
 during execution to test the graceful shutdown.
 
-== Continuous Mode
 
-Fractor provides a powerful feature called "continuous mode" that allows supervisors to run indefinitely, processing work items as they arrive without stopping after the initial work queue is empty.
+== Continuous mode
 
-=== Using Continuous Mode
+=== General
 
-To use continuous mode, follow these steps:
+Fractor provides a powerful feature called "continuous mode" that allows
+supervisors to run indefinitely, processing work items as they arrive without
+stopping after the initial work queue is empty.
 
-1. Create a supervisor with the `continuous_mode: true` option:
-
-[source,ruby]
-----
-supervisor = Fractor::Supervisor.new(
-  worker_class: MyWorker,
-  work_class: MyWork,
-  num_workers: 2,
-  continuous_mode: true  # Enable continuous mode
-)
-----
-
-2. Register a work source callback that will provide new work on demand:
-
-[source,ruby]
-----
-supervisor.register_work_source do
-  # Return nil or empty array if no work is available
-  # Return a work item or array of work items when available
-  get_next_work_item
-end
-----
-
-3. Run the supervisor in a non-blocking way (typically in a background thread):
-
-[source,ruby]
-----
-supervisor_thread = Thread.new { supervisor.run }
-----
-
-4. When you want to stop processing, explicitly call `stop` on the supervisor:
-
-[source,ruby]
-----
-supervisor.stop
-supervisor_thread.join  # Wait for the supervisor thread to finish
-----
-
-=== Continuous Mode Features
+=== Features
 
 * *Non-stopping Execution*: Supervisors run indefinitely until explicitly stopped
 * *On-demand Work*: Workers only process work when it's available
 * *Resource Efficiency*: Workers idle when no work is available, without consuming excessive resources
 * *Dynamic Work Addition*: New work can be added at any time through the work source callback
 * *Graceful Shutdown*: Resources are properly cleaned up when the supervisor is stopped
-
-=== Example Applications
 
 Continuous mode is particularly useful for:
 
@@ -812,19 +781,145 @@ Continuous mode is particularly useful for:
 
 See the Chat Server example in the examples directory for a complete implementation of continuous mode.
 
-== Example Applications
 
-The Fractor gem comes with several example applications that demonstrate various patterns and use cases:
+=== Using continuous mode
 
-1. *Hierarchical Hasher*: Demonstrates processing nested file structures
-2. *Producer/Subscriber*: Shows a producer/consumer pattern with multiple workers
-3. *Scatter/Gather*: Breaks a large task into smaller subtasks for parallel processing
-4. *Pipeline Processing*: Implements a multi-stage processing pipeline
-5. *Specialized Workers*: Uses different worker types for specific processing domains
-6. *Multi-Work Type*: Processes different types of work with a single worker implementation
-7. *Continuous Chat Server*: Shows a long-running application using continuous mode
+==== Step 1. Create a supervisor with the `continuous_mode: true` option
 
-Each example can be found in the `examples` directory of the gem repository.
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_class: MyWorker,
+  work_class: MyWork,
+  num_workers: 2,
+  continuous_mode: true  # Enable continuous mode
+)
+----
+
+==== Step 2. Register a work source callback that provides new work on demand
+
+[source,ruby]
+----
+supervisor.register_work_source do
+  # Return nil or empty array if no work is available
+  # Return a work item or array of work items when available
+  get_next_work_item
+end
+----
+
+==== Step 4. Run the supervisor in a non-blocking way
+
+Typically in a background thread.
+
+[source,ruby]
+----
+supervisor_thread = Thread.new { supervisor.run }
+----
+
+==== Step 4. Explicitly call `stop` on the supervisor to stop processing
+
+[source,ruby]
+----
+supervisor.stop
+supervisor_thread.join  # Wait for the supervisor thread to finish
+----
+
+
+
+== Example applications
+
+=== General
+
+The Fractor gem comes with several example applications that demonstrate various
+patterns and use cases. Each example can be found in the `examples` directory of
+the gem repository. Detailed descriptions for these are provided below.
+
+=== Hierarchical hasher
+
+The Hierarchical Hasher example
+(link:examples/hierarchical_hasher/[examples/hierarchical_hasher/]) demonstrates
+how to use the Fractor framework to process a file in parallel by breaking it
+into chunks, hashing each chunk independently, and then combining the results
+into a final hash. This approach is useful for processing large files
+efficiently.
+
+Key features:
+
+* Parallel data chunking for large files
+* Independent processing of data segments
+* Aggregation of results to form a final output
+
+=== Multi-work type
+
+The Multi-Work Type example
+(link:examples/multi_work_type/[examples/multi_work_type/]) demonstrates how a
+single Fractor supervisor and worker can handle multiple types of work items
+(e.g., `TextWork` and `ImageWork`). The worker intelligently adapts its
+processing strategy based on the class of the incoming work item.
+
+Key features:
+
+* Support for multiple `Fractor::Work` subclasses
+* Polymorphic worker processing based on work type
+* Unified workflow for diverse tasks
+
+=== Pipeline processing
+
+The Pipeline Processing example
+(link:examples/pipeline_processing/[examples/pipeline_processing/]) implements a
+multi-stage processing pipeline where data flows sequentially through a series
+of transformations. The output of one stage becomes the input for the next, and
+different stages can operate concurrently on different data items.
+
+Key features:
+
+* Sequential data flow through multiple processing stages
+* Concurrent execution of different pipeline stages
+* Data transformation at each step of the pipeline
+
+=== Producer/subscriber
+
+The Producer/Subscriber example
+(link:examples/producer_subscriber/[examples/producer_subscriber/]) showcases a
+multi-stage document processing system where initial work (processing a
+document) can generate additional sub-work items (processing sections of the
+document). This creates a hierarchical processing pattern.
+
+Key features:
+
+* Implementation of producer-consumer patterns
+* Dynamic generation of sub-work based on initial processing
+* Construction of hierarchical result structures
+
+=== Scatter/gather
+
+The Scatter/Gather example
+(link:examples/scatter_gather/[examples/scatter_gather/]) illustrates how a
+large task or dataset is broken down (scattered) into smaller, independent
+subtasks. These subtasks are processed in parallel by multiple workers, and
+their results are then collected (gathered) and combined to produce the final
+output.
+
+Key features:
+
+* Distribution of a large task into smaller, parallelizable subtasks
+* Concurrent processing of subtasks
+* Aggregation of partial results into a final result
+
+=== Specialized workers
+
+The Specialized Workers example
+(link:examples/specialized_workers/[examples/specialized_workers/]) demonstrates
+creating distinct worker types, each tailored to handle specific kinds of tasks
+(e.g., `ComputeWorker` for CPU-intensive operations and `DatabaseWorker` for
+I/O-bound database interactions). This allows for optimized resource utilization
+and domain-specific logic.
+
+Key features:
+
+* Creation of worker classes for specific processing domains
+* Routing of work items to appropriately specialized workers
+* Optimization of resources and logic per task type
 
 
 

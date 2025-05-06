@@ -8,16 +8,25 @@ module Fractor
     def initialize
       @results = []
       @errors = []
+      @result_callbacks = []
     end
 
     def add_result(result)
       if result.success?
-        puts "Work completed successfully: #{result}"
+        puts "Work completed successfully: Result: #{result.result}"
         @results << result
       else
         puts "Error processing work: #{result}"
         @errors << result
       end
+
+      # Call any registered callbacks with the new result
+      @result_callbacks.each { |callback| callback.call(result) }
+    end
+
+    # Register a callback to be called when a new result is added
+    def on_new_result(&callback)
+      @result_callbacks << callback
     end
 
     def to_s

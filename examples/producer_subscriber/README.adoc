@@ -1,0 +1,92 @@
+= Producer-Subscriber Example
+:toc: macro
+:toc-title: Table of Contents
+:toclevels: 3
+
+toc::[]
+
+== Overview
+
+The Producer-Subscriber example demonstrates how to use the Fractor framework to implement a multi-stage document processing system. This example showcases how initial work can generate additional sub-work items, creating a hierarchical processing pattern.
+
+This example is particularly useful for:
+
+* Implementing producer-consumer patterns in parallel systems
+* Managing dependencies between work items
+* Building hierarchical result structures from parallel processing
+
+== Implementation Details
+
+The example consists of the following key components:
+
+=== InitialWork
+
+A subclass of `Fractor::Work` that represents a document to be processed. Each `InitialWork` instance contains:
+
+* The document data
+* A depth level (always 0 for initial work)
+
+=== SubWork
+
+A subclass of `Fractor::Work` that represents a section of a document. Each `SubWork` instance contains:
+
+* The section data
+* A reference to its parent work via `parent_id`
+* A depth level (typically depth + 1 from its parent)
+
+=== MultiWorker
+
+A versatile worker that can process both `InitialWork` and `SubWork` instances:
+
+* For `InitialWork`: Processes the document and identifies sections
+* For `SubWork`: Processes individual sections
+
+=== DocumentProcessor
+
+The main orchestration class that:
+
+1. Creates a supervisor for initial document processing
+2. Analyzes results to identify additional work (sections)
+3. Creates a second supervisor for processing sections
+4. Builds a hierarchical result tree from both stages
+
+== Usage
+
+[source,ruby]
+----
+# Example document list
+documents = [
+  "Annual Report 2025",
+  "Technical Documentation",
+  "Research Paper"
+]
+
+# Process documents with 4 workers
+processor = ProducerSubscriber::DocumentProcessor.new(documents, 4)
+result = processor.process
+
+# Print the hierarchical results
+puts result
+----
+
+== How It Works
+
+1. Initial documents are added to the processing queue
+2. Each document is processed in parallel by workers
+3. For each document, multiple sub-sections are identified (3 per document)
+4. These sub-sections are then processed in a second phase
+5. Results from both phases are combined into a hierarchical tree structure
+6. The final output presents documents with their processed sections
+
+== Multi-stage Processing Pattern
+
+This example demonstrates a powerful pattern for parallel processing:
+
+1. *First Stage Processing*: Process high-level items and identify additional work
+2. *Work Generation*: Create new work items based on first-stage results
+3. *Second Stage Processing*: Process the generated work items
+4. *Result Aggregation*: Combine results from both stages into a cohesive structure
+
+== Object Identity and References
+
+Note that this example uses `object_id` to maintain references between parent and child work items. This approach allows building a hierarchical result structure when processing is complete.

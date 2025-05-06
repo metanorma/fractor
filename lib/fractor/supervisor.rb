@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'thread' # Required for Queue
-
 module Fractor
   # Supervises multiple WrappedRactors, distributes work, and aggregates results.
   class Supervisor
@@ -9,14 +7,13 @@ module Fractor
 
     # Initializes the Supervisor.
     # - worker_class: The class inheriting from Fractor::Worker (e.g., MyWorker).
-    # - work_class: The class inheriting from Fractor::Work (e.g., MyWork).
+    # - work_class: The class inheriting from Fractor::Work (e.g., MyWork). Can be nil for mixed work types.
     # - num_workers: The number of Ractors to spawn.
-    def initialize(worker_class:, work_class:, num_workers: 2)
-      unless worker_class < Fractor::Worker
-        raise ArgumentError, "#{worker_class} must inherit from Fractor::Worker"
-      end
-      unless work_class < Fractor::Work
-        raise ArgumentError, "#{work_class} must inherit from Fractor::Work"
+    # - continuous_mode: Whether to run in continuous mode without expecting a fixed work count.
+    def initialize(worker_class:, work_class:, num_workers: 2, continuous_mode: false)
+      raise ArgumentError, "#{worker_class} must inherit from Fractor::Worker" unless worker_class < Fractor::Worker
+      unless work_class.nil? || work_class < Fractor::Work
+        raise ArgumentError, "#{work_class} must inherit from Fractor::Work or be nil"
       end
 
       @worker_class = worker_class
@@ -27,14 +24,33 @@ module Fractor
       @workers = []
       @total_work_count = 0 # Track total items initially added
       @ractors_map = {} # Map Ractor object to WrappedRactor instance
+      @continuous_mode = continuous_mode
+      @running = false
+      @work_callbacks = []
     end
 
     # Adds work items to the queue.
     # Items should be the raw input data, not Work objects yet.
-    def add_work(items)
-      items.each { |item| @work_queue << item }
+    # For mixed work types, provide specific_work_class to override the default.
+    def add_work(items, specific_work_class = nil)
+      work_class_to_use = specific_work_class || @work_class
+
+      unless work_class_to_use.nil? || work_class_to_use < Fractor::Work
+        raise ArgumentError, "#{work_class_to_use} must inherit from Fractor::Work or be nil"
+      end
+
+      items.each do |item|
+        @work_queue << { data: item, work_class: work_class_to_use }
+      end
+
       @total_work_count += items.size
       puts "Work added. Initial work count: #{@total_work_count}, Queue size: #{@work_queue.size}"
+    end
+
+    # Register a callback to provide new work items
+    # The callback should return nil or empty array when no new work is available
+    def register_work_source(&callback)
+      @work_callbacks << callback
     end
 
     # Starts the worker Ractors.
@@ -61,12 +77,10 @@ module Fractor
         puts "\nCtrl+C received. Initiating immediate shutdown..."
         puts "Attempting to close worker Ractors..."
         workers_ref.each do |w|
-          begin
-            w.close # Use the close method of WrappedRactor
-            puts "Closed Ractor: #{w.name}"
-          rescue => e
-            puts "Error closing Ractor #{w.name}: #{e.message}"
-          end
+          w.close # Use the close method of WrappedRactor
+          puts "Closed Ractor: #{w.name}"
+        rescue StandardError => e
+          puts "Error closing Ractor #{w.name}: #{e.message}"
         end
         puts "Exiting now."
         exit(1) # Exit immediately
@@ -78,24 +92,44 @@ module Fractor
       setup_signal_handler
       start_workers
 
+      @running = true
       processed_count = 0
-      # Main loop: Process events until the number of results equals the initial work count.
-      while processed_count < @total_work_count
+
+      # Main loop: Process events until conditions are met for termination
+      while @running && (@continuous_mode || processed_count < @total_work_count)
         processed_count = @results.results.size + @results.errors.size
-        puts "Waiting for Ractor results. Processed: #{processed_count}/#{@total_work_count}, Queue size: #{@work_queue.size}"
 
-        # Get active Ractor objects from the map keys
-        # Use keys from ractors_map for the active ractors
-        active_ractors = @ractors_map.keys
-
-        # Break if no active workers and queue is empty, but work remains (indicates potential issue)
-        if active_ractors.empty? && @work_queue.empty? && processed_count < @total_work_count
-           puts "Warning: No active workers and queue is empty, but not all work is processed. Exiting loop."
-           break
+        if @continuous_mode
+          puts "Continuous mode: Waiting for Ractor results. Processed: #{processed_count}, Queue size: #{@work_queue.size}"
+        else
+          puts "Waiting for Ractor results. Processed: #{processed_count}/#{@total_work_count}, Queue size: #{@work_queue.size}"
         end
 
-        # Skip selection if no active ractors are available but loop should continue (e.g., waiting for final results)
-        next if active_ractors.empty?
+        # Get active Ractor objects from the map keys
+        active_ractors = @ractors_map.keys
+
+        # Check for new work from callbacks if in continuous mode and queue is empty
+        if @continuous_mode && @work_queue.empty? && !@work_callbacks.empty?
+          @work_callbacks.each do |callback|
+            new_work = callback.call
+            add_work(new_work) if new_work && !new_work.empty?
+          end
+        end
+
+        # Break if no active workers and queue is empty, but work remains (indicates potential issue)
+        if active_ractors.empty? && @work_queue.empty? && !@continuous_mode && processed_count < @total_work_count
+          puts "Warning: No active workers and queue is empty, but not all work is processed. Exiting loop."
+          break
+        end
+
+        # In continuous mode, just wait if no active ractors but keep running
+        if active_ractors.empty?
+          break unless @continuous_mode
+
+          sleep(0.1) # Small delay to avoid CPU spinning
+          next
+
+        end
 
         # Ractor.select blocks until a message is available from any active Ractor
         ready_ractor_obj, message = Ractor.select(*active_ractors)
@@ -120,8 +154,8 @@ module Fractor
           work_result = message[:result]
           puts "Completed work: #{work_result.inspect} in Ractor: #{message[:processor]}"
           @results.add_result(work_result)
-          puts "Result processed. Total processed: #{@results.results.size + @results.errors.size}/#{@total_work_count}"
-          puts "Aggregated Results: #{@results.inspect}"
+          puts "Result processed. Total processed: #{@results.results.size + @results.errors.size}"
+          puts "Aggregated Results: #{@results.inspect}" unless @continuous_mode
           # Send next piece of work
           send_next_work_if_available(wrapped_ractor)
         when :error
@@ -129,8 +163,8 @@ module Fractor
           error_result = message[:result]
           puts "Error processing work #{error_result.work&.inspect} in Ractor: #{message[:processor]}: #{error_result.error}"
           @results.add_result(error_result) # Add error to aggregator
-          puts "Error handled. Total processed: #{@results.results.size + @results.errors.size}/#{@total_work_count}"
-          puts "Aggregated Results (including errors): #{@results.inspect}"
+          puts "Error handled. Total processed: #{@results.results.size + @results.errors.size}"
+          puts "Aggregated Results (including errors): #{@results.inspect}" unless @continuous_mode
           # Send next piece of work even after an error
           send_next_work_if_available(wrapped_ractor)
         else
@@ -141,7 +175,15 @@ module Fractor
       end
 
       puts "Main loop finished."
+      return if @continuous_mode
+
       puts "Final Aggregated Results: #{@results.inspect}"
+    end
+
+    # Stop the supervisor (for continuous mode)
+    def stop
+      @running = false
+      puts "Stopping supervisor..."
     end
 
     private
@@ -151,21 +193,39 @@ module Fractor
       # Ensure the wrapped_ractor instance is valid and its underlying ractor is not closed
       if wrapped_ractor && !wrapped_ractor.closed?
         if !@work_queue.empty?
-          raw_input = @work_queue.pop # Get raw input data
-          # Create an instance of the client's Work class (e.g., MyWork)
-          work_item = @work_class.new(raw_input)
+          work_info = @work_queue.pop # Get work info (data and class)
+
+          # Get the work class from the queue item or use the default
+          work_class = work_info[:work_class] || @work_class
+
+          if work_class.nil?
+            puts "Error: Work class is nil and no specific work class provided for item: #{work_info[:data]}"
+            # Create a generic error result
+            error_result = Fractor::WorkResult.new(
+              error: "No work class specified for item",
+              work: nil
+            )
+            @results.add_result(error_result)
+            return
+          end
+
+          # Create an instance of the appropriate Work class
+          work_item = work_class.new(work_info[:data])
           puts "Sending next work #{work_item.inspect} to Ractor: #{wrapped_ractor.name}"
           wrapped_ractor.send(work_item) # Send the Work object
           puts "Work sent to #{wrapped_ractor.name}."
         else
           puts "Work queue empty. Not sending new work to Ractor #{wrapped_ractor.name}."
-          # Consider closing the Ractor if the queue is empty and no more work is expected.
-          # wrapped_ractor.close
-          # @ractors_map.delete(wrapped_ractor.ractor)
-          # puts "Closed idle Ractor: #{wrapped_ractor.name}"
+          # In continuous mode, don't close workers as more work may come
+          unless @continuous_mode
+            # Consider closing the Ractor if the queue is empty and no more work is expected.
+            # wrapped_ractor.close
+            # @ractors_map.delete(wrapped_ractor.ractor)
+            # puts "Closed idle Ractor: #{wrapped_ractor.name}"
+          end
         end
       else
-        puts "Attempted to send work to an invalid or closed Ractor: #{wrapped_ractor&.name || 'unknown'}."
+        puts "Attempted to send work to an invalid or closed Ractor: #{wrapped_ractor&.name || "unknown"}."
         # Remove from map if found but closed
         @ractors_map.delete(wrapped_ractor.ractor) if wrapped_ractor && @ractors_map.key?(wrapped_ractor.ractor)
       end

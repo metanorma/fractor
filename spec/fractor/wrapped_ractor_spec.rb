@@ -12,6 +12,9 @@ module WrappedRactorSpec
 end
 
 RSpec.describe Fractor::WrappedRactor do
+  # Skip these tests on Windows with Ruby 3.4
+  skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
+
   describe "#initialize" do
     it "initializes with a name and worker class" do
       wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
@@ -49,9 +52,6 @@ RSpec.describe Fractor::WrappedRactor do
   end
 
   describe "#send and processing" do
-    # Skip these tests on Windows with Ruby 3.4
-    skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
-
     it "sends work to the Ractor and receives results" do
       wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
@@ -87,9 +87,6 @@ RSpec.describe Fractor::WrappedRactor do
   end
 
   describe "#close" do
-    # Skip these tests on Windows with Ruby 3.4
-    skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
-
     it "closes the Ractor" do
       wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       wrapped_ractor.start
@@ -106,9 +103,6 @@ RSpec.describe Fractor::WrappedRactor do
   end
 
   describe "#closed?" do
-    # Skip these tests on Windows with Ruby 3.4
-    skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
-
     it "returns true if the Ractor is nil" do
       wrapped_ractor = Fractor::WrappedRactor.new("test_ractor", WrappedRactorSpec::TestWorker)
       # Don't start the Ractor

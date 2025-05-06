@@ -686,7 +686,7 @@ large_dataset.each_slice(1000) do |batch|
 end
 ----
 
-== Running the example
+== Running Basic Example
 
 . Install the gem as described in the Installation section.
 
@@ -745,6 +745,86 @@ ruby my_fractor_example.rb
 You will see output showing Ractors starting, receiving work, processing it, and
 the final aggregated results, including any errors encountered. Press `Ctrl+C`
 during execution to test the graceful shutdown.
+
+== Continuous Mode
+
+Fractor provides a powerful feature called "continuous mode" that allows supervisors to run indefinitely, processing work items as they arrive without stopping after the initial work queue is empty.
+
+=== Using Continuous Mode
+
+To use continuous mode, follow these steps:
+
+1. Create a supervisor with the `continuous_mode: true` option:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_class: MyWorker,
+  work_class: MyWork,
+  num_workers: 2,
+  continuous_mode: true  # Enable continuous mode
+)
+----
+
+2. Register a work source callback that will provide new work on demand:
+
+[source,ruby]
+----
+supervisor.register_work_source do
+  # Return nil or empty array if no work is available
+  # Return a work item or array of work items when available
+  get_next_work_item
+end
+----
+
+3. Run the supervisor in a non-blocking way (typically in a background thread):
+
+[source,ruby]
+----
+supervisor_thread = Thread.new { supervisor.run }
+----
+
+4. When you want to stop processing, explicitly call `stop` on the supervisor:
+
+[source,ruby]
+----
+supervisor.stop
+supervisor_thread.join  # Wait for the supervisor thread to finish
+----
+
+=== Continuous Mode Features
+
+* *Non-stopping Execution*: Supervisors run indefinitely until explicitly stopped
+* *On-demand Work*: Workers only process work when it's available
+* *Resource Efficiency*: Workers idle when no work is available, without consuming excessive resources
+* *Dynamic Work Addition*: New work can be added at any time through the work source callback
+* *Graceful Shutdown*: Resources are properly cleaned up when the supervisor is stopped
+
+=== Example Applications
+
+Continuous mode is particularly useful for:
+
+* *Chat servers*: Processing incoming messages as they arrive
+* *Background job processors*: Handling tasks from a job queue
+* *Real-time data processing*: Analyzing data streams as they come in
+* *Web servers*: Responding to incoming requests in parallel
+* *Monitoring systems*: Continuously checking system statuses
+
+See the Chat Server example in the examples directory for a complete implementation of continuous mode.
+
+== Example Applications
+
+The Fractor gem comes with several example applications that demonstrate various patterns and use cases:
+
+1. *Hierarchical Hasher*: Demonstrates processing nested file structures
+2. *Producer/Subscriber*: Shows a producer/consumer pattern with multiple workers
+3. *Scatter/Gather*: Breaks a large task into smaller subtasks for parallel processing
+4. *Pipeline Processing*: Implements a multi-stage processing pipeline
+5. *Specialized Workers*: Uses different worker types for specific processing domains
+6. *Multi-Work Type*: Processes different types of work with a single worker implementation
+7. *Continuous Chat Server*: Shows a long-running application using continuous mode
+
+Each example can be found in the `examples` directory of the gem repository.
 
 
 

@@ -1,0 +1,45 @@
+= Multi-Work Type Example
+
+== Overview
+
+This example demonstrates how to handle multiple types of work items within a single Fractor supervisor. It shows how a single worker can process different work types intelligently, applying different strategies based on the work's type.
+
+== Key Concepts
+
+* *Multiple Work Types*: Supporting different work classes within the same system
+* *Polymorphic Processing*: Workers that adapt their processing based on work type
+* *Type Detection*: Identifying and handling different work types appropriately
+* *Unified Workflow*: Managing diverse work through a common supervisor
+
+== Example Explanation
+
+This example implements a system that processes two distinct work types:
+
+1. *TextWork*: Handles text in various formats (plain text, Markdown, HTML, JSON)
+2. *ImageWork*: Processes image data with different dimensions and formats
+
+A single worker type (`MultiFormatWorker`) is capable of handling both work types, adapting its processing strategies based on the work's class.
+
+== Features Demonstrated
+
+* Creating and using multiple work type classes
+* Designing workers that can handle diverse work types
+* Type-based processing logic
+* Proper error handling across different work types
+* Classification and reporting of heterogeneous results
+
+== Running the Example
+
+[source,sh]
+----
+ruby examples/multi_work_type/multi_work_type.rb
+----
+
+== Expected Output
+
+The example will show:
+* Processing of multiple work types
+* Different processing strategies applied to each type
+* Type-specific result formats
+* Performance statistics for each work type
+* Aggregated results organized by type

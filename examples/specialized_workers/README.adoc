@@ -1,0 +1,45 @@
+= Specialized Workers Example
+
+== Overview
+
+This example demonstrates how to create specialized worker types in Fractor, each designed to handle specific kinds of work. This pattern is useful when different work items require fundamentally different processing approaches.
+
+== Key Concepts
+
+* *Specialized Workers*: Worker classes designed for specific types of tasks
+* *Work Type Differentiation*: Each worker specializes in processing a particular category of work
+* *Resource Optimization*: Workers can be tailored to the specific resources needed by each work type
+* *Domain-Specific Processing*: Separate worker implementations for different processing domains
+
+== Example Explanation
+
+This example implements two specialized worker types:
+
+1. *ComputeWorker*: Handles compute-intensive operations like matrix multiplication, image transformations, and path finding
+2. *DatabaseWorker*: Handles database operations like queries, insertions, updates, and deletions
+
+Each worker is optimized for its specific task domain and processes only the work types it is designed to handle.
+
+== Features Demonstrated
+
+* Creating specialized worker types to handle different categories of work
+* Routing work items to the appropriate worker type
+* Resource optimization for different processing needs
+* Independent error handling for each worker type
+* Combining results from different worker types
+
+== Running the Example
+
+[source,sh]
+----
+ruby examples/specialized_workers/specialized_workers.rb
+----
+
+== Expected Output
+
+The example will show:
+* Creation of different worker types
+* Processing of specialized work items by their corresponding workers
+* Performance metrics for each work type
+* Separate results from each worker type
+* Overall processing statistics

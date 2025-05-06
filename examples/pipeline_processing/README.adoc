@@ -1,0 +1,44 @@
+= Pipeline Processing Example
+
+== Overview
+
+This example demonstrates the Pipeline Processing pattern implemented with Fractor. In this pattern, data flows through a series of sequential processing stages, where the output of one stage becomes the input to the next.
+
+== Key Concepts
+
+* *Pipeline*: A series of connected processing stages
+* *Data Flow*: Information passes through each stage in sequence
+* *Transformation*: Each stage performs a specific operation on the data
+* *Concurrency*: Multiple items can be at different stages of the pipeline simultaneously
+
+== Example Explanation
+
+This example processes data through a multi-stage pipeline:
+
+1. *Input Stage*: Raw data is prepared for processing
+2. *Processing Stages*: Data moves through a series of transformations
+3. *Output Stage*: Final results are collected and reported
+
+Each stage of the pipeline can run concurrently on different workers, allowing for efficient parallel processing while maintaining the required order of operations.
+
+== Features Demonstrated
+
+* Sequential processing with dependencies between stages
+* Concurrent execution of pipeline stages
+* Processing optimizations through specialized workers
+* Handling data flow between processing stages
+
+== Running the Example
+
+[source,sh]
+----
+ruby examples/pipeline_processing/pipeline_processing.rb
+----
+
+== Expected Output
+
+The example will show:
+* Data moving through each stage of the pipeline
+* Workers processing different stages concurrently
+* The transformation of data at each stage
+* Final results after passing through the complete pipeline

@@ -1,0 +1,43 @@
+= Scatter Gather Example
+
+== Overview
+
+This example demonstrates the Scatter-Gather pattern with Fractor. In this pattern, work is scattered (distributed) across multiple workers for parallel processing, and then the results are gathered and combined.
+
+== Key Concepts
+
+* *Scatter*: A primary task is broken down into multiple subtasks
+* *Parallel Processing*: Each subtask is processed concurrently by different workers
+* *Gather*: Results from all subtasks are collected and aggregated
+* *Final Processing*: The aggregated results are combined to form the final output
+
+== Example Explanation
+
+This example processes a large dataset by:
+
+1. Breaking it down into smaller chunks (scatter)
+2. Processing each chunk in parallel using Fractor workers
+3. Collecting the processed chunks (gather)
+4. Combining the results for the final output
+
+== Features Demonstrated
+
+* Effective workload distribution
+* Parallel processing for improved performance
+* Result aggregation from multiple workers
+* Error handling in a distributed computation context
+
+== Running the Example
+
+[source,sh]
+----
+ruby examples/scatter_gather/scatter_gather.rb
+----
+
+== Expected Output
+
+The example will show:
+* The input data being broken into chunks
+* Workers processing the chunks in parallel
+* Results being gathered from workers
+* The final aggregated results

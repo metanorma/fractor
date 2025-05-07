@@ -198,16 +198,18 @@ encapsulates the input data needed for processing.
 require 'fractor'
 
 class MyWork < Fractor::Work
-  # The base class already provides input storage and basic functionality
-  # You can optionally override to_s for better debugging
+  # Store all properties in the input hash
+  def initialize(value)
+    super({ value: value })
+  end
 
-  def initialize(input)
-    super # This stores input in @input
-    # Add any additional initialization or replace @input with your own logic
+  # Accessor method for the stored value
+  def value
+    input[:value]
   end
 
   def to_s
-    "MyWork: #{@input}"
+    "MyWork: #{value}"
   end
 end
 ----
@@ -257,28 +259,43 @@ returns an error result.
 The Supervisor class orchestrates the entire framework, managing worker Ractors,
 distributing work, and collecting results.
 
-It initializes a pool of Ractors, each running an instance of the Worker
+It initializes pools of Ractors, each running an instance of a Worker
 class. The Supervisor handles the communication between the main thread and
 the Ractors, including sending work items and receiving results.
 
 The Supervisor also manages the work queue and the ResultAggregator, which
 collects and organizes all results from the workers.
 
-To set up the Supervisor, you need to specify the Worker and Work classes you
-created earlier. You can also specify the number of parallel Ractors to use.
-The default is 2, but you can increase this for more parallelism.
+To set up the Supervisor, you specify worker pools, each containing a Worker class
+and the number of workers to create. You can create multiple worker pools with
+different worker types to handle different kinds of work. Each worker pool can
+process any type of Work object that inherits from Fractor::Work.
 
 [source,ruby]
 ----
 # Create the supervisor
 supervisor = Fractor::Supervisor.new(
-  worker_class: MyWorker,
-  work_class: MyWork,
-  num_workers: 4  # Number of parallel Ractors
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 4 }  # One pool with 4 workers
+  ]
 )
 
-# Add work items (raw data)
-supervisor.add_work([1, 2, 3, 4, 5].map { |i| MyWork.new(i) })
+# Add individual work items (instances of Work subclasses)
+supervisor.add_work_item(MyWork.new(1))
+
+# Add multiple work items
+supervisor.add_work_items([
+  MyWork.new(2),
+  MyWork.new(3),
+  MyWork.new(4),
+  MyWork.new(5)
+])
+
+# You can add different types of Work objects to the same supervisor
+supervisor.add_work_items([
+  MyWork.new(6),
+  OtherWork.new("data")
+])
 
 # Run the processing
 supervisor.run
@@ -591,9 +608,14 @@ When creating a Supervisor, you can configure:
 [source,ruby]
 ----
 supervisor = Fractor::Supervisor.new(
-  worker_class: MyWorker,     # Required: Your Worker subclass
-  work_class: MyWork,         # Required: Your Work subclass
-  num_workers: 4              # Optional: Number of Ractors (default: 2)
+  worker_pools: [
+    # Pool 1 - for general data processing
+    { worker_class: MyWorker, num_workers: 4 },
+
+    # Pool 2 - for specialized image processing
+    { worker_class: ImageWorker, num_workers: 2 }
+  ],
+  continuous_mode: false      # Optional: Run in continuous mode (default: false)
 )
 ----
 
@@ -604,17 +626,26 @@ You can add work items individually or in batches:
 [source,ruby]
 ----
 # Add a single item
-supervisor.add_work([42])
+supervisor.add_work_item(MyWork.new(42))
 
 # Add multiple items
-supervisor.add_work([1, 2, 3, 4, 5])
+supervisor.add_work_items([
+  MyWork.new(1),
+  MyWork.new(2),
+  MyWork.new(3),
+  MyWork.new(4),
+  MyWork.new(5)
+])
 
-# Add complex items
-supervisor.add_work([
-  {id: 1, data: "foo"},
-  {id: 2, data: "bar"}
+# Add items of different work types
+supervisor.add_work_items([
+  TextWork.new("Process this text"),
+  ImageWork.new({ width: 800, height: 600 })
 ])
 ----
+
+The Supervisor can handle any Work object that inherits from Fractor::Work.
+Workers must check the type of Work they receive and process it accordingly.
 
 ==== Running and monitoring
 
@@ -666,14 +697,20 @@ For more complex scenarios, you might want to prioritize certain work items:
 
 [source,ruby]
 ----
+# Create Work objects for high priority items
+high_priority_works = high_priority_items.map { |item| MyWork.new(item) }
+
 # Add high-priority items first
-supervisor.add_work(high_priority_items)
+supervisor.add_work_items(high_priority_works)
 
 # Run with just enough workers for high-priority items
 supervisor.run
 
+# Create Work objects for lower priority items
+low_priority_works = low_priority_items.map { |item| MyWork.new(item) }
+
 # Add and process lower-priority items
-supervisor.add_work(low_priority_items)
+supervisor.add_work_items(low_priority_works)
 supervisor.run
 ----
 
@@ -684,7 +721,10 @@ For very large datasets, consider processing in batches:
 [source,ruby]
 ----
 large_dataset.each_slice(1000) do |batch|
-  supervisor.add_work(batch)
+  # Convert batch items to Work objects
+  work_batch = batch.map { |item| MyWork.new(item) }
+
+  supervisor.add_work_items(work_batch)
   supervisor.run
 
   # Process this batch's results before continuing
@@ -725,15 +765,18 @@ class MyWorker < Fractor::Worker
   end
 end
 
-# Create supervisor
+# Create supervisor with a worker pool
 supervisor = Fractor::Supervisor.new(
-  worker_class: MyWorker,
-  work_class: MyWork,
-  num_workers: 2
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 2 }
+  ]
 )
 
-# Add work items (1..10)
-supervisor.add_work((1..10).to_a)
+# Create Work objects
+work_items = (1..10).map { |i| MyWork.new(i) }
+
+# Add work items
+supervisor.add_work_items(work_items)
 
 # Run processing
 supervisor.run
@@ -789,9 +832,9 @@ See the Chat Server example in the examples directory for a complete implementat
 [source,ruby]
 ----
 supervisor = Fractor::Supervisor.new(
-  worker_class: MyWorker,
-  work_class: MyWork,
-  num_workers: 2,
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 2 }
+  ],
   continuous_mode: true  # Enable continuous mode
 )
 ----
@@ -803,7 +846,13 @@ supervisor = Fractor::Supervisor.new(
 supervisor.register_work_source do
   # Return nil or empty array if no work is available
   # Return a work item or array of work items when available
-  get_next_work_item
+  items = get_next_work_items
+  if items && !items.empty?
+    # Convert to Work objects if needed
+    items.map { |item| MyWork.new(item) }
+  else
+    nil
+  end
 end
 ----
 

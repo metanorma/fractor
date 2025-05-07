@@ -55,15 +55,20 @@ RSpec.describe Fractor::Work do
     it "allows customization through subclassing" do
       # Define a test subclass
       class CustomWork < Fractor::Work
-        attr_reader :extra_data
+        def initialize(primary_data, extra_data = nil)
+          super({ primary_data: primary_data, extra_data: extra_data })
+        end
 
-        def initialize(input, extra_data = nil)
-          super(input)
-          @extra_data = extra_data
+        def primary_data
+          input[:primary_data]
+        end
+
+        def extra_data
+          input[:extra_data]
         end
 
         def to_s
-          "CustomWork: #{@input} (#{@extra_data})"
+          "CustomWork: #{primary_data} (#{extra_data})"
         end
       end
 
@@ -72,7 +77,7 @@ RSpec.describe Fractor::Work do
 
       # Verify inheritance
       expect(custom_work).to be_a(Fractor::Work)
-      expect(custom_work.input).to eq("primary data")
+      expect(custom_work.primary_data).to eq("primary data")
       expect(custom_work.extra_data).to eq("extra info")
       expect(custom_work.to_s).to eq("CustomWork: primary data (extra info)")
     end

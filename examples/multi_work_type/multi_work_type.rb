@@ -5,39 +5,43 @@ require_relative "../../lib/fractor"
 module MultiWorkType
   # First work type for text data
   class TextWork < Fractor::Work
-    attr_reader :format, :options
+    def initialize(data, format = :plain, options = {})
+      super({ data: data, format: format, options: options })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:data] && input[:format]
-        super(input[:data])
-        @format = input[:format]
-        @options = input[:options] || {}
-      else
-        super(input)
-        @format = :plain
-        @options = {}
-      end
+    def data
+      input[:data]
+    end
+
+    def format
+      input[:format]
+    end
+
+    def options
+      input[:options]
     end
 
     def to_s
-      "TextWork: format=#{format}, options=#{options}, data=#{input.to_s[0..30]}..."
+      "TextWork: format=#{format}, options=#{options}, data=#{data.to_s[0..30]}..."
     end
   end
 
   # Second work type for image data
   class ImageWork < Fractor::Work
-    attr_reader :dimensions, :format
+    def initialize(data, dimensions = [0, 0], format = :png)
+      super({ data: data, dimensions: dimensions, format: format })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:data] && input[:dimensions]
-        super(input[:data])
-        @dimensions = input[:dimensions]
-        @format = input[:format] || :png
-      else
-        super(input)
-        @dimensions = [0, 0]
-        @format = :unknown
-      end
+    def data
+      input[:data]
+    end
+
+    def dimensions
+      input[:dimensions]
+    end
+
+    def format
+      input[:format]
     end
 
     def to_s
@@ -55,8 +59,9 @@ module MultiWorkType
         process_image(work)
       else
         # Return error for unsupported work types
+        error = TypeError.new("Unsupported work type: #{work.class}")
         Fractor::WorkResult.new(
-          error: "Unsupported work type: #{work.class}",
+          error: error,
           work: work
         )
       end
@@ -69,10 +74,10 @@ module MultiWorkType
       sleep(rand(0.01..0.05)) # Simulate processing time
 
       processed_text = case work.format
-                       when :markdown then process_markdown(work.input, work.options)
-                       when :html then process_html(work.input, work.options)
-                       when :json then process_json(work.input, work.options)
-                       else work.input.upcase # Simple transformation for plain text
+                       when :markdown then process_markdown(work.data, work.options)
+                       when :html then process_html(work.data, work.options)
+                       when :json then process_json(work.data, work.options)
+                       else work.data.upcase # Simple transformation for plain text
                        end
 
       Fractor::WorkResult.new(
@@ -95,7 +100,7 @@ module MultiWorkType
 
       # Creating a safe copy of the data to avoid memory issues
       # Avoid calling methods directly on the input that might cause memory issues
-      input_size = work.input.is_a?(String) ? work.input.size : 0
+      input_size = work.data.is_a?(String) ? work.data.size : 0
 
       # In a real implementation, this would use image processing libraries
       simulated_result = {
@@ -154,11 +159,11 @@ module MultiWorkType
     attr_reader :results
 
     def initialize(worker_count = 4)
-      # Set supervisor to nil as we'll use different work types
+      # Create supervisor with a MultiFormatWorker pool
       @supervisor = Fractor::Supervisor.new(
-        worker_class: MultiFormatWorker,
-        work_class: nil, # Nil because we'll be sending multiple work types
-        num_workers: worker_count
+        worker_pools: [
+          { worker_class: MultiFormatWorker, num_workers: worker_count }
+        ]
       )
 
       @results = {
@@ -169,11 +174,17 @@ module MultiWorkType
     end
 
     def process_mixed_content(text_items, image_items)
-      # Add text items to the supervisor with the appropriate work class
-      @supervisor.add_work(text_items, TextWork)
+      # Create TextWork objects and add them to the supervisor
+      text_works = text_items.map do |item|
+        TextWork.new(item[:data], item[:format], item[:options] || {})
+      end
+      @supervisor.add_work_items(text_works)
 
-      # Add image items to the supervisor with the appropriate work class
-      @supervisor.add_work(image_items, ImageWork)
+      # Create ImageWork objects and add them to the supervisor
+      image_works = image_items.map do |item|
+        ImageWork.new(item[:data], item[:dimensions], item[:format] || :png)
+      end
+      @supervisor.add_work_items(image_works)
 
       # Process all work
       @supervisor.run

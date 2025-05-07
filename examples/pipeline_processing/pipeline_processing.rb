@@ -5,23 +5,29 @@ require_relative "../../lib/fractor"
 module PipelineProcessing
   # Work that carries both the data and stage information
   class MediaWork < Fractor::Work
-    attr_reader :stage, :metadata
+    def initialize(data, stage = :resize, metadata = {})
+      super({
+        data: data,
+        stage: stage,
+        metadata: metadata
+      })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:data] && input[:stage] && input[:metadata]
-        super(input[:data])
-        @stage = input[:stage]
-        @metadata = input[:metadata]
-      else
-        super(input)
-        @stage = :resize # First stage
-        @metadata = {}
-      end
+    def data
+      input[:data]
+    end
+
+    def stage
+      input[:stage]
+    end
+
+    def metadata
+      input[:metadata]
     end
 
     def to_s
-      "MediaWork: stage=#{@stage}, metadata=#{@metadata}, data_size=#{begin
-        input.bytesize
+      "MediaWork: stage=#{stage}, metadata=#{metadata}, data_size=#{begin
+        data.bytesize
       rescue StandardError
         "unknown"
       end}"
@@ -71,25 +77,25 @@ module PipelineProcessing
 
     def process_resize(work)
       sleep(rand(0.01..0.05)) # Simulate processing time
-      "Resized image: #{work.input} (#{rand(800..1200)}x#{rand(600..900)})"
+      "Resized image: #{work.data} (#{rand(800..1200)}x#{rand(600..900)})"
     end
 
     def process_filter(work)
       sleep(rand(0.01..0.05)) # Simulate processing time
       filters = %w[sepia grayscale vibrance contrast]
-      "Applied #{filters.sample} filter to: #{work.input}"
+      "Applied #{filters.sample} filter to: #{work.data}"
     end
 
     def process_compress(work)
       sleep(rand(0.01..0.05)) # Simulate processing time
-      "Compressed image: #{work.input} (reduced by #{rand(30..70)}%)"
+      "Compressed image: #{work.data} (reduced by #{rand(30..70)}%)"
     end
 
     def process_tag(work)
       sleep(rand(0.01..0.05)) # Simulate processing time
       tags = %w[landscape portrait nature urban abstract]
       selected_tags = tags.sample(rand(1..3))
-      "Tagged image: #{work.input} (tags: #{selected_tags.join(", ")})"
+      "Tagged image: #{work.data} (tags: #{selected_tags.join(", ")})"
     end
   end
 
@@ -99,9 +105,9 @@ module PipelineProcessing
 
     def initialize(worker_count = 4)
       @supervisor = Fractor::Supervisor.new(
-        worker_class: PipelineWorker,
-        work_class: MediaWork,
-        num_workers: worker_count
+        worker_pools: [
+          { worker_class: PipelineWorker, num_workers: worker_count }
+        ]
       )
 
       # Register callback to handle pipeline stage transitions
@@ -110,11 +116,12 @@ module PipelineProcessing
 
         if next_stage
           # Create new work for the next stage
-          @supervisor.add_work([{
-                                 data: result.result[:processed_data],
-                                 stage: next_stage,
-                                 metadata: result.result[:metadata]
-                               }])
+          new_work = MediaWork.new(
+            result.result[:processed_data],
+            next_stage,
+            result.result[:metadata]
+          )
+          @supervisor.add_work_item(new_work)
         end
       end
 
@@ -125,17 +132,17 @@ module PipelineProcessing
     end
 
     def process_images(images)
-      # Create initial work for the first stage (resize)
-      initial_work = images.map do |image|
-        {
-          data: image,
-          stage: :resize,
-          metadata: { original_filename: image, started_at: Time.now.to_s }
-        }
+      # Create initial work items for the first stage (resize)
+      initial_work_items = images.map do |image|
+        MediaWork.new(
+          image,
+          :resize,
+          { original_filename: image, started_at: Time.now.to_s }
+        )
       end
 
-      # Add the work and run the pipeline
-      @supervisor.add_work(initial_work)
+      # Add the work items and run the pipeline
+      @supervisor.add_work_items(initial_work_items)
       @supervisor.run
 
       # Analyze results - collect completed ones (those that reached the final stage)

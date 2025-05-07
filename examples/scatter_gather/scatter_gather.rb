@@ -5,22 +5,24 @@ require_relative "../../lib/fractor"
 module ScatterGather
   # Specialized work for different search sources
   class SearchWork < Fractor::Work
-    attr_reader :source, :query_params
+    def initialize(query, source = :default, query_params = {})
+      super({ query: query, source: source, query_params: query_params })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:query] && input[:source]
-        super(input[:query])
-        @source = input[:source]
-        @query_params = input[:params] || {}
-      else
-        super(input)
-        @source = :default
-        @query_params = {}
-      end
+    def query
+      input[:query]
+    end
+
+    def source
+      input[:source]
+    end
+
+    def query_params
+      input[:query_params]
     end
 
     def to_s
-      "SearchWork: source=#{@source}, params=#{@query_params}, query=#{input}"
+      "SearchWork: source=#{source}, params=#{query_params}, query=#{query}"
     end
   end
 
@@ -37,8 +39,9 @@ module ScatterGather
                when :cache then search_cache(work)
                when :filesystem then search_filesystem(work)
                else
+                 error = ArgumentError.new("Unknown source: #{work.source}")
                  return Fractor::WorkResult.new(
-                   error: "Unknown source: #{work.source}",
+                   error: error,
                    work: work
                  )
                end
@@ -47,7 +50,7 @@ module ScatterGather
       Fractor::WorkResult.new(
         result: {
           source: work.source,
-          query: work.input,
+          query: work.query,
           hits: result[:hits],
           metadata: result[:metadata],
           timing: result[:timing]
@@ -72,8 +75,8 @@ module ScatterGather
       hits = record_count.times.map do |i|
         {
           id: "db-#{i + 1}",
-          title: "Database Result #{i + 1} for '#{work.input}'",
-          content: "This is database content for #{work.input}",
+          title: "Database Result #{i + 1} for '#{work.query}'",
+          content: "This is database content for #{work.query}",
           relevance: rand(0.1..1.0).round(2)
         }
       end
@@ -98,8 +101,8 @@ module ScatterGather
       hits = record_count.times.map do |i|
         {
           id: "api-#{i + 1}",
-          title: "API Result #{i + 1} for '#{work.input}'",
-          content: "This is API content for #{work.input}",
+          title: "API Result #{i + 1} for '#{work.query}'",
+          content: "This is API content for #{work.query}",
           relevance: rand(0.1..1.0).round(2)
         }
       end
@@ -128,8 +131,8 @@ module ScatterGather
         hits = record_count.times.map do |i|
           {
             id: "cache-#{i + 1}",
-            title: "Cached Result #{i + 1} for '#{work.input}'",
-            content: "This is cached content for #{work.input}",
+            title: "Cached Result #{i + 1} for '#{work.query}'",
+            content: "This is cached content for #{work.query}",
             relevance: rand(0.1..1.0).round(2)
           }
         end
@@ -165,9 +168,9 @@ module ScatterGather
       hits = record_count.times.map do |i|
         {
           id: "file-#{i + 1}",
-          title: "File Result #{i + 1} for '#{work.input}'",
+          title: "File Result #{i + 1} for '#{work.query}'",
           path: "/path/to/file_#{i + 1}.txt",
-          content: "This is file content matching #{work.input}",
+          content: "This is file content matching #{work.query}",
           relevance: rand(0.1..1.0).round(2)
         }
       end
@@ -190,9 +193,9 @@ module ScatterGather
 
     def initialize(worker_count = 4)
       @supervisor = Fractor::Supervisor.new(
-        worker_class: SearchWorker,
-        work_class: SearchWork,
-        num_workers: worker_count
+        worker_pools: [
+          { worker_class: SearchWorker, num_workers: worker_count }
+        ]
       )
 
       @merged_results = nil
@@ -207,19 +210,13 @@ module ScatterGather
         { source: :filesystem, params: { extensions: %w[txt md pdf] } }
       ]
 
-      # Create work items for each source with the same query
-      work_items = sources.map do |source|
-        {
-          query: query,
-          source: source[:source],
-          params: source[:params]
-        }
-      end
-
       start_time = Time.now
 
-      # Run the searches in parallel
-      @supervisor.add_work(work_items)
+      # Create work items and run the searches in parallel
+      search_work_items = sources.map do |source|
+        SearchWork.new(query, source[:source], source[:params])
+      end
+      @supervisor.add_work_items(search_work_items)
       @supervisor.run
 
       end_time = Time.now
@@ -301,8 +298,8 @@ if __FILE__ == $PROGRAM_NAME
   query = ARGV[0] || "ruby concurrency patterns"
   worker_count = (ARGV[1] || 4).to_i
 
-  puts "Searching for: '#{query}' using #{worker_count} workers..."
-  puts
+  puts "Searching for: '#{query}' using #{worker_count} workers..." if ENV["FRACTOR_DEBUG"]
+  puts if ENV["FRACTOR_DEBUG"]
 
   search = ScatterGather::MultiSourceSearch.new(worker_count)
   results = search.search(query)

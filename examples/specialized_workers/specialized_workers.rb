@@ -5,18 +5,24 @@ require_relative "../../lib/fractor"
 module SpecializedWorkers
   # First work type: Compute-intensive operations
   class ComputeWork < Fractor::Work
-    attr_reader :operation, :parameters
+    def initialize(data, operation = :default, parameters = {})
+      super({
+        data: data,
+        operation: operation,
+        parameters: parameters
+      })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:data] && input[:operation]
-        super(input[:data])
-        @operation = input[:operation]
-        @parameters = input[:parameters] || {}
-      else
-        super(input)
-        @operation = :default
-        @parameters = {}
-      end
+    def data
+      input[:data]
+    end
+
+    def operation
+      input[:operation]
+    end
+
+    def parameters
+      input[:parameters]
     end
 
     def to_s
@@ -26,20 +32,29 @@ module SpecializedWorkers
 
   # Second work type: Database operations
   class DatabaseWork < Fractor::Work
-    attr_reader :query_type, :table, :conditions
+    def initialize(data = "", query_type = :select, table = "unknown", conditions = {})
+      super({
+        data: data,
+        query_type: query_type,
+        table: table,
+        conditions: conditions
+      })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:query_type] && input[:table]
-        super(input[:data] || "")
-        @query_type = input[:query_type]
-        @table = input[:table]
-        @conditions = input[:conditions] || {}
-      else
-        super(input)
-        @query_type = :select
-        @table = "unknown"
-        @conditions = {}
-      end
+    def data
+      input[:data]
+    end
+
+    def query_type
+      input[:query_type]
+    end
+
+    def table
+      input[:table]
+    end
+
+    def conditions
+      input[:conditions]
     end
 
     def to_s
@@ -65,10 +80,10 @@ module SpecializedWorkers
 
       # Process based on the requested operation
       result = case work.operation
-               when :matrix_multiply then matrix_multiply(work.input, work.parameters)
-               when :image_transform then image_transform(work.input, work.parameters)
-               when :path_finding then path_finding(work.input, work.parameters)
-               else default_computation(work.input, work.parameters)
+               when :matrix_multiply then matrix_multiply(work.data, work.parameters)
+               when :image_transform then image_transform(work.data, work.parameters)
+               when :path_finding then path_finding(work.data, work.parameters)
+               else default_computation(work.data, work.parameters)
                end
 
       Fractor::WorkResult.new(
@@ -132,8 +147,8 @@ module SpecializedWorkers
       # Process based on query type
       result = case work.query_type
                when :select then perform_select(work.table, work.conditions)
-               when :insert then perform_insert(work.table, work.input)
-               when :update then perform_update(work.table, work.input, work.conditions)
+               when :insert then perform_insert(work.table, work.data)
+               when :update then perform_update(work.table, work.data, work.conditions)
                when :delete then perform_delete(work.table, work.conditions)
                else default_query(work.query_type, work.table, work.conditions)
                end
@@ -214,15 +229,15 @@ module SpecializedWorkers
     def initialize(compute_workers: 2, db_workers: 2)
       # Create separate supervisors for each worker type
       @compute_supervisor = Fractor::Supervisor.new(
-        worker_class: ComputeWorker,
-        work_class: ComputeWork,
-        num_workers: compute_workers
+        worker_pools: [
+          { worker_class: ComputeWorker, num_workers: compute_workers }
+        ]
       )
 
       @db_supervisor = Fractor::Supervisor.new(
-        worker_class: DatabaseWorker,
-        work_class: DatabaseWork,
-        num_workers: db_workers
+        worker_pools: [
+          { worker_class: DatabaseWorker, num_workers: db_workers }
+        ]
       )
 
       @compute_results = []
@@ -230,11 +245,17 @@ module SpecializedWorkers
     end
 
     def process_mixed_workload(compute_tasks, db_tasks)
-      # Add compute work
-      @compute_supervisor.add_work(compute_tasks)
+      # Create and add compute work items
+      compute_work_items = compute_tasks.map do |task|
+        ComputeWork.new(task[:data], task[:operation], task[:parameters])
+      end
+      @compute_supervisor.add_work_items(compute_work_items)
 
-      # Add database work
-      @db_supervisor.add_work(db_tasks)
+      # Create and add database work items
+      db_work_items = db_tasks.map do |task|
+        DatabaseWork.new(task[:data], task[:query_type], task[:table], task[:conditions])
+      end
+      @db_supervisor.add_work_items(db_work_items)
 
       # Run the supervisors directly - this is more reliable
       @compute_supervisor.run

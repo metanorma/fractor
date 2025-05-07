@@ -7,32 +7,41 @@ module SupervisorSpec
   class TestWorker < Fractor::Worker
     def process(work)
       # Simple multiplication
-      if work.input == 5
-        Fractor::WorkResult.new(error: "Cannot process 5", work: work)
+      if work.value == 5
+        error = StandardError.new("Cannot process 5")
+        Fractor::WorkResult.new(error: error, work: work)
       else
-        Fractor::WorkResult.new(result: work.input * 2, work: work)
+        Fractor::WorkResult.new(result: work.value * 2, work: work)
       end
     end
   end
 
   class TestWork < Fractor::Work
+    def initialize(value)
+      super({ value: value })
+    end
+
+    def value
+      input[:value]
+    end
+
     def to_s
-      "TestWork: #{@input}"
+      "TestWork: #{value}"
     end
   end
 end
 
 RSpec.describe Fractor::Supervisor do
   describe "#initialize" do
-    it "initializes with required parameters" do
+    it "initializes with worker pools" do
       supervisor = Fractor::Supervisor.new(
-        worker_class: SupervisorSpec::TestWorker,
-        work_class: SupervisorSpec::TestWork,
-        num_workers: 2
+        worker_pools: [
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 }
+        ]
       )
 
-      expect(supervisor.worker_class).to eq(SupervisorSpec::TestWorker)
-      expect(supervisor.work_class).to eq(SupervisorSpec::TestWork)
+      expect(supervisor.worker_pools.size).to eq(1)
+      expect(supervisor.worker_pools.first[:worker_class]).to eq(SupervisorSpec::TestWorker)
       expect(supervisor.work_queue).to be_a(Queue)
       expect(supervisor.work_queue).to be_empty
       expect(supervisor.results).to be_a(Fractor::ResultAggregator)
@@ -41,55 +50,90 @@ RSpec.describe Fractor::Supervisor do
     it "raises error if worker_class does not inherit from Fractor::Worker" do
       expect do
         Fractor::Supervisor.new(
-          worker_class: Class.new,
-          work_class: SupervisorSpec::TestWork
+          worker_pools: [
+            { worker_class: Class.new, num_workers: 2 }
+          ]
         )
       end.to raise_error(ArgumentError, /must inherit from Fractor::Worker/)
     end
 
-    it "raises error if work_class does not inherit from Fractor::Work" do
-      expect do
-        Fractor::Supervisor.new(
-          worker_class: SupervisorSpec::TestWorker,
-          work_class: Class.new
-        )
-      end.to raise_error(ArgumentError, /must inherit from Fractor::Work/)
+    it "initializes with empty worker pools" do
+      supervisor = Fractor::Supervisor.new
+      expect(supervisor.worker_pools).to be_empty
+      expect(supervisor.work_queue).to be_a(Queue)
+      expect(supervisor.work_queue).to be_empty
     end
   end
 
-  describe "#add_work" do
+  describe "#add_work_item" do
     let(:supervisor) do
-      Fractor::Supervisor.new(worker_class: SupervisorSpec::TestWorker, work_class: SupervisorSpec::TestWork)
+      Fractor::Supervisor.new(
+        worker_pools: [
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 }
+        ]
+      )
     end
 
-    it "adds work items to the queue" do
+    it "adds a single work item to the queue" do
+      work = SupervisorSpec::TestWork.new(1)
       expect do
-        supervisor.add_work([1, 2, 3])
+        supervisor.add_work_item(work)
+      end.to change { supervisor.work_queue.size }.from(0).to(1)
+    end
+
+    it "raises an error if item is not a Work instance" do
+      expect do
+        supervisor.add_work_item(42)
+      end.to raise_error(ArgumentError, /must be an instance of Fractor::Work/)
+    end
+  end
+
+  describe "#add_work_items" do
+    let(:supervisor) do
+      Fractor::Supervisor.new(
+        worker_pools: [
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 }
+        ]
+      )
+    end
+
+    it "adds multiple work items to the queue" do
+      works = [
+        SupervisorSpec::TestWork.new(1),
+        SupervisorSpec::TestWork.new(2),
+        SupervisorSpec::TestWork.new(3)
+      ]
+
+      expect do
+        supervisor.add_work_items(works)
       end.to change { supervisor.work_queue.size }.from(0).to(3)
     end
 
     it "handles empty work arrays" do
       expect do
-        supervisor.add_work([])
+        supervisor.add_work_items([])
       end.not_to(change { supervisor.work_queue.size })
     end
   end
 
-  # Integration test for the run method
-  # This is a more complex test that tests the supervisor's main functionality
-  # It starts workers, processes work, and collects results
   describe "#run" do
     it "processes work items and collects results" do
       # This test simulates a simple workflow with a supervisor
       # It's a small-scale integration test
       supervisor = Fractor::Supervisor.new(
-        worker_class: SupervisorSpec::TestWorker,
-        work_class: SupervisorSpec::TestWork,
-        num_workers: 2
+        worker_pools: [
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 }
+        ]
       )
 
       # Add work items - use a small number to keep the test fast
-      supervisor.add_work([1, 2, 3, 4, 5])
+      supervisor.add_work_items([
+                                  SupervisorSpec::TestWork.new(1),
+                                  SupervisorSpec::TestWork.new(2),
+                                  SupervisorSpec::TestWork.new(3),
+                                  SupervisorSpec::TestWork.new(4),
+                                  SupervisorSpec::TestWork.new(5)
+                                ])
 
       # Run the supervisor with a small timeout
       # We don't want to wait indefinitely in case of issues
@@ -102,14 +146,15 @@ RSpec.describe Fractor::Supervisor do
 
       # Verify that all results were processed correctly
       supervisor.results.results.map(&:result)
-      # For any item that had error, the input would be 5
-      expect(supervisor.results.errors.map { |e| e.work.input }).to include(5) if supervisor.results.errors.any?
+      # For any item that had error, the work value would be 5
+      expect(supervisor.results.errors.map { |e| e.work.value }).to eq([5]) if supervisor.results.errors.any?
 
       # Verify the error only if there's an error result
       if supervisor.results.errors.any?
         error = supervisor.results.errors.first
-        expect(error.error).to eq("Cannot process 5")
-        expect(error.work.input).to eq(5)
+        expect(error.error).to be_a(StandardError)
+        expect(error.error.message).to eq("Cannot process 5")
+        expect(error.work.value).to eq(5)
       end
     end
   end

@@ -6,24 +6,28 @@ require "digest/sha2" # Using SHA2 which is more Ractor-compatible
 module HierarchicalHasher
   # Define our Work class
   class ChunkWork < Fractor::Work
-    attr_reader :start, :length
+    def initialize(data, start = 0, length = nil)
+      super({
+        data: data,
+        start: start,
+        length: length || data.bytesize
+      })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:data] && input[:start] && input[:length]
-        # When called by Supervisor with a hash of data
-        super(input[:data])
-        @start = input[:start]
-        @length = input[:length]
-      else
-        # When directly calling with chunk data
-        super(input)
-        @start = 0
-        @length = input.bytesize
-      end
+    def data
+      input[:data]
+    end
+
+    def start
+      input[:start]
+    end
+
+    def length
+      input[:length]
     end
 
     def to_s
-      "ChunkWork: start=#{@start}, length=#{@length}, data_size=#{input.bytesize}"
+      "ChunkWork: start=#{start}, length=#{length}, data_size=#{data.bytesize}"
     end
   end
 
@@ -35,7 +39,7 @@ module HierarchicalHasher
 
       # Calculate SHA-256 hash for the chunk (using SHA2 which is Ractor-compatible)
       begin
-        hash = Digest::SHA256.hexdigest(work.input)
+        hash = Digest::SHA256.hexdigest(work.data)
 
         # Return successful result
         Fractor::WorkResult.new(
@@ -67,11 +71,11 @@ module HierarchicalHasher
     end
 
     def hash_file
-      # Create the supervisor with our worker and work classes
+      # Create the supervisor with our worker class in a worker pool
       supervisor = Fractor::Supervisor.new(
-        worker_class: HashWorker,
-        work_class: ChunkWork,
-        num_workers: @worker_count
+        worker_pools: [
+          { worker_class: HashWorker, num_workers: @worker_count }
+        ]
       )
 
       # Load the file and create work chunks
@@ -95,16 +99,12 @@ module HierarchicalHasher
         start_pos = 0
 
         while (chunk = file.read(@chunk_size))
-          work_items << {
-            start: start_pos,
-            length: chunk.length,
-            data: chunk
-          }
+          work_items << ChunkWork.new(chunk, start_pos, chunk.length)
           start_pos += chunk.length
         end
       end
 
-      supervisor.add_work(work_items)
+      supervisor.add_work_items(work_items)
     end
 
     def finalize_hash(results_aggregator)

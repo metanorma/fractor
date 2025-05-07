@@ -26,14 +26,14 @@ RSpec.describe "Fractor Integration" do
   it "processes work items in parallel as shown in the sample" do
     # Create supervisor
     supervisor = Fractor::Supervisor.new(
-      worker_class: MyWorker,
-      work_class: MyWork,
-      num_workers: 2
+      worker_pools: [
+        { worker_class: MyWorker, num_workers: 2 }
+      ]
     )
 
     # Add work items (1..10)
-    work_items = (1..10).to_a
-    supervisor.add_work(work_items)
+    work_items = (1..10).map { |i| MyWork.new(i) }
+    supervisor.add_work_items(work_items)
 
     # Run the supervisor with a reasonable timeout
     Timeout.timeout(15) do

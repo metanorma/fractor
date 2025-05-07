@@ -5,45 +5,50 @@ require_relative "../../lib/fractor"
 module ProducerSubscriber
   # Initial work that will generate sub-works
   class InitialWork < Fractor::Work
-    attr_reader :depth
+    def initialize(data, depth = 0)
+      super({
+        data: data,
+        depth: depth
+      })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:data] && input.key?(:depth)
-        # When called by Supervisor with a hash of data
-        super(input[:data])
-        @depth = input[:depth]
-      else
-        # When directly calling with data
-        super(input)
-        @depth = 0
-      end
+    def data
+      input[:data]
+    end
+
+    def depth
+      input[:depth]
     end
 
     def to_s
-      "InitialWork: data=#{input}, depth=#{depth}"
+      "InitialWork: data=#{data}, depth=#{depth}"
     end
   end
 
   # Work that is generated from initial work
   class SubWork < Fractor::Work
-    attr_reader :parent_id, :depth
+    def initialize(data, parent_id = nil, depth = 0)
+      super({
+        data: data,
+        parent_id: parent_id,
+        depth: depth
+      })
+    end
 
-    def initialize(input)
-      if input.is_a?(Hash) && input[:data] && input[:parent_id] && input.key?(:depth)
-        # When called by Supervisor with a hash of data
-        super(input[:data])
-        @parent_id = input[:parent_id]
-        @depth = input[:depth]
-      else
-        # When directly calling with data
-        super(input)
-        @parent_id = nil
-        @depth = 0
-      end
+    def data
+      input[:data]
+    end
+
+    def parent_id
+      input[:parent_id]
+    end
+
+    def depth
+      input[:depth]
     end
 
     def to_s
-      "SubWork: data=#{input}, parent_id=#{parent_id}, depth=#{depth}"
+      "SubWork: data=#{data}, parent_id=#{parent_id}, depth=#{depth}"
     end
   end
 
@@ -90,7 +95,7 @@ module ProducerSubscriber
       sleep(rand(0.01..0.03))
 
       # Process the data
-      processed_data = "Sub-processed: #{work.input} (depth: #{work.depth})"
+      processed_data = "Sub-processed: #{work.data} (depth: #{work.depth})"
 
       # Return a successful result
       Fractor::WorkResult.new(
@@ -116,14 +121,14 @@ module ProducerSubscriber
     def process
       # Create the supervisor
       supervisor = Fractor::Supervisor.new(
-        worker_class: MultiWorker,
-        work_class: InitialWork, # We'll also send SubWork items later
-        num_workers: @worker_count
+        worker_pools: [
+          { worker_class: MultiWorker, num_workers: @worker_count }
+        ]
       )
 
-      # Add initial work items
-      initial_works = documents.map { |doc| { data: doc, depth: 0 } }
-      supervisor.add_work(initial_works)
+      # Create and add initial work items
+      initial_work_items = documents.map { |doc| InitialWork.new(doc, 0) }
+      supervisor.add_work_items(initial_work_items)
 
       # Run the initial processing
       supervisor.run
@@ -138,13 +143,14 @@ module ProducerSubscriber
       else
         # Create a new supervisor for sub-works
         sub_supervisor = Fractor::Supervisor.new(
-          worker_class: MultiWorker,
-          work_class: SubWork,
-          num_workers: @worker_count
+          worker_pools: [
+            { worker_class: MultiWorker, num_workers: @worker_count }
+          ]
         )
 
-        # Add the sub-works and process them
-        sub_supervisor.add_work(sub_works)
+        # Create and add the sub-work items
+        sub_work_items = sub_works.map { |sw| SubWork.new(sw[:data], sw[:parent_id], sw[:depth]) }
+        sub_supervisor.add_work_items(sub_work_items)
         sub_supervisor.run
 
         # Build the final result tree
@@ -169,7 +175,7 @@ module ProducerSubscriber
 
         # Create 3 sub-works for each initial work
         3.times do |i|
-          sub_data = "#{work.input}-#{i}"
+          sub_data = "#{work.data}-#{i}"
           sub_works << {
             data: sub_data,
             parent_id: work.object_id,

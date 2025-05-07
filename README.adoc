@@ -883,6 +883,22 @@ The Fractor gem comes with several example applications that demonstrate various
 patterns and use cases. Each example can be found in the `examples` directory of
 the gem repository. Detailed descriptions for these are provided below.
 
+=== Simple example
+
+The Simple Example (link:examples/simple/[examples/simple/]) demonstrates the
+basic usage of the Fractor framework. It shows how to create a simple Work
+class, a Worker class, and a Supervisor to manage the processing of work items
+in parallel. This example serves as a starting point for understanding how to
+use Fractor.
+
+Key features:
+
+* Basic Work and Worker class implementation
+* Simple Supervisor setup
+* Parallel processing of work items
+* Error handling and result aggregation
+* Graceful shutdown on completion
+
 === Hierarchical hasher
 
 The Hierarchical Hasher example

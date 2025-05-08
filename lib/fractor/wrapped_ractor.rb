@@ -25,7 +25,7 @@ module Fractor
         Ractor.yield({ type: :initialize, processor: name })
 
         # Instantiate the specific worker inside the Ractor
-        worker = worker_cls.new
+        worker = worker_cls.new(name: name)
 
         loop do
           # Ractor.receive will block until a message is received

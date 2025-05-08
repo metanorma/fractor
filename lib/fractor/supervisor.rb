@@ -37,9 +37,7 @@ module Fractor
     # Adds a single work item to the queue.
     # The item must be an instance of Fractor::Work or a subclass.
     def add_work_item(work)
-      unless work.is_a?(Fractor::Work)
-        raise ArgumentError, "#{work.class} must be an instance of Fractor::Work"
-      end
+      raise ArgumentError, "#{work.class} must be an instance of Fractor::Work" unless work.is_a?(Fractor::Work)
 
       @work_queue << work
       @total_work_count += 1
@@ -139,9 +137,7 @@ module Fractor
 
         # Break if no active workers and queue is empty, but work remains (indicates potential issue)
         if active_ractors.empty? && @work_queue.empty? && !@continuous_mode && processed_count < @total_work_count
-          if ENV["FRACTOR_DEBUG"]
-            puts "Warning: No active workers and queue is empty, but not all work is processed. Exiting loop."
-          end
+          puts "Warning: No active workers and queue is empty, but not all work is processed. Exiting loop." if ENV["FRACTOR_DEBUG"]
           break
         end
 
@@ -160,30 +156,22 @@ module Fractor
         # Find the corresponding WrappedRactor instance
         wrapped_ractor = @ractors_map[ready_ractor_obj]
         unless wrapped_ractor
-          if ENV["FRACTOR_DEBUG"]
-            puts "Warning: Received message from unknown Ractor: #{ready_ractor_obj}. Ignoring."
-          end
+          puts "Warning: Received message from unknown Ractor: #{ready_ractor_obj}. Ignoring." if ENV["FRACTOR_DEBUG"]
           next
         end
 
-        if ENV["FRACTOR_DEBUG"]
-          puts "Selected Ractor: #{wrapped_ractor.name}, Message Type: #{message[:type]}"
-        end
+        puts "Selected Ractor: #{wrapped_ractor.name}, Message Type: #{message[:type]}" if ENV["FRACTOR_DEBUG"]
 
         # Process the received message
         case message[:type]
         when :initialize
-          if ENV["FRACTOR_DEBUG"]
-            puts "Ractor initialized: #{message[:processor]}"
-          end
+          puts "Ractor initialized: #{message[:processor]}" if ENV["FRACTOR_DEBUG"]
           # Send work immediately upon initialization if available
           send_next_work_if_available(wrapped_ractor)
         when :result
           # The message[:result] should be a WorkResult object
           work_result = message[:result]
-          if ENV["FRACTOR_DEBUG"]
-            puts "Completed work: #{work_result.inspect} in Ractor: #{message[:processor]}"
-          end
+          puts "Completed work: #{work_result.inspect} in Ractor: #{message[:processor]}" if ENV["FRACTOR_DEBUG"]
           @results.add_result(work_result)
           if ENV["FRACTOR_DEBUG"]
             puts "Result processed. Total processed: #{@results.results.size + @results.errors.size}"
@@ -194,9 +182,7 @@ module Fractor
         when :error
           # The message[:result] should be a WorkResult object containing the error
           error_result = message[:result]
-          if ENV["FRACTOR_DEBUG"]
-            puts "Error processing work #{error_result.work&.inspect} in Ractor: #{message[:processor]}: #{error_result.error}"
-          end
+          puts "Error processing work #{error_result.work&.inspect} in Ractor: #{message[:processor]}: #{error_result.error}" if ENV["FRACTOR_DEBUG"]
           @results.add_result(error_result) # Add error to aggregator
           if ENV["FRACTOR_DEBUG"]
             puts "Error handled. Total processed: #{@results.results.size + @results.errors.size}"
@@ -205,17 +191,13 @@ module Fractor
           # Send next piece of work even after an error
           send_next_work_if_available(wrapped_ractor)
         else
-          if ENV["FRACTOR_DEBUG"]
-            puts "Unknown message type received: #{message[:type]} from #{wrapped_ractor.name}"
-          end
+          puts "Unknown message type received: #{message[:type]} from #{wrapped_ractor.name}" if ENV["FRACTOR_DEBUG"]
         end
         # Update processed count for the loop condition
         processed_count = @results.results.size + @results.errors.size
       end
 
-      if ENV["FRACTOR_DEBUG"]
-        puts "Main loop finished."
-      end
+      puts "Main loop finished." if ENV["FRACTOR_DEBUG"]
       return if @continuous_mode
 
       return unless ENV["FRACTOR_DEBUG"]
@@ -238,17 +220,11 @@ module Fractor
         if !@work_queue.empty?
           work_item = @work_queue.pop # Now directly a Work object
 
-          if ENV["FRACTOR_DEBUG"]
-            puts "Sending next work #{work_item.inspect} to Ractor: #{wrapped_ractor.name}"
-          end
+          puts "Sending next work #{work_item.inspect} to Ractor: #{wrapped_ractor.name}" if ENV["FRACTOR_DEBUG"]
           wrapped_ractor.send(work_item) # Send the Work object
-          if ENV["FRACTOR_DEBUG"]
-            puts "Work sent to #{wrapped_ractor.name}."
-          end
+          puts "Work sent to #{wrapped_ractor.name}." if ENV["FRACTOR_DEBUG"]
         else
-          if ENV["FRACTOR_DEBUG"]
-            puts "Work queue empty. Not sending new work to Ractor #{wrapped_ractor.name}."
-          end
+          puts "Work queue empty. Not sending new work to Ractor #{wrapped_ractor.name}." if ENV["FRACTOR_DEBUG"]
           # In continuous mode, don't close workers as more work may come
           unless @continuous_mode
             # Consider closing the Ractor if the queue is empty and no more work is expected.
@@ -260,9 +236,7 @@ module Fractor
           end
         end
       else
-        if ENV["FRACTOR_DEBUG"]
-          puts "Attempted to send work to an invalid or closed Ractor: #{wrapped_ractor&.name || "unknown"}."
-        end
+        puts "Attempted to send work to an invalid or closed Ractor: #{wrapped_ractor&.name || "unknown"}." if ENV["FRACTOR_DEBUG"]
         # Remove from map if found but closed
         @ractors_map.delete(wrapped_ractor.ractor) if wrapped_ractor && @ractors_map.key?(wrapped_ractor.ractor)
       end

@@ -51,9 +51,17 @@ RSpec.describe "Signal handling in Fractor" do
       # Give the process a moment to start the workers
       sleep(1)
 
-      # Send SIGINT to the process
-      puts "Sending SIGINT to test process"
-      Process.kill("INT", pid)
+      # Send termination signal to the process
+      if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/)
+        # On Windows, use taskkill with the /F flag to forcefully terminate
+        # This avoids the "Terminate batch job (Y/N)?" prompt that causes the test to hang
+        puts "Using taskkill to terminate Windows process"
+        system("taskkill /F /PID #{pid}")
+      else
+        # On Unix systems, use the normal SIGINT
+        puts "Sending SIGINT to test process"
+        Process.kill("INT", pid)
+      end
 
       # Process should exit within 3 seconds (not 10)
       begin

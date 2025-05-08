@@ -9,7 +9,7 @@ module Fractor
     # Initializes the WrappedRactor with a name and the Worker class to instantiate.
     # The worker_class parameter allows flexibility in specifying the worker type.
     def initialize(name, worker_class)
-      puts "Creating Ractor #{name} with worker #{worker_class}"
+      puts "Creating Ractor #{name} with worker #{worker_class}" if ENV["FRACTOR_DEBUG"]
       @name = name
       @worker_class = worker_class # Store the worker class
       @ractor = nil # Initialize ractor as nil
@@ -17,10 +17,10 @@ module Fractor
 
     # Starts the underlying Ractor.
     def start
-      puts "Starting Ractor #{@name}"
+      puts "Starting Ractor #{@name}" if ENV["FRACTOR_DEBUG"]
       # Pass worker_class to the Ractor block
       @ractor = Ractor.new(@name, @worker_class) do |name, worker_cls|
-        puts "Ractor #{name} started with worker class #{worker_cls}"
+        puts "Ractor #{name} started with worker class #{worker_cls}" if ENV["FRACTOR_DEBUG"]
         # Yield an initialization message
         Ractor.yield({ type: :initialize, processor: name })
 
@@ -29,25 +29,26 @@ module Fractor
 
         loop do
           # Ractor.receive will block until a message is received
-          puts "Waiting for work in #{name}"
+          puts "Waiting for work in #{name}" if ENV["FRACTOR_DEBUG"]
           work = Ractor.receive
-          puts "Received work #{work.inspect} in #{name}"
+
           # Handle shutdown message
           if work == :shutdown
             puts "Received shutdown message in Ractor #{name}, terminating..." if ENV["FRACTOR_DEBUG"]
             break
           end
 
+          puts "Received work #{work.inspect} in #{name}" if ENV["FRACTOR_DEBUG"]
 
           begin
             # Process the work using the instantiated worker
             result = worker.process(work)
-            puts "Sending result #{result.inspect} from Ractor #{name}"
+            puts "Sending result #{result.inspect} from Ractor #{name}" if ENV["FRACTOR_DEBUG"]
             # Yield the result back
             Ractor.yield({ type: :result, result: result, processor: name })
           rescue StandardError => e
             # Handle errors during processing
-            puts "Error processing work #{work.inspect} in Ractor #{name}: #{e.message}\n#{e.backtrace.join("\n")}"
+            puts "Error processing work #{work.inspect} in Ractor #{name}: #{e.message}\n#{e.backtrace.join("\n")}" if ENV["FRACTOR_DEBUG"]
             # Yield an error message back
             # Ensure the original work object is included in the error result
             error_result = Fractor::WorkResult.new(error: e.message, work: work)
@@ -55,14 +56,14 @@ module Fractor
           end
         end
       rescue Ractor::ClosedError
-        puts "Ractor #{name} closed."
+        puts "Ractor #{name} closed." if ENV["FRACTOR_DEBUG"]
       rescue StandardError => e
-        puts "Unexpected error in Ractor #{name}: #{e.message}\n#{e.backtrace.join("\n")}"
+        puts "Unexpected error in Ractor #{name}: #{e.message}\n#{e.backtrace.join("\n")}" if ENV["FRACTOR_DEBUG"]
         # Optionally yield a critical error message if needed
       ensure
-        puts "Ractor #{name} shutting down."
+        puts "Ractor #{name} shutting down." if ENV["FRACTOR_DEBUG"]
       end
-      puts "Ractor #{@name} instance created: #{@ractor}"
+      puts "Ractor #{@name} instance created: #{@ractor}" if ENV["FRACTOR_DEBUG"]
     end
 
     # Sends work to the Ractor if it's active.
@@ -72,11 +73,11 @@ module Fractor
           @ractor.send(work)
           true
         rescue Exception => e
-          puts "Warning: Error sending work to Ractor #{@name}: #{e.message}"
+          puts "Warning: Error sending work to Ractor #{@name}: #{e.message}" if ENV["FRACTOR_DEBUG"]
           false
         end
       else
-        puts "Warning: Attempted to send work to nil Ractor #{@name}"
+        puts "Warning: Attempted to send work to nil Ractor #{@name}" if ENV["FRACTOR_DEBUG"]
         false
       end
     end
@@ -114,7 +115,7 @@ module Fractor
 
         true
       rescue Exception => e
-        puts "Warning: Error closing Ractor #{@name}: #{e.message}"
+        puts "Warning: Error closing Ractor #{@name}: #{e.message}" if ENV["FRACTOR_DEBUG"]
         # Consider it closed even if there was an error
         @ractor = nil
         true
@@ -137,7 +138,7 @@ module Fractor
         false
       rescue Exception => e
         # If we get an exception, the Ractor is likely terminated
-        puts "Ractor #{@name} appears to be terminated: #{e.message}"
+        puts "Ractor #{@name} appears to be terminated: #{e.message}" if ENV["FRACTOR_DEBUG"]
         @ractor = nil
         true
       end

@@ -13,10 +13,10 @@ module Fractor
 
     def add_result(result)
       if result.success?
-        puts "Work completed successfully: Result: #{result.result}"
+        puts "Work completed successfully: Result: #{result.result}" if ENV["FRACTOR_DEBUG"]
         @results << result
       else
-        puts "Error processing work: #{result}"
+        puts "Error processing work: #{result}" if ENV["FRACTOR_DEBUG"]
         @errors << result
       end
 

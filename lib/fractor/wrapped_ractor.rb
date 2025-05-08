@@ -32,6 +32,12 @@ module Fractor
           puts "Waiting for work in #{name}"
           work = Ractor.receive
           puts "Received work #{work.inspect} in #{name}"
+          # Handle shutdown message
+          if work == :shutdown
+            puts "Received shutdown message in Ractor #{name}, terminating..." if ENV["FRACTOR_DEBUG"]
+            break
+          end
+
 
           begin
             # Process the work using the instantiated worker

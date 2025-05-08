@@ -88,19 +88,32 @@ module Fractor
 
     # Sets up a signal handler for graceful shutdown (Ctrl+C).
     def setup_signal_handler
-      # Need access to @workers within the trap block
+      # Store instance variables in local variables for the signal handler
       workers_ref = @workers
+
+      # Trap INT signal (Ctrl+C)
       Signal.trap("INT") do
-        puts "\nCtrl+C received. Initiating immediate shutdown..."
-        puts "Attempting to close worker Ractors..."
+        puts "\nCtrl+C received. Initiating immediate shutdown..." if ENV["FRACTOR_DEBUG"]
+
+        # Set running to false to break the main loop
+        @running = false
+
+        puts "Sending shutdown message to all Ractors..." if ENV["FRACTOR_DEBUG"]
+
+        # Send shutdown message to each worker Ractor
         workers_ref.each do |w|
-          w.close # Use the close method of WrappedRactor
-          puts "Closed Ractor: #{w.name}"
+          w.send(:shutdown)
+          puts "Sent shutdown to Ractor: #{w.name}" if ENV["FRACTOR_DEBUG"]
         rescue StandardError => e
-          puts "Error closing Ractor #{w.name}: #{e.message}"
+          puts "Error sending shutdown to Ractor #{w.name}: #{e.message}" if ENV["FRACTOR_DEBUG"]
         end
-        puts "Exiting now."
-        exit(1) # Exit immediately
+
+        puts "Exiting now." if ENV["FRACTOR_DEBUG"]
+        exit!(1) # Use exit! to exit immediately without running at_exit handlers
+      rescue Exception => e
+        puts "Error in signal handler: #{e.class}: #{e.message}" if ENV["FRACTOR_DEBUG"]
+        puts e.backtrace.join("\n") if ENV["FRACTOR_DEBUG"]
+        exit!(1)
       end
     end
 
@@ -208,7 +221,7 @@ module Fractor
     # Stop the supervisor (for continuous mode)
     def stop
       @running = false
-      puts "Stopping supervisor..."
+      puts "Stopping supervisor..." if ENV["FRACTOR_DEBUG"]
     end
 
     private

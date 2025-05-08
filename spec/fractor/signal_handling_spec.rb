@@ -23,7 +23,7 @@ RSpec.describe "Signal handling in Fractor" do
 
       # Start a thread to read output
       output_thread = Thread.new do
-        while line = stdout.gets
+        while (line = stdout.gets)
           puts "Test output: #{line}"
           pid = Regexp.last_match(1).to_i if line =~ /Process ID: (\d+)/
         end

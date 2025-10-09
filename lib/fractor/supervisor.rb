@@ -3,6 +3,9 @@
 require "etc"
 
 module Fractor
+  # Custom exception for shutdown signal handling
+  class ShutdownSignal < StandardError; end
+
   # Supervises multiple WrappedRactors, distributes work, and aggregates results.
   class Supervisor
     attr_reader :work_queue, :workers, :results, :worker_pools
@@ -87,31 +90,22 @@ module Fractor
 
     # Sets up a signal handler for graceful shutdown (Ctrl+C).
     def setup_signal_handler
-      # Store instance variables in local variables for the signal handler
+      # Store references needed by the signal handler
+      main_thread = Thread.current
       workers_ref = @workers
 
       # Trap INT signal (Ctrl+C)
       Signal.trap("INT") do
         puts "\nCtrl+C received. Initiating immediate shutdown..." if ENV["FRACTOR_DEBUG"]
 
-        # Set running to false to break the main loop
-        @running = false
+        # Raise ShutdownSignal in the main thread to interrupt any blocking operations
+        main_thread.raise(ShutdownSignal, "Interrupted by SIGINT")
 
-        puts "Sending shutdown message to all Ractors..." if ENV["FRACTOR_DEBUG"]
-
-        # Send shutdown message to each worker Ractor
-        workers_ref.each do |w|
-          w.send(:shutdown)
-          puts "Sent shutdown to Ractor: #{w.name}" if ENV["FRACTOR_DEBUG"]
-        rescue StandardError => e
-          puts "Error sending shutdown to Ractor #{w.name}: #{e.message}" if ENV["FRACTOR_DEBUG"]
-        end
-
-        puts "Exiting now." if ENV["FRACTOR_DEBUG"]
-        exit!(1) # Use exit! to exit immediately without running at_exit handlers
+        puts "Shutdown signal raised in main thread." if ENV["FRACTOR_DEBUG"]
       rescue Exception => e
         puts "Error in signal handler: #{e.class}: #{e.message}" if ENV["FRACTOR_DEBUG"]
         puts e.backtrace.join("\n") if ENV["FRACTOR_DEBUG"]
+        # As a last resort, force exit
         exit!(1)
       end
     end
@@ -124,8 +118,9 @@ module Fractor
       @running = true
       processed_count = 0
 
-      # Main loop: Process events until conditions are met for termination
-      while @running && (@continuous_mode || processed_count < @total_work_count)
+      begin
+        # Main loop: Process events until conditions are met for termination
+        while @running && (@continuous_mode || processed_count < @total_work_count)
         processed_count = @results.results.size + @results.errors.size
 
         if ENV["FRACTOR_DEBUG"]
@@ -205,11 +200,27 @@ module Fractor
         else
           puts "Unknown message type received: #{message[:type]} from #{wrapped_ractor.name}" if ENV["FRACTOR_DEBUG"]
         end
-        # Update processed count for the loop condition
-        processed_count = @results.results.size + @results.errors.size
+          # Update processed count for the loop condition
+          processed_count = @results.results.size + @results.errors.size
+        end
+
+        puts "Main loop finished." if ENV["FRACTOR_DEBUG"]
+      rescue ShutdownSignal => e
+        puts "Shutdown signal caught: #{e.message}" if ENV["FRACTOR_DEBUG"]
+        puts "Sending shutdown message to all Ractors..." if ENV["FRACTOR_DEBUG"]
+
+        # Send shutdown message to each worker Ractor
+        @workers.each do |w|
+          w.send(:shutdown)
+          puts "Sent shutdown to Ractor: #{w.name}" if ENV["FRACTOR_DEBUG"]
+        rescue StandardError => send_error
+          puts "Error sending shutdown to Ractor #{w.name}: #{send_error.message}" if ENV["FRACTOR_DEBUG"]
+        end
+
+        puts "Exiting due to shutdown signal." if ENV["FRACTOR_DEBUG"]
+        exit!(1) # Force exit immediately
       end
 
-      puts "Main loop finished." if ENV["FRACTOR_DEBUG"]
       return if @continuous_mode
 
       return unless ENV["FRACTOR_DEBUG"]

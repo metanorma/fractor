@@ -45,7 +45,7 @@ module MultiWorkType
     end
 
     def to_s
-      "ImageWork: dimensions=#{dimensions.join("x")}, format=#{format}"
+      "ImageWork: dimensions=#{dimensions.join('x')}, format=#{format}"
     end
   end
 
@@ -62,7 +62,7 @@ module MultiWorkType
         error = TypeError.new("Unsupported work type: #{work.class}")
         Fractor::WorkResult.new(
           error: error,
-          work: work
+          work: work,
         )
       end
     end
@@ -74,7 +74,8 @@ module MultiWorkType
       sleep(rand(0.01..0.05)) # Simulate processing time
 
       processed_text = case work.format
-                       when :markdown then process_markdown(work.data, work.options)
+                       when :markdown then process_markdown(work.data,
+                                                            work.options)
                        when :html then process_html(work.data, work.options)
                        when :json then process_json(work.data, work.options)
                        else work.data.upcase # Simple transformation for plain text
@@ -87,10 +88,10 @@ module MultiWorkType
           transformed_data: processed_text,
           metadata: {
             word_count: processed_text.split(/\s+/).size,
-            char_count: processed_text.length
-          }
+            char_count: processed_text.length,
+          },
         },
-        work: work
+        work: work,
       )
     end
 
@@ -110,13 +111,13 @@ module MultiWorkType
         applied_filters: %i[sharpen contrast],
         processing_metadata: {
           original_size: input_size,
-          processed_size: (input_size * 0.8).to_i # Simulate compression
-        }
+          processed_size: (input_size * 0.8).to_i, # Simulate compression
+        },
       }
 
       Fractor::WorkResult.new(
         result: simulated_result,
-        work: work
+        work: work,
       )
     end
 
@@ -127,7 +128,7 @@ module MultiWorkType
       links = text.scan(/\[(.+?)\]\((.+?)\)/)
 
       "Processed Markdown: #{text.length} chars, #{headers.size} headers, #{links.size} links\n" \
-        "Headers: #{headers.join(", ")}\n" \
+        "Headers: #{headers.join(', ')}\n" \
         "#{text.gsub(/^#+\s+(.+)$/, '💫 \1 💫')}"
     end
 
@@ -136,7 +137,7 @@ module MultiWorkType
       tags = text.scan(/<(\w+)[^>]*>/).flatten
 
       "Processed HTML: #{text.length} chars, #{tags.size} tags\n" \
-        "Tags: #{tags.uniq.join(", ")}\n" \
+        "Tags: #{tags.uniq.join(', ')}\n" \
         "#{text.gsub(%r{<(\w+)[^>]*>(.+?)</\1>}, '✨\2✨')}"
     end
 
@@ -147,7 +148,7 @@ module MultiWorkType
       keys = data.keys
 
       "Processed JSON: #{keys.size} top-level keys\n" \
-        "Keys: #{keys.join(", ")}\n" \
+        "Keys: #{keys.join(', ')}\n" \
         "Pretty-printed: #{data}"
     rescue StandardError => e
       "Invalid JSON: #{e.message}"
@@ -162,14 +163,14 @@ module MultiWorkType
       # Create supervisor with a MultiFormatWorker pool
       @supervisor = Fractor::Supervisor.new(
         worker_pools: [
-          { worker_class: MultiFormatWorker, num_workers: worker_count }
-        ]
+          { worker_class: MultiFormatWorker, num_workers: worker_count },
+        ],
       )
 
       @results = {
         text: [],
         image: [],
-        errors: []
+        errors: [],
       }
     end
 
@@ -197,10 +198,10 @@ module MultiWorkType
         total_items: text_items.size + image_items.size,
         processed: {
           text: @results[:text].size,
-          image: @results[:image].size
+          image: @results[:image].size,
         },
         errors: @results[:errors].size,
-        results: @results
+        results: @results,
       }
     end
 
@@ -220,7 +221,7 @@ module MultiWorkType
       results_aggregator.errors.each do |error_result|
         @results[:errors] << {
           error: error_result.error,
-          work_type: error_result.work.class.name
+          work_type: error_result.work.class.name,
         }
       end
 
@@ -244,21 +245,21 @@ if __FILE__ == $PROGRAM_NAME
   text_items = [
     {
       data: "This is a plain text document. It has no special formatting.",
-      format: :plain
+      format: :plain,
     },
     {
       data: "# Markdown Document\n\nThis is a **bold** statement. Here's a [link](https://example.com).",
-      format: :markdown
+      format: :markdown,
     },
     {
       data: "<html><body><h1>HTML Document</h1><p>This is a paragraph.</p></body></html>",
-      format: :html
+      format: :html,
     },
     {
       data: "{name: 'Product', price: 29.99, tags: ['electronics', 'gadget']}",
       format: :json,
-      options: { pretty: true }
-    }
+      options: { pretty: true },
+    },
   ]
 
   # Sample image items (simulated)
@@ -266,18 +267,18 @@ if __FILE__ == $PROGRAM_NAME
     {
       data: "simulated_jpeg_data_1",
       dimensions: [800, 600],
-      format: :jpeg
+      format: :jpeg,
     },
     {
       data: "simulated_png_data_1",
       dimensions: [1024, 768],
-      format: :png
+      format: :png,
     },
     {
       data: "simulated_gif_data_1",
       dimensions: [320, 240],
-      format: :gif
-    }
+      format: :gif,
+    },
   ]
 
   worker_count = 4
@@ -309,8 +310,8 @@ if __FILE__ == $PROGRAM_NAME
   puts "Image Processing Results:"
   result[:results][:image].each_with_index do |image_result, index|
     puts "Image Item #{index + 1} (#{image_result[:format]}):"
-    puts "  Dimensions: #{image_result[:dimensions].join("x")}"
-    puts "  Applied filters: #{image_result[:applied_filters].join(", ")}"
+    puts "  Dimensions: #{image_result[:dimensions].join('x')}"
+    puts "  Applied filters: #{image_result[:applied_filters].join(', ')}"
     puts "  Compression: #{(1 - image_result[:processing_metadata][:processed_size].to_f / image_result[:processing_metadata][:original_size]).round(2) * 100}%"
     puts
   end

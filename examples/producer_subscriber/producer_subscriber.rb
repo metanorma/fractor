@@ -8,7 +8,7 @@ module ProducerSubscriber
     def initialize(data, depth = 0)
       super({
         data: data,
-        depth: depth
+        depth: depth,
       })
     end
 
@@ -31,7 +31,7 @@ module ProducerSubscriber
       super({
         data: data,
         parent_id: parent_id,
-        depth: depth
+        depth: depth,
       })
     end
 
@@ -63,7 +63,7 @@ module ProducerSubscriber
       else
         Fractor::WorkResult.new(
           error: "Unknown work type: #{work.class}",
-          work: work
+          work: work,
         )
       end
     end
@@ -80,13 +80,13 @@ module ProducerSubscriber
       # Return the result with metadata about sub-works
       result = {
         processed_data: processed_data,
-        sub_works: [] # Will be populated by the supervisor
+        sub_works: [], # Will be populated by the supervisor
       }
 
       # Return a successful result
       Fractor::WorkResult.new(
         result: result,
-        work: work
+        work: work,
       )
     end
 
@@ -101,9 +101,9 @@ module ProducerSubscriber
       Fractor::WorkResult.new(
         result: {
           processed_data: processed_data,
-          parent_id: work.parent_id
+          parent_id: work.parent_id,
         },
-        work: work
+        work: work,
       )
     end
   end
@@ -122,8 +122,8 @@ module ProducerSubscriber
       # Create the supervisor
       supervisor = Fractor::Supervisor.new(
         worker_pools: [
-          { worker_class: MultiWorker, num_workers: @worker_count }
-        ]
+          { worker_class: MultiWorker, num_workers: @worker_count },
+        ],
       )
 
       # Create and add initial work items
@@ -144,12 +144,14 @@ module ProducerSubscriber
         # Create a new supervisor for sub-works
         sub_supervisor = Fractor::Supervisor.new(
           worker_pools: [
-            { worker_class: MultiWorker, num_workers: @worker_count }
-          ]
+            { worker_class: MultiWorker, num_workers: @worker_count },
+          ],
         )
 
         # Create and add the sub-work items
-        sub_work_items = sub_works.map { |sw| SubWork.new(sw[:data], sw[:parent_id], sw[:depth]) }
+        sub_work_items = sub_works.map do |sw|
+          SubWork.new(sw[:data], sw[:parent_id], sw[:depth])
+        end
         sub_supervisor.add_work_items(sub_work_items)
         sub_supervisor.run
 
@@ -179,12 +181,14 @@ module ProducerSubscriber
           sub_works << {
             data: sub_data,
             parent_id: work.object_id,
-            depth: work.depth + 1
+            depth: work.depth + 1,
           }
         end
 
         # Store the sub-work IDs in the result for reference
-        result.result[:sub_works] = sub_works.last(3).map { |sw| sw[:parent_id] }
+        result.result[:sub_works] = sub_works.last(3).map do |sw|
+          sw[:parent_id]
+        end
       end
 
       sub_works
@@ -195,7 +199,7 @@ module ProducerSubscriber
       initial_results.results.each do |result|
         @result_tree[result.work.object_id] = {
           data: result.result[:processed_data],
-          children: []
+          children: [],
         }
       end
 
@@ -236,7 +240,7 @@ if __FILE__ == $PROGRAM_NAME
   documents = [
     "Annual Report 2025",
     "Technical Documentation",
-    "Research Paper"
+    "Research Paper",
   ]
 
   worker_count = 4

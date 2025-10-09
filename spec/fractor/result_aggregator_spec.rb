@@ -6,7 +6,7 @@ RSpec.describe Fractor::ResultAggregator do
 
   describe "#initialize" do
     it "initializes with empty results and errors arrays" do
-      aggregator = Fractor::ResultAggregator.new
+      aggregator = described_class.new
 
       expect(aggregator.results).to be_an(Array)
       expect(aggregator.results).to be_empty
@@ -16,7 +16,7 @@ RSpec.describe Fractor::ResultAggregator do
   end
 
   describe "#add_result" do
-    let(:aggregator) { Fractor::ResultAggregator.new }
+    let(:aggregator) { described_class.new }
 
     it "adds successful results to the results array" do
       expect { aggregator.add_result(success_result) }
@@ -57,7 +57,7 @@ RSpec.describe Fractor::ResultAggregator do
 
   describe "#to_s" do
     it "returns a string with counts of results and errors" do
-      aggregator = Fractor::ResultAggregator.new
+      aggregator = described_class.new
 
       # Add some results
       2.times { aggregator.add_result(success_result) }
@@ -69,7 +69,7 @@ RSpec.describe Fractor::ResultAggregator do
 
   describe "#inspect" do
     it "returns a hash with results and errors" do
-      aggregator = Fractor::ResultAggregator.new
+      aggregator = described_class.new
 
       # Add some results
       aggregator.add_result(success_result)

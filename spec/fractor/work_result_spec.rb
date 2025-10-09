@@ -5,7 +5,7 @@ RSpec.describe Fractor::WorkResult do
 
   describe "#initialize" do
     it "initializes with a result" do
-      result = Fractor::WorkResult.new(result: "success", work: sample_work)
+      result = described_class.new(result: "success", work: sample_work)
 
       expect(result.result).to eq("success")
       expect(result.error).to be_nil
@@ -13,7 +13,7 @@ RSpec.describe Fractor::WorkResult do
     end
 
     it "initializes with an error" do
-      result = Fractor::WorkResult.new(error: "failed", work: sample_work)
+      result = described_class.new(error: "failed", work: sample_work)
 
       expect(result.result).to be_nil
       expect(result.error).to eq("failed")
@@ -21,7 +21,7 @@ RSpec.describe Fractor::WorkResult do
     end
 
     it "initializes with only required parameters" do
-      result = Fractor::WorkResult.new
+      result = described_class.new
 
       expect(result.result).to be_nil
       expect(result.error).to be_nil
@@ -31,31 +31,31 @@ RSpec.describe Fractor::WorkResult do
 
   describe "#success?" do
     it "returns true when no error is present" do
-      result = Fractor::WorkResult.new(result: "success")
+      result = described_class.new(result: "success")
       expect(result.success?).to be true
     end
 
     it "returns false when an error is present" do
-      result = Fractor::WorkResult.new(error: "failed")
+      result = described_class.new(error: "failed")
       expect(result.success?).to be false
     end
   end
 
   describe "#to_s" do
     it "returns a success message when successful" do
-      result = Fractor::WorkResult.new(result: "success data")
+      result = described_class.new(result: "success data")
       expect(result.to_s).to eq("Result: success data")
     end
 
     it "returns an error message when failed" do
-      result = Fractor::WorkResult.new(error: "failed", work: sample_work)
+      result = described_class.new(error: "failed", work: sample_work)
       expect(result.to_s).to eq("Error: failed, Work: Work: test input")
     end
   end
 
   describe "#inspect" do
     it "returns a hash with result for successful results" do
-      result = Fractor::WorkResult.new(result: "success", work: sample_work)
+      result = described_class.new(result: "success", work: sample_work)
       inspected = result.inspect
 
       expect(inspected).to be_a(Hash)
@@ -65,7 +65,7 @@ RSpec.describe Fractor::WorkResult do
     end
 
     it "returns a hash with error for failed results" do
-      result = Fractor::WorkResult.new(error: "failed", work: sample_work)
+      result = described_class.new(error: "failed", work: sample_work)
       inspected = result.inspect
 
       expect(inspected).to be_a(Hash)
@@ -75,7 +75,7 @@ RSpec.describe Fractor::WorkResult do
     end
 
     it "handles nil work safely" do
-      result = Fractor::WorkResult.new(result: "success", work: nil)
+      result = described_class.new(result: "success", work: nil)
       inspected = result.inspect
 
       expect(inspected).to be_a(Hash)

@@ -10,7 +10,7 @@ module HierarchicalHasher
       super({
         data: data,
         start: start,
-        length: length || data.bytesize
+        length: length || data.bytesize,
       })
     end
 
@@ -46,15 +46,15 @@ module HierarchicalHasher
           result: {
             start: work.start,
             length: work.length,
-            hash: hash
+            hash: hash,
           },
-          work: work
+          work: work,
         )
       rescue StandardError => e
         # Return error result if something goes wrong
         Fractor::WorkResult.new(
           error: "Failed to hash chunk: #{e.message}",
-          work: work
+          work: work,
         )
       end
     end
@@ -74,8 +74,8 @@ module HierarchicalHasher
       # Create the supervisor with our worker class in a worker pool
       supervisor = Fractor::Supervisor.new(
         worker_pools: [
-          { worker_class: HashWorker, num_workers: @worker_count }
-        ]
+          { worker_class: HashWorker, num_workers: @worker_count },
+        ],
       )
 
       # Load the file and create work chunks
@@ -111,10 +111,14 @@ module HierarchicalHasher
       return nil if results_aggregator.results.empty?
 
       # Sort results by start position
-      sorted_results = results_aggregator.results.sort_by { |result| result.result[:start] }
+      sorted_results = results_aggregator.results.sort_by do |result|
+        result.result[:start]
+      end
 
       # Concatenate all hashes with newlines
-      combined_hash_string = sorted_results.map { |result| result.result[:hash] }.join("\n")
+      combined_hash_string = sorted_results.map do |result|
+        result.result[:hash]
+      end.join("\n")
 
       # Calculate final SHA-256 hash (instead of SHA3)
       Digest::SHA256.hexdigest(combined_hash_string)

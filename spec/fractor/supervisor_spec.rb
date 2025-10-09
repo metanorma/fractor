@@ -36,10 +36,10 @@ RSpec.describe Fractor::Supervisor do
   skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
   describe "#initialize" do
     it "initializes with worker pools" do
-      supervisor = Fractor::Supervisor.new(
+      supervisor = described_class.new(
         worker_pools: [
-          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 }
-        ]
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 },
+        ],
       )
 
       expect(supervisor.worker_pools.size).to eq(1)
@@ -51,16 +51,16 @@ RSpec.describe Fractor::Supervisor do
 
     it "raises error if worker_class does not inherit from Fractor::Worker" do
       expect do
-        Fractor::Supervisor.new(
+        described_class.new(
           worker_pools: [
-            { worker_class: Class.new, num_workers: 2 }
-          ]
+            { worker_class: Class.new, num_workers: 2 },
+          ],
         )
       end.to raise_error(ArgumentError, /must inherit from Fractor::Worker/)
     end
 
     it "initializes with empty worker pools" do
-      supervisor = Fractor::Supervisor.new
+      supervisor = described_class.new
       expect(supervisor.worker_pools).to be_empty
       expect(supervisor.work_queue).to be_a(Queue)
       expect(supervisor.work_queue).to be_empty
@@ -71,10 +71,10 @@ RSpec.describe Fractor::Supervisor do
         # Mock Etc.nprocessors to return a known value
         allow(Etc).to receive(:nprocessors).and_return(8)
 
-        supervisor = Fractor::Supervisor.new(
+        supervisor = described_class.new(
           worker_pools: [
-            { worker_class: SupervisorSpec::TestWorker }
-          ]
+            { worker_class: SupervisorSpec::TestWorker },
+          ],
         )
 
         expect(supervisor.worker_pools.first[:num_workers]).to eq(8)
@@ -84,10 +84,10 @@ RSpec.describe Fractor::Supervisor do
         # Mock Etc.nprocessors - should not be called
         allow(Etc).to receive(:nprocessors).and_return(8)
 
-        supervisor = Fractor::Supervisor.new(
+        supervisor = described_class.new(
           worker_pools: [
-            { worker_class: SupervisorSpec::TestWorker, num_workers: 4 }
-          ]
+            { worker_class: SupervisorSpec::TestWorker, num_workers: 4 },
+          ],
         )
 
         expect(supervisor.worker_pools.first[:num_workers]).to eq(4)
@@ -97,10 +97,10 @@ RSpec.describe Fractor::Supervisor do
         # Mock Etc.nprocessors to raise an error
         allow(Etc).to receive(:nprocessors).and_raise(StandardError.new("Detection failed"))
 
-        supervisor = Fractor::Supervisor.new(
+        supervisor = described_class.new(
           worker_pools: [
-            { worker_class: SupervisorSpec::TestWorker }
-          ]
+            { worker_class: SupervisorSpec::TestWorker },
+          ],
         )
 
         expect(supervisor.worker_pools.first[:num_workers]).to eq(2)
@@ -109,11 +109,11 @@ RSpec.describe Fractor::Supervisor do
       it "supports mixed auto-detection and explicit configuration" do
         allow(Etc).to receive(:nprocessors).and_return(8)
 
-        supervisor = Fractor::Supervisor.new(
+        supervisor = described_class.new(
           worker_pools: [
             { worker_class: SupervisorSpec::TestWorker }, # Auto-detected
-            { worker_class: SupervisorSpec::TestWorker, num_workers: 3 } # Explicit
-          ]
+            { worker_class: SupervisorSpec::TestWorker, num_workers: 3 }, # Explicit
+          ],
         )
 
         expect(supervisor.worker_pools[0][:num_workers]).to eq(8)
@@ -124,10 +124,10 @@ RSpec.describe Fractor::Supervisor do
 
   describe "#add_work_item" do
     let(:supervisor) do
-      Fractor::Supervisor.new(
+      described_class.new(
         worker_pools: [
-          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 }
-        ]
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 },
+        ],
       )
     end
 
@@ -147,10 +147,10 @@ RSpec.describe Fractor::Supervisor do
 
   describe "#add_work_items" do
     let(:supervisor) do
-      Fractor::Supervisor.new(
+      described_class.new(
         worker_pools: [
-          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 }
-        ]
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 },
+        ],
       )
     end
 
@@ -158,7 +158,7 @@ RSpec.describe Fractor::Supervisor do
       works = [
         SupervisorSpec::TestWork.new(1),
         SupervisorSpec::TestWork.new(2),
-        SupervisorSpec::TestWork.new(3)
+        SupervisorSpec::TestWork.new(3),
       ]
 
       expect do
@@ -177,10 +177,10 @@ RSpec.describe Fractor::Supervisor do
     it "processes work items and collects results" do
       # This test simulates a simple workflow with a supervisor
       # It's a small-scale integration test
-      supervisor = Fractor::Supervisor.new(
+      supervisor = described_class.new(
         worker_pools: [
-          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 }
-        ]
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 },
+        ],
       )
 
       # Add work items - use a small number to keep the test fast
@@ -189,7 +189,7 @@ RSpec.describe Fractor::Supervisor do
                                   SupervisorSpec::TestWork.new(2),
                                   SupervisorSpec::TestWork.new(3),
                                   SupervisorSpec::TestWork.new(4),
-                                  SupervisorSpec::TestWork.new(5)
+                                  SupervisorSpec::TestWork.new(5),
                                 ])
 
       # Run the supervisor with a small timeout
@@ -204,7 +204,11 @@ RSpec.describe Fractor::Supervisor do
       # Verify that all results were processed correctly
       supervisor.results.results.map(&:result)
       # For any item that had error, the work value would be 5
-      expect(supervisor.results.errors.map { |e| e.work.value }).to eq([5]) if supervisor.results.errors.any?
+      if supervisor.results.errors.any?
+        expect(supervisor.results.errors.map do |e|
+          e.work.value
+        end).to eq([5])
+      end
 
       # Verify the error only if there's an error result
       if supervisor.results.errors.any?

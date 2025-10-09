@@ -52,7 +52,8 @@ module Fractor
             # Yield an error message back
             # Ensure the original work object is included in the error result
             error_result = Fractor::WorkResult.new(error: e.message, work: work)
-            Ractor.yield({ type: :error, result: error_result, processor: name })
+            Ractor.yield({ type: :error, result: error_result,
+                           processor: name })
           end
         end
       rescue Ractor::ClosedError

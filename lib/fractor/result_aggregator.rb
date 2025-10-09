@@ -36,7 +36,7 @@ module Fractor
     def inspect
       {
         results: @results.map(&:inspect),
-        errors: @errors.map(&:inspect)
+        errors: @errors.map(&:inspect),
       }
     end
   end

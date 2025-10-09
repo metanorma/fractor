@@ -9,7 +9,7 @@ module SpecializedWorkers
       super({
         data: data,
         operation: operation,
-        parameters: parameters
+        parameters: parameters,
       })
     end
 
@@ -32,12 +32,13 @@ module SpecializedWorkers
 
   # Second work type: Database operations
   class DatabaseWork < Fractor::Work
-    def initialize(data = "", query_type = :select, table = "unknown", conditions = {})
+    def initialize(data = "", query_type = :select, table = "unknown",
+conditions = {})
       super({
         data: data,
         query_type: query_type,
         table: table,
-        conditions: conditions
+        conditions: conditions,
       })
     end
 
@@ -74,14 +75,16 @@ module SpecializedWorkers
       unless work.is_a?(ComputeWork)
         return Fractor::WorkResult.new(
           error: "ComputeWorker can only process ComputeWork, got: #{work.class}",
-          work: work
+          work: work,
         )
       end
 
       # Process based on the requested operation
       result = case work.operation
-               when :matrix_multiply then matrix_multiply(work.data, work.parameters)
-               when :image_transform then image_transform(work.data, work.parameters)
+               when :matrix_multiply then matrix_multiply(work.data,
+                                                          work.parameters)
+               when :image_transform then image_transform(work.data,
+                                                          work.parameters)
                when :path_finding then path_finding(work.data, work.parameters)
                else default_computation(work.data, work.parameters)
                end
@@ -90,9 +93,9 @@ module SpecializedWorkers
         result: {
           operation: work.operation,
           computation_result: result,
-          resources_used: @compute_resources
+          resources_used: @compute_resources,
         },
-        work: work
+        work: work,
       )
     end
 
@@ -110,7 +113,7 @@ module SpecializedWorkers
       # Simulate image transformation
       sleep(rand(0.1..0.3))
       transforms = params[:transforms] || %i[rotate scale]
-      "Image transformation applied: #{transforms.join(", ")} with parameters #{params}"
+      "Image transformation applied: #{transforms.join(', ')} with parameters #{params}"
     end
 
     def path_finding(_data, params)
@@ -140,7 +143,7 @@ module SpecializedWorkers
       unless work.is_a?(DatabaseWork)
         return Fractor::WorkResult.new(
           error: "DatabaseWorker can only process DatabaseWork, got: #{work.class}",
-          work: work
+          work: work,
         )
       end
 
@@ -148,7 +151,8 @@ module SpecializedWorkers
       result = case work.query_type
                when :select then perform_select(work.table, work.conditions)
                when :insert then perform_insert(work.table, work.data)
-               when :update then perform_update(work.table, work.data, work.conditions)
+               when :update then perform_update(work.table, work.data,
+                                                work.conditions)
                when :delete then perform_delete(work.table, work.conditions)
                else default_query(work.query_type, work.table, work.conditions)
                end
@@ -159,9 +163,9 @@ module SpecializedWorkers
           table: work.table,
           rows_affected: result[:rows_affected],
           data: result[:data],
-          execution_time: result[:time]
+          execution_time: result[:time],
         },
-        work: work
+        work: work,
       )
     end
 
@@ -174,8 +178,10 @@ module SpecializedWorkers
       record_count = rand(0..20)
       {
         rows_affected: record_count,
-        data: record_count.times.map { |i| { id: i + 1, name: "Record #{i + 1}" } },
-        time: rand(0.01..0.05)
+        data: Array.new(record_count) do |i|
+          { id: i + 1, name: "Record #{i + 1}" }
+        end,
+        time: rand(0.01..0.05),
       }
     end
 
@@ -185,7 +191,7 @@ module SpecializedWorkers
       {
         rows_affected: 1,
         data: { id: rand(1000..9999) },
-        time: rand(0.01..0.03)
+        time: rand(0.01..0.03),
       }
     end
 
@@ -196,7 +202,7 @@ module SpecializedWorkers
       {
         rows_affected: affected,
         data: nil,
-        time: rand(0.01..0.05)
+        time: rand(0.01..0.05),
       }
     end
 
@@ -207,7 +213,7 @@ module SpecializedWorkers
       {
         rows_affected: affected,
         data: nil,
-        time: rand(0.01..0.03)
+        time: rand(0.01..0.03),
       }
     end
 
@@ -217,7 +223,7 @@ module SpecializedWorkers
       {
         rows_affected: 0,
         data: nil,
-        time: rand(0.005..0.01)
+        time: rand(0.005..0.01),
       }
     end
   end
@@ -230,14 +236,14 @@ module SpecializedWorkers
       # Create separate supervisors for each worker type
       @compute_supervisor = Fractor::Supervisor.new(
         worker_pools: [
-          { worker_class: ComputeWorker, num_workers: compute_workers }
-        ]
+          { worker_class: ComputeWorker, num_workers: compute_workers },
+        ],
       )
 
       @db_supervisor = Fractor::Supervisor.new(
         worker_pools: [
-          { worker_class: DatabaseWorker, num_workers: db_workers }
-        ]
+          { worker_class: DatabaseWorker, num_workers: db_workers },
+        ],
       )
 
       @compute_results = []
@@ -253,7 +259,8 @@ module SpecializedWorkers
 
       # Create and add database work items
       db_work_items = db_tasks.map do |task|
-        DatabaseWork.new(task[:data], task[:query_type], task[:table], task[:conditions])
+        DatabaseWork.new(task[:data], task[:query_type], task[:table],
+                         task[:conditions])
       end
       @db_supervisor.add_work_items(db_work_items)
 
@@ -277,13 +284,13 @@ module SpecializedWorkers
         computation: {
           tasks: compute_tasks.size,
           completed: @compute_results.size,
-          results: @compute_results
+          results: @compute_results,
         },
         database: {
           tasks: db_tasks.size,
           completed: @db_results.size,
-          results: @db_results
-        }
+          results: @db_results,
+        },
       }
     end
 
@@ -316,18 +323,18 @@ if __FILE__ == $PROGRAM_NAME
     {
       operation: :matrix_multiply,
       data: "Matrix data...",
-      parameters: { size: [10, 10] }
+      parameters: { size: [10, 10] },
     },
     {
       operation: :image_transform,
       data: "Image data...",
-      parameters: { transforms: %i[rotate scale blur], angle: 45, scale: 1.5 }
+      parameters: { transforms: %i[rotate scale blur], angle: 45, scale: 1.5 },
     },
     {
       operation: :path_finding,
       data: "Graph data...",
-      parameters: { algorithm: :dijkstra, nodes: 20, start: 1, end: 15 }
-    }
+      parameters: { algorithm: :dijkstra, nodes: 20, start: 1, end: 15 },
+    },
   ]
 
   # Prepare database tasks
@@ -335,24 +342,24 @@ if __FILE__ == $PROGRAM_NAME
     {
       query_type: :select,
       table: "users",
-      conditions: { active: true, role: "admin" }
+      conditions: { active: true, role: "admin" },
     },
     {
       query_type: :insert,
       table: "orders",
-      data: "Order data..."
+      data: "Order data...",
     },
     {
       query_type: :update,
       table: "products",
       data: "Product data...",
-      conditions: { category: "electronics" }
+      conditions: { category: "electronics" },
     },
     {
       query_type: :delete,
       table: "sessions",
-      conditions: { expired: true }
-    }
+      conditions: { expired: true },
+    },
   ]
 
   compute_workers = 2
@@ -363,7 +370,7 @@ if __FILE__ == $PROGRAM_NAME
   start_time = Time.now
   system = SpecializedWorkers::HybridSystem.new(
     compute_workers: compute_workers,
-    db_workers: db_workers
+    db_workers: db_workers,
   )
   result = system.process_mixed_workload(compute_tasks, db_tasks)
   end_time = Time.now

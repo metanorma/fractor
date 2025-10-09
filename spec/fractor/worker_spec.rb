@@ -11,12 +11,13 @@ end
 RSpec.describe Fractor::Worker do
   describe "#process" do
     it "raises NotImplementedError when not overridden" do
-      worker = Fractor::Worker.new
+      worker = described_class.new
       work = Fractor::Work.new("test")
 
       expect do
         worker.process(work)
-      end.to raise_error(NotImplementedError, "Subclasses must implement the 'process' method.")
+      end.to raise_error(NotImplementedError,
+                         "Subclasses must implement the 'process' method.")
     end
 
     it "can be overridden by a subclass" do

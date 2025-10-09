@@ -32,7 +32,7 @@
 #
 # =============================================================================
 
-require_relative "../../lib/fractor"
+require_relative '../../lib/fractor'
 
 # Client-specific work item implementation inheriting from Fractor::Work
 class MyWork < Fractor::Work
@@ -72,14 +72,14 @@ class MyWorker < Fractor::Worker
   # It should return a Fractor::WorkResult object
   def process(work)
     # Only print debug information if FRACTOR_DEBUG is enabled
-    puts "Working on '#{work.inspect}'" if ENV["FRACTOR_DEBUG"]
+    puts "Working on '#{work.inspect}'" if ENV['FRACTOR_DEBUG']
 
     # Check work type and handle accordingly
     if work.is_a?(MyWork)
       if work.value == 5
         # Return a Fractor::WorkResult for errors
         # Store the error object, not just the string
-        error = StandardError.new("Cannot process value 5")
+        error = StandardError.new('Cannot process value 5')
         return Fractor::WorkResult.new(error: error, work: work)
       end
 
@@ -116,8 +116,8 @@ if __FILE__ == $PROGRAM_NAME
   # Run the supervisor to start processing work
   supervisor.run
 
-  puts "Processing complete."
-  puts "Final Aggregated Results:"
+  puts 'Processing complete.'
+  puts 'Final Aggregated Results:'
   # Access the results aggregator from the supervisor
   puts supervisor.results.inspect
 

@@ -2,7 +2,7 @@
 
 RSpec.describe Fractor do
   it "has a version number" do
-    expect(Fractor::VERSION).not_to be nil
+    expect(Fractor::VERSION).not_to be_nil
   end
 
   context "components" do

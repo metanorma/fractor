@@ -1,0 +1,52 @@
+= Auto-Detection Example
+
+This example demonstrates Fractor's automatic worker detection feature.
+
+== Purpose
+
+Shows how Fractor can automatically detect the number of available processors on your system and create the optimal number of workers without manual configuration.
+
+== What This Demonstrates
+
+* How Fractor automatically detects the number of available processors
+* Comparison between auto-detection and explicit worker configuration
+* Mixed configuration (some pools with auto-detection, some explicit)
+* How to verify the number of workers being used
+
+== When to Use Auto-Detection
+
+* For portable code that adapts to different environments
+* When you want optimal resource utilization without manual tuning
+* For development where the number of cores varies across machines
+
+== When to Set Explicit Values
+
+* When you need precise control over resource usage
+* For production environments with specific requirements
+* When limiting workers due to memory or other constraints
+
+== Running the Example
+
+[source,shell]
+----
+ruby examples/auto_detection/auto_detection.rb
+----
+
+== Expected Output
+
+The script will:
+
+1. Display the number of processors detected on your system
+2. Run three examples:
+   * Example 1: Auto-detection (uses all available processors)
+   * Example 2: Explicit configuration (uses exactly 4 workers)
+   * Example 3: Mixed configuration (combines both approaches)
+3. Show results from processing work items in parallel
+4. Provide a summary of benefits for each approach
+
+== Key Takeaways
+
+* Auto-detection provides automatic adaptation to different environments
+* Explicit configuration provides precise control when needed
+* You can mix both approaches in the same supervisor
+* Best practice: use auto-detection for development, tune for production if needed

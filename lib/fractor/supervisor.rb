@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'etc'
+
 module Fractor
   # Supervises multiple WrappedRactors, distributes work, and aggregates results.
   class Supervisor
@@ -13,7 +15,7 @@ module Fractor
     def initialize(worker_pools: [], continuous_mode: false)
       @worker_pools = worker_pools.map do |pool_config|
         worker_class = pool_config[:worker_class]
-        num_workers = pool_config[:num_workers] || 2
+        num_workers = pool_config[:num_workers] || detect_num_workers
 
         raise ArgumentError, "#{worker_class} must inherit from Fractor::Worker" unless worker_class < Fractor::Worker
 
@@ -225,6 +227,21 @@ module Fractor
     end
 
     private
+
+    # Detects the number of available processors on the system.
+    # Returns the number of processors, or 2 as a fallback if detection fails.
+    def detect_num_workers
+      num_processors = Etc.nprocessors
+      if ENV["FRACTOR_DEBUG"]
+        puts "Auto-detected #{num_processors} available processors"
+      end
+      num_processors
+    rescue StandardError => e
+      if ENV["FRACTOR_DEBUG"]
+        puts "Failed to detect processors: #{e.message}. Using default of 2 workers."
+      end
+      2
+    end
 
     # Helper method to send the next available work item to a specific Ractor.
     def send_next_work_if_available(wrapped_ractor)

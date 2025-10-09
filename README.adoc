@@ -267,16 +267,25 @@ The Supervisor also manages the work queue and the ResultAggregator, which
 collects and organizes all results from the workers.
 
 To set up the Supervisor, you specify worker pools, each containing a Worker class
-and the number of workers to create. You can create multiple worker pools with
-different worker types to handle different kinds of work. Each worker pool can
-process any type of Work object that inherits from Fractor::Work.
+and optionally the number of workers to create. If you don't specify `num_workers`,
+Fractor will automatically detect the number of available processors on your system
+and use that value. You can create multiple worker pools with different worker types
+to handle different kinds of work. Each worker pool can process any type of Work
+object that inherits from Fractor::Work.
 
 [source,ruby]
 ----
-# Create the supervisor
+# Create the supervisor with auto-detected number of workers
 supervisor = Fractor::Supervisor.new(
   worker_pools: [
-    { worker_class: MyWorker, num_workers: 4 }  # One pool with 4 workers
+    { worker_class: MyWorker }  # Number of workers auto-detected
+  ]
+)
+
+# Or explicitly specify the number of workers
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 4 }  # Explicitly use 4 workers
   ]
 )
 
@@ -619,6 +628,47 @@ supervisor = Fractor::Supervisor.new(
 )
 ----
 
+==== Worker auto-detection
+
+Fractor automatically detects the number of available processors on your system
+and uses that value when `num_workers` is not specified. This provides optimal
+resource utilization across different deployment environments without requiring
+manual configuration.
+
+[source,ruby]
+----
+# Auto-detect number of workers (recommended for most cases)
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }  # Will use number of available processors
+  ]
+)
+
+# Explicitly set number of workers (useful for specific requirements)
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 4 }  # Always use exactly 4 workers
+  ]
+)
+
+# Mix auto-detection and explicit configuration
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: FastWorker },                    # Auto-detected
+    { worker_class: HeavyWorker, num_workers: 2 }    # Explicitly 2 workers
+  ]
+)
+----
+
+The auto-detection uses Ruby's `Etc.nprocessors` which returns the number of
+available processors. If detection fails for any reason, it falls back to 2
+workers.
+
+[TIP]
+* Use auto-detection for portable code that adapts to different environments
+* Explicitly set `num_workers` when you need precise control over resource usage
+* Consider system load and other factors when choosing explicit values
+
 ==== Adding work
 
 You can add work items individually or in batches:
@@ -897,7 +947,23 @@ Key features:
 * Simple Supervisor setup
 * Parallel processing of work items
 * Error handling and result aggregation
+* Auto-detection of available processors
 * Graceful shutdown on completion
+
+=== Auto-detection example
+
+The Auto-Detection Example (link:examples/auto_detection/[examples/auto_detection/])
+demonstrates Fractor's automatic worker detection feature. It shows how to use
+auto-detection, explicit configuration, and mixed approaches for controlling
+the number of workers.
+
+Key features:
+
+* Automatic detection of available processors
+* Comparison of auto-detection vs explicit configuration
+* Mixed configuration with multiple worker pools
+* Best practices for worker configuration
+* Portable code that adapts to different environments
 
 === Hierarchical hasher
 

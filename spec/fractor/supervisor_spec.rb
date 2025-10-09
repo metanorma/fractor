@@ -65,6 +65,61 @@ RSpec.describe Fractor::Supervisor do
       expect(supervisor.work_queue).to be_a(Queue)
       expect(supervisor.work_queue).to be_empty
     end
+
+    context "worker auto-detection" do
+      it "auto-detects number of workers when num_workers is not specified" do
+        # Mock Etc.nprocessors to return a known value
+        allow(Etc).to receive(:nprocessors).and_return(8)
+
+        supervisor = Fractor::Supervisor.new(
+          worker_pools: [
+            { worker_class: SupervisorSpec::TestWorker }
+          ]
+        )
+
+        expect(supervisor.worker_pools.first[:num_workers]).to eq(8)
+      end
+
+      it "uses explicitly specified num_workers when provided" do
+        # Mock Etc.nprocessors - should not be called
+        allow(Etc).to receive(:nprocessors).and_return(8)
+
+        supervisor = Fractor::Supervisor.new(
+          worker_pools: [
+            { worker_class: SupervisorSpec::TestWorker, num_workers: 4 }
+          ]
+        )
+
+        expect(supervisor.worker_pools.first[:num_workers]).to eq(4)
+      end
+
+      it "falls back to 2 workers when auto-detection fails" do
+        # Mock Etc.nprocessors to raise an error
+        allow(Etc).to receive(:nprocessors).and_raise(StandardError.new("Detection failed"))
+
+        supervisor = Fractor::Supervisor.new(
+          worker_pools: [
+            { worker_class: SupervisorSpec::TestWorker }
+          ]
+        )
+
+        expect(supervisor.worker_pools.first[:num_workers]).to eq(2)
+      end
+
+      it "supports mixed auto-detection and explicit configuration" do
+        allow(Etc).to receive(:nprocessors).and_return(8)
+
+        supervisor = Fractor::Supervisor.new(
+          worker_pools: [
+            { worker_class: SupervisorSpec::TestWorker },  # Auto-detected
+            { worker_class: SupervisorSpec::TestWorker, num_workers: 3 }  # Explicit
+          ]
+        )
+
+        expect(supervisor.worker_pools[0][:num_workers]).to eq(8)
+        expect(supervisor.worker_pools[1][:num_workers]).to eq(3)
+      end
+    end
   end
 
   describe "#add_work_item" do

@@ -6,7 +6,10 @@ require "timeout"
 
 RSpec.describe "Signal handling in Fractor" do
   # Path to our test fixture
-  let(:fixture_script) { File.join(File.dirname(__FILE__), "..", "fixtures", "long_running_fractor.rb") }
+  let(:fixture_script) do
+    File.join(File.dirname(__FILE__), "..", "fixtures",
+              "long_running_fractor.rb")
+  end
 
   describe "Ctrl+C (SIGINT) handling" do
     it "properly terminates when receiving a SIGINT signal" do
@@ -68,7 +71,7 @@ RSpec.describe "Signal handling in Fractor" do
       begin
         Timeout.timeout(3) do
           exit_status = wait_thread.value
-          expect(exit_status.success?).to be_falsy # Should exit with non-zero status due to INT signal
+          expect(exit_status).not_to be_success # Should exit with non-zero status due to INT signal
         end
       rescue Timeout::Error
         # If it doesn't exit within 3 seconds, kill it and fail the test

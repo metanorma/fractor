@@ -10,7 +10,9 @@ RSpec.describe "Fractor Integration" do
     def process(work)
       if work.input == 5
         # Return a Fractor::WorkResult for errors
-        return Fractor::WorkResult.new(error: "Error processing work #{work.input}", work: work)
+        return Fractor::WorkResult.new(
+          error: "Error processing work #{work.input}", work: work,
+        )
       end
 
       calculated = work.input * 2
@@ -29,8 +31,8 @@ RSpec.describe "Fractor Integration" do
     # Create supervisor
     supervisor = Fractor::Supervisor.new(
       worker_pools: [
-        { worker_class: MyWorker, num_workers: 2 }
-      ]
+        { worker_class: MyWorker, num_workers: 2 },
+      ],
     )
 
     # Add work items (1..10)

@@ -28,7 +28,7 @@ module Fractor
       {
         result: @result,
         error: @error,
-        work: @work&.to_s # Use safe navigation for work
+        work: @work&.to_s, # Use safe navigation for work
       }
     end
   end

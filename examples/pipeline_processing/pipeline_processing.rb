@@ -9,7 +9,7 @@ module PipelineProcessing
       super({
         data: data,
         stage: stage,
-        metadata: metadata
+        metadata: metadata,
       })
     end
 
@@ -29,7 +29,7 @@ module PipelineProcessing
       "MediaWork: stage=#{stage}, metadata=#{metadata}, data_size=#{begin
         data.bytesize
       rescue StandardError
-        "unknown"
+        'unknown'
       end}"
     end
   end
@@ -46,7 +46,7 @@ module PipelineProcessing
                else
                  return Fractor::WorkResult.new(
                    error: "Unknown stage: #{work.stage}",
-                   work: work
+                   work: work,
                  )
                end
 
@@ -58,7 +58,7 @@ module PipelineProcessing
       # Update metadata with processing information
       updated_metadata = work.metadata.merge(
         "#{work.stage}_completed" => true,
-        "#{work.stage}_time" => Time.now.to_s
+        "#{work.stage}_time" => Time.now.to_s,
       )
 
       # Return the result with next stage information
@@ -67,9 +67,9 @@ module PipelineProcessing
           processed_data: result,
           current_stage: work.stage,
           next_stage: next_stage,
-          metadata: updated_metadata
+          metadata: updated_metadata,
         },
-        work: work
+        work: work,
       )
     end
 
@@ -95,7 +95,7 @@ module PipelineProcessing
       sleep(rand(0.01..0.05)) # Simulate processing time
       tags = %w[landscape portrait nature urban abstract]
       selected_tags = tags.sample(rand(1..3))
-      "Tagged image: #{work.data} (tags: #{selected_tags.join(", ")})"
+      "Tagged image: #{work.data} (tags: #{selected_tags.join(', ')})"
     end
   end
 
@@ -106,8 +106,8 @@ module PipelineProcessing
     def initialize(worker_count = 4)
       @supervisor = Fractor::Supervisor.new(
         worker_pools: [
-          { worker_class: PipelineWorker, num_workers: worker_count }
-        ]
+          { worker_class: PipelineWorker, num_workers: worker_count },
+        ],
       )
 
       # Register callback to handle pipeline stage transitions
@@ -119,7 +119,7 @@ module PipelineProcessing
           new_work = MediaWork.new(
             result.result[:processed_data],
             next_stage,
-            result.result[:metadata]
+            result.result[:metadata],
           )
           @supervisor.add_work_item(new_work)
         end
@@ -127,7 +127,7 @@ module PipelineProcessing
 
       @results = {
         completed: [],
-        in_progress: []
+        in_progress: [],
       }
     end
 
@@ -137,7 +137,7 @@ module PipelineProcessing
         MediaWork.new(
           image,
           :resize,
-          { original_filename: image, started_at: Time.now.to_s }
+          { original_filename: image, started_at: Time.now.to_s },
         )
       end
 
@@ -159,7 +159,7 @@ module PipelineProcessing
         total_images: images.size,
         completed: @results[:completed].size,
         in_progress: @results[:in_progress].size,
-        results: @results[:completed]
+        results: @results[:completed],
       }
     end
   end
@@ -182,7 +182,7 @@ if __FILE__ == $PROGRAM_NAME
     "mountains.png",
     "beach.jpg",
     "city_skyline.jpg",
-    "forest.png"
+    "forest.png",
   ]
 
   worker_count = 4
@@ -205,7 +205,7 @@ if __FILE__ == $PROGRAM_NAME
     puts "Image #{index + 1}: #{image_result[:processed_data]}"
     puts "  Processing path:"
     image_result[:metadata].each do |key, value|
-      next unless key.to_s.end_with?("_completed") || key.to_s.end_with?("_time")
+      next unless key.to_s.end_with?("_completed", "_time")
 
       puts "    #{key}: #{value}"
     end

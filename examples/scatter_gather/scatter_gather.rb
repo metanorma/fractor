@@ -42,7 +42,7 @@ module ScatterGather
                  error = ArgumentError.new("Unknown source: #{work.source}")
                  return Fractor::WorkResult.new(
                    error: error,
-                   work: work
+                   work: work,
                  )
                end
 
@@ -53,9 +53,9 @@ module ScatterGather
           query: work.query,
           hits: result[:hits],
           metadata: result[:metadata],
-          timing: result[:timing]
+          timing: result[:timing],
         },
-        work: work
+        work: work,
       )
     end
 
@@ -72,12 +72,12 @@ module ScatterGather
 
       # Generate simulated records
       record_count = rand(3..10)
-      hits = record_count.times.map do |i|
+      hits = Array.new(record_count) do |i|
         {
           id: "db-#{i + 1}",
           title: "Database Result #{i + 1} for '#{work.query}'",
           content: "This is database content for #{work.query}",
-          relevance: rand(0.1..1.0).round(2)
+          relevance: rand(0.1..1.0).round(2),
         }
       end
 
@@ -86,9 +86,9 @@ module ScatterGather
         metadata: {
           source_type: "PostgreSQL Database",
           total_available: record_count + rand(10..50),
-          query_type: "Full-text search"
+          query_type: "Full-text search",
         },
-        timing: rand(0.01..0.3).round(3)
+        timing: rand(0.01..0.3).round(3),
       }
     end
 
@@ -98,12 +98,12 @@ module ScatterGather
 
       # Generate simulated API results
       record_count = rand(2..8)
-      hits = record_count.times.map do |i|
+      hits = Array.new(record_count) do |i|
         {
           id: "api-#{i + 1}",
           title: "API Result #{i + 1} for '#{work.query}'",
           content: "This is API content for #{work.query}",
-          relevance: rand(0.1..1.0).round(2)
+          relevance: rand(0.1..1.0).round(2),
         }
       end
 
@@ -112,9 +112,9 @@ module ScatterGather
         metadata: {
           source_type: "External REST API",
           provider: %w[Google Bing DuckDuckGo].sample,
-          response_code: 200
+          response_code: 200,
         },
-        timing: rand(0.1..0.5).round(3)
+        timing: rand(0.1..0.5).round(3),
       }
     end
 
@@ -128,12 +128,12 @@ module ScatterGather
       if cache_hit
         # Cache hit - return cached results
         record_count = rand(1..5)
-        hits = record_count.times.map do |i|
+        hits = Array.new(record_count) do |i|
           {
             id: "cache-#{i + 1}",
             title: "Cached Result #{i + 1} for '#{work.query}'",
             content: "This is cached content for #{work.query}",
-            relevance: rand(0.1..1.0).round(2)
+            relevance: rand(0.1..1.0).round(2),
           }
         end
 
@@ -142,9 +142,9 @@ module ScatterGather
           metadata: {
             source_type: "In-memory Cache",
             cache_hit: true,
-            age: rand(1..3600)
+            age: rand(1..3600),
           },
-          timing: rand(0.001..0.05).round(3)
+          timing: rand(0.001..0.05).round(3),
         }
       else
         # Cache miss
@@ -152,9 +152,9 @@ module ScatterGather
           hits: [],
           metadata: {
             source_type: "In-memory Cache",
-            cache_hit: false
+            cache_hit: false,
           },
-          timing: rand(0.001..0.01).round(3)
+          timing: rand(0.001..0.01).round(3),
         }
       end
     end
@@ -165,13 +165,13 @@ module ScatterGather
 
       # Generate simulated file results
       record_count = rand(1..12)
-      hits = record_count.times.map do |i|
+      hits = Array.new(record_count) do |i|
         {
           id: "file-#{i + 1}",
           title: "File Result #{i + 1} for '#{work.query}'",
           path: "/path/to/file_#{i + 1}.txt",
           content: "This is file content matching #{work.query}",
-          relevance: rand(0.1..1.0).round(2)
+          relevance: rand(0.1..1.0).round(2),
         }
       end
 
@@ -180,9 +180,9 @@ module ScatterGather
         metadata: {
           source_type: "File System",
           directories_searched: rand(5..20),
-          files_scanned: rand(50..500)
+          files_scanned: rand(50..500),
         },
-        timing: rand(0.01..0.2).round(3)
+        timing: rand(0.01..0.2).round(3),
       }
     end
   end
@@ -194,8 +194,8 @@ module ScatterGather
     def initialize(worker_count = 4)
       @supervisor = Fractor::Supervisor.new(
         worker_pools: [
-          { worker_class: SearchWorker, num_workers: worker_count }
-        ]
+          { worker_class: SearchWorker, num_workers: worker_count },
+        ],
       )
 
       @merged_results = nil
@@ -204,10 +204,11 @@ module ScatterGather
     def search(query, sources = nil)
       # Define search sources with their parameters
       sources ||= [
-        { source: :database, params: { max_results: 50, include_archived: false } },
+        { source: :database,
+          params: { max_results: 50, include_archived: false } },
         { source: :api, params: { format: "json", timeout: 5 } },
         { source: :cache, params: { max_age: 3600 } },
-        { source: :filesystem, params: { extensions: %w[txt md pdf] } }
+        { source: :filesystem, params: { extensions: %w[txt md pdf] } },
       ]
 
       start_time = Time.now
@@ -262,7 +263,7 @@ module ScatterGather
             content: hit[:content],
             source: source,
             original_relevance: hit[:relevance],
-            weighted_relevance: hit[:relevance] * source_weight
+            weighted_relevance: hit[:relevance] * source_weight,
           }
         end
       end
@@ -277,7 +278,7 @@ module ScatterGather
         execution_time: total_time,
         sources: results_by_source.keys,
         ranked_results: ranked_hits,
-        source_details: results_by_source
+        source_details: results_by_source,
       }
     end
   end
@@ -309,7 +310,7 @@ if __FILE__ == $PROGRAM_NAME
   puts "Query: #{results[:query]}"
   puts "Total hits: #{results[:total_hits]}"
   puts "Total execution time: #{results[:execution_time].round(3)} seconds"
-  puts "Sources searched: #{results[:sources].join(", ")}"
+  puts "Sources searched: #{results[:sources].join(', ')}"
   puts
 
   puts "Top 5 Results (by relevance):"

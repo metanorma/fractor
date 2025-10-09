@@ -21,7 +21,9 @@ class LongRunningWorker < Fractor::Worker
     end
 
     puts "Worker #{@name}: Long-running task completed" if ENV["FRACTOR_DEBUG"]
-    Fractor::WorkResult.new(result: "Processed sleep for #{sleep_seconds} seconds", work: work)
+    Fractor::WorkResult.new(
+      result: "Processed sleep for #{sleep_seconds} seconds", work: work,
+    )
   end
 end
 
@@ -39,8 +41,8 @@ puts "Starting Fractor with long-running work..."
 # Setup Fractor supervisor with our worker
 supervisor = Fractor::Supervisor.new(
   worker_pools: [
-    { worker_class: LongRunningWorker, num_workers: 2 }
-  ]
+    { worker_class: LongRunningWorker, num_workers: 2 },
+  ],
 )
 
 # Add work items that will sleep for 10 seconds each

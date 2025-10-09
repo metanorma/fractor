@@ -10,7 +10,8 @@ module Fractor
     end
 
     def process(work)
-      raise NotImplementedError, "Subclasses must implement the 'process' method."
+      raise NotImplementedError,
+            "Subclasses must implement the 'process' method."
     end
   end
 end

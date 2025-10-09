@@ -12,8 +12,10 @@ module WrappedRactorSpec
 end
 
 RSpec.describe Fractor::WrappedRactor do
-  # Skip these tests on Windows with Ruby 3.4
-  skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
+  # Skip all tests on Windows with Ruby 3.4 due to hanging issue
+  if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
+    skip "Skipping all WrappedRactor tests on Windows with Ruby 3.4 due to hanging issue"
+  end
 
   describe "#initialize" do
     it "initializes with a name and worker class" do

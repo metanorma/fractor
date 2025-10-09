@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'etc'
+require "etc"
 
 module Fractor
   # Supervises multiple WrappedRactors, distributes work, and aggregates results.
@@ -232,14 +232,10 @@ module Fractor
     # Returns the number of processors, or 2 as a fallback if detection fails.
     def detect_num_workers
       num_processors = Etc.nprocessors
-      if ENV["FRACTOR_DEBUG"]
-        puts "Auto-detected #{num_processors} available processors"
-      end
+      puts "Auto-detected #{num_processors} available processors" if ENV["FRACTOR_DEBUG"]
       num_processors
     rescue StandardError => e
-      if ENV["FRACTOR_DEBUG"]
-        puts "Failed to detect processors: #{e.message}. Using default of 2 workers."
-      end
+      puts "Failed to detect processors: #{e.message}. Using default of 2 workers." if ENV["FRACTOR_DEBUG"]
       2
     end
 

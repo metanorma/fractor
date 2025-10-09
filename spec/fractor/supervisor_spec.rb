@@ -111,8 +111,8 @@ RSpec.describe Fractor::Supervisor do
 
         supervisor = Fractor::Supervisor.new(
           worker_pools: [
-            { worker_class: SupervisorSpec::TestWorker },  # Auto-detected
-            { worker_class: SupervisorSpec::TestWorker, num_workers: 3 }  # Explicit
+            { worker_class: SupervisorSpec::TestWorker }, # Auto-detected
+            { worker_class: SupervisorSpec::TestWorker, num_workers: 3 } # Explicit
           ]
         )
 

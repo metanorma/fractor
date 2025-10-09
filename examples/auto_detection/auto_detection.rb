@@ -86,7 +86,7 @@ puts
 
 supervisor1 = Fractor::Supervisor.new(
   worker_pools: [
-    { worker_class: ComputeWorker }  # No num_workers specified
+    { worker_class: ComputeWorker } # No num_workers specified
   ]
 )
 
@@ -97,7 +97,7 @@ supervisor1.add_work_items(work_items)
 puts "Processing 10 work items with auto-detected workers..."
 supervisor1.run
 
-puts "Results: #{supervisor1.results.results.map(&:result).sort.join(', ')}"
+puts "Results: #{supervisor1.results.results.map(&:result).sort.join(", ")}"
 puts "✓ Auto-detection successful!"
 puts
 
@@ -119,7 +119,7 @@ supervisor2.add_work_items((11..20).map { |i| ComputeWork.new(i) })
 puts "Processing 10 work items with 4 explicitly configured workers..."
 supervisor2.run
 
-puts "Results: #{supervisor2.results.results.map(&:result).sort.join(', ')}"
+puts "Results: #{supervisor2.results.results.map(&:result).sort.join(", ")}"
 puts "✓ Explicit configuration successful!"
 puts
 
@@ -134,8 +134,8 @@ puts
 
 supervisor3 = Fractor::Supervisor.new(
   worker_pools: [
-    { worker_class: ComputeWorker },              # Auto-detected
-    { worker_class: ComputeWorker, num_workers: 2 }  # Explicit
+    { worker_class: ComputeWorker }, # Auto-detected
+    { worker_class: ComputeWorker, num_workers: 2 } # Explicit
   ]
 )
 
@@ -144,7 +144,7 @@ supervisor3.add_work_items((21..30).map { |i| ComputeWork.new(i) })
 puts "Processing 10 work items with mixed configuration..."
 supervisor3.run
 
-puts "Results: #{supervisor3.results.results.map(&:result).sort.join(', ')}"
+puts "Results: #{supervisor3.results.results.map(&:result).sort.join(", ")}"
 puts "✓ Mixed configuration successful!"
 puts
 

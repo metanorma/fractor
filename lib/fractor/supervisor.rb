@@ -48,9 +48,6 @@ module Fractor
       puts "Work item added. Initial work count: #{@total_work_count}, Queue size: #{@work_queue.size}"
     end
 
-    # Alias for better naming
-    alias add_work_item add_work_item
-
     # Adds multiple work items to the queue.
     # Each item must be an instance of Fractor::Work or a subclass.
     def add_work_items(works)

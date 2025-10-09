@@ -9,9 +9,10 @@ RSpec.describe "Signal handling in Fractor" do
   let(:fixture_script) { File.join(File.dirname(__FILE__), "..", "fixtures", "long_running_fractor.rb") }
 
   describe "Ctrl+C (SIGINT) handling" do
-    # Skip these tests on Windows with Ruby 3.4
-    skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
     it "properly terminates when receiving a SIGINT signal" do
+      # Skip this test on Windows with Ruby 3.4 due to hanging issue
+      skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
+
       # Use popen3 to start the fixture script as a separate process and capture output
       pid = nil
       # Use sync: true to avoid output buffering

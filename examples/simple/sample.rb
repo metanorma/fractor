@@ -1,7 +1,38 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require_relative "fractor"
+# =============================================================================
+# Simple Example - Getting Started with Fractor
+# =============================================================================
+#
+# This example demonstrates the basic usage of the Fractor framework.
+#
+# WHAT THIS DEMONSTRATES:
+# - How to create a Work class (MyWork) to encapsulate work items
+# - How to create a Worker class (MyWorker) to process work
+# - How to set up a Supervisor to manage parallel processing
+# - Basic error handling in workers
+# - How to access and display results after processing
+# - Auto-detection of available processors (num_workers not specified)
+#
+# KEY CONCEPTS:
+# 1. Work Class: Inherits from Fractor::Work, stores input data
+# 2. Worker Class: Inherits from Fractor::Worker, implements process() method
+# 3. Supervisor: Manages worker Ractors and distributes work
+# 4. WorkResult: Contains either successful results or errors
+#
+# HOW TO RUN:
+#   ruby examples/simple/sample.rb
+#
+# WHAT TO EXPECT:
+# - Creates work items with values 1-10
+# - Processes them in parallel using auto-detected number of workers
+# - Value 5 intentionally produces an error for demonstration
+# - Displays successful results and error information
+#
+# =============================================================================
+
+require_relative "../../lib/fractor"
 
 # Client-specific work item implementation inheriting from Fractor::Work
 class MyWork < Fractor::Work
@@ -71,9 +102,10 @@ end
 # MyWorker and MyWork classes.
 if __FILE__ == $PROGRAM_NAME
   # Create supervisor, passing the client-specific worker class in a worker pool
+  # Note: num_workers is not specified, so it will auto-detect the number of available processors
   supervisor = Fractor::Supervisor.new(
     worker_pools: [
-      { worker_class: MyWorker, num_workers: 2 } # Specify the worker class and number of worker Ractors
+      { worker_class: MyWorker } # Worker class without explicit num_workers uses auto-detection
     ]
   )
 

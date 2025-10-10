@@ -9,3 +9,5 @@ plugins:
 
 AllCops:
   TargetRubyVersion: 3.1
+  Exclude:
+    - 'examples/**/*'

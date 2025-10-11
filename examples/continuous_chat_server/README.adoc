@@ -1,0 +1,135 @@
+= Continuous Chat Server Example
+
+== Overview
+
+This example demonstrates Fractor's continuous mode feature with a chat server implementation. In continuous mode, a Fractor supervisor can run indefinitely, processing work items as they arrive without stopping after the initial work queue is empty.
+
+The example is structured as a real client-server application with socket communication, allowing you to test it with multiple terminals.
+
+== Key Concepts
+
+* *Continuous Mode*: Supervisors run indefinitely, waiting for new work rather than terminating
+* *Work Sources*: Callback functions that provide new work to the supervisor as needed
+* *Asynchronous Processing*: Workers process messages concurrently as they arrive
+* *Graceful Shutdown*: Proper handling of resources when the system terminates
+* *Thread Coordination*: Multiple threads working together with Ractors
+* *Parallel Components*: Server and client both use multiple Fractors for different responsibilities
+
+== Example Components
+
+This example is split into multiple files for better organization:
+
+1. *chat_common.rb*: Contains shared code used by both server and client
+   * `ChatMessage` class extending `Fractor::Work`
+   * `ChatWorker` class extending `Fractor::Worker`
+   * Message protocol utilities for serialization
+
+2. *chat_server.rb*: Implements the chat server with two parallel components
+   * Socket handler Fractor that manages client connections using IO.select
+   * Logger Fractor that writes messages to log sequentially
+   * Thread-safe queue for message passing between components
+   * `ChatServer` class that manages the supervisor and coordinates components
+
+3. *chat_client.rb*: Implements the chat client with two parallel components
+   * User I/O handler Fractor for STDIN (user input) and STDOUT (display)
+   * Server I/O handler Fractor for socket communication with the server
+   * Separate queues for messages received and to be sent
+   * Interactive command-line interface
+
+4. *simulate.rb*: Automated simulation with multiple clients
+   * Creates a server and multiple clients as separate processes
+   * Runs a predefined message schedule
+   * Demonstrates the system at scale
+   * Provides analysis of communication logs after completion
+
+== Running the Example
+
+You can run the example in several ways:
+
+=== 1. Running the Simulation
+
+To run the complete automated simulation:
+
+[source,sh]
+----
+ruby examples/continuous_chat_server/simulate.rb
+----
+
+Optional parameters:
+* `-p, --port PORT` - Specify server port (default: 3000)
+* `-w, --workers NUM` - Number of worker Ractors (default: 2)
+* `-d, --duration SECONDS` - Duration of simulation in seconds (default: 10)
+* `-l, --log-dir DIR` - Directory for log files (default: logs)
+* `-h, --help` - Show help message
+
+=== 2. Running Server and Clients Separately
+
+For a more interactive experience, you can run the server in one terminal:
+
+[source,sh]
+----
+ruby examples/continuous_chat_server/chat_server.rb [PORT] [NUM_WORKERS] [LOG_FILE]
+----
+
+And then run multiple clients in different terminals:
+
+[source,sh]
+----
+ruby examples/continuous_chat_server/chat_client.rb [USERNAME] [PORT] [LOG_FILE]
+----
+
+== Client Commands
+
+When running the interactive client, you can use the following commands:
+
+* `/help` - Show help message
+* `/quit` - Disconnect and exit
+* `/list` - List connected users
+* `/msg USERNAME MESSAGE` - Send a private message
+
+== Architecture
+
+=== Server Architecture
+The chat server has two parallel components:
+1. A Fractor that handles IO.select on a TCPSocket (waits for incoming connections and messages)
+   * This component only processes work when IO.select has something to provide
+   * It puts received messages into a thread-safe Queue
+2. A Fractor that writes messages to log sequentially
+   * Ensures that log entries are written in order without race conditions
+
+The server runs as a single process with these concurrent components communicating via message passing.
+
+=== Client Architecture
+The chat client also has two parallel components:
+1. A Fractor that handles IO.select for STDIN and STDOUT
+   * Manages user input without blocking
+   * Ensures sequential printing to the user's screen
+   * Uses separate queues for:
+     * Messages received from server (to be displayed to user)
+     * Messages from user (to be sent to server)
+2. A Fractor that handles IO.select on the TCPSocket
+   * Manages the connection to the server
+   * Sends and receives messages concurrently
+
+== Features Demonstrated
+
+* Setting up a supervisor in continuous mode
+* Registering a work source callback that provides new work on demand
+* Running the supervisor in a non-blocking manner
+* Socket-based client-server communication
+* Coordinating between Ruby threads and Ractor workers
+* Managing the lifecycle of a long-running application
+* Proper resource cleanup on shutdown
+* Using Ractors for handling separate concerns (IO, logging, etc.)
+* Thread-safe message passing between components
+
+== Expected Output
+
+The example will show:
+* The chat server starting up with multiple workers
+* Clients connecting to the server
+* Messages being sent between clients
+* Workers processing the messages concurrently
+* Results being delivered to recipients
+* The system gracefully shutting down after all messages are processed
+* A summary of message activity from the logs

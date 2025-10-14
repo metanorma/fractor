@@ -126,7 +126,7 @@ The abstract base class for defining how work should be processed.
 Client code must subclass this and implement the `process(work)` method.
 
 The `process` method receives a `Fractor::Work` object (or a subclass) and
-   should return a `Fractor::WorkResult` object.
+should return a `Fractor::WorkResult` object.
 
 === Fractor::Work
 
@@ -1052,6 +1052,61 @@ Key features:
 * Routing of work items to appropriately specialized workers
 * Optimization of resources and logic per task type
 
+=== Continuous chat server
+
+==== General
+
+The Continuous Chat Server examples demonstrate real-world implementations of
+Fractor's continuous mode for building long-running, event-driven servers.
+
+Two implementations are provided for comparison to highlight the benefits of
+using Fractor for continuous processing.
+
+==== Plain socket implementation
+
+The plain socket implementation
+(link:examples/continuous_chat_server/[examples/continuous_chat_server/])
+provides a baseline chat server using plain TCP sockets without Fractor. This
+serves as a comparison point to understand the benefits of using Fractor for
+continuous processing.
+
+==== Fractor-based implementation
+
+The Fractor-based implementation
+(link:examples/continuous_chat_fractor/[examples/continuous_chat_fractor/])
+demonstrates how to build a production-ready chat server using Fractor's
+continuous mode with advanced features.
+
+Key features:
+
+* *Continuous mode operation*: Server runs indefinitely processing messages as
+  they arrive
+* *Work source callbacks*: Dynamic work provision through registered callbacks
+* *Graceful shutdown*: Production-ready signal handling (SIGINT, SIGTERM,
+  SIGUSR1/SIGBREAK)
+* *Idle worker management*: Efficient work distribution to available workers
+* *Cross-platform support*: Works on Unix/Linux/macOS and Windows
+* *Process monitoring*: Runtime status checking via signals
+* *Thread coordination*: Supervisor thread, timer thread, and results processing
+  thread
+
+The implementation includes:
+
+* `chat_common.rb`: Work and Worker class definitions for chat message
+  processing
+* `chat_server.rb`: Main server using Fractor continuous mode
+* `simulate.rb`: Test client simulator
+* `SIGNALS.md`: Comprehensive signal handling documentation
+
+This example demonstrates production deployment patterns including:
+
+* Systemd service integration
+* Docker container deployment
+* Process monitoring and health checks
+* Graceful restart procedures
+
+See link:examples/continuous_chat_fractor/README.adoc[the chat server README]
+for detailed implementation documentation.
 
 
 == Copyright and license

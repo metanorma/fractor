@@ -5,7 +5,7 @@ require "socket"
 require "json"
 require "time"
 require "fileutils"
-require_relative "chat_common"
+require_relative "../continuous_chat_common/message_protocol"
 
 # Simple Chat Server using Ruby's standard socket library
 # Based on the approach from https://dev.to/aurelieverrot/create-a-chat-in-the-command-line-with-ruby-2po9

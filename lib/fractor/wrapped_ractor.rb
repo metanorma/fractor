@@ -35,6 +35,8 @@ module Fractor
           # Handle shutdown message
           if work == :shutdown
             puts "Received shutdown message in Ractor #{name}, terminating..." if ENV["FRACTOR_DEBUG"]
+            # Yield a shutdown acknowledgment before terminating
+            Ractor.yield({ type: :shutdown, processor: name })
             break
           end
 

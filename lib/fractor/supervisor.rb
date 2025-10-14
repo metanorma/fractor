@@ -116,51 +116,57 @@ module Fractor
     end
 
     # Sets up signal handlers for graceful shutdown.
-    # Handles SIGINT (Ctrl+C), SIGTERM (systemd/docker), and SIGUSR1 (status).
+    # Handles SIGINT (Ctrl+C), SIGTERM (systemd/docker), and platform-specific status signals.
     def setup_signal_handler
-      # Store references needed by the signal handler
-      main_thread = Thread.current
+      # Universal signals (work on all platforms)
+      Signal.trap("INT") { handle_shutdown("SIGINT") }
+      Signal.trap("TERM") { handle_shutdown("SIGTERM") }
 
-      # Handler for graceful shutdown
-      shutdown_handler = proc do |signal_name|
-        if @continuous_mode
-          puts "\n#{signal_name} received. Initiating graceful shutdown..." if ENV["FRACTOR_DEBUG"]
-          # For continuous mode, call stop() to gracefully shut down
-          stop
-        else
-          puts "\n#{signal_name} received. Initiating immediate shutdown..." if ENV["FRACTOR_DEBUG"]
-          # For non-continuous mode, raise exception to exit the loop
-          main_thread.raise(ShutdownSignal, "Interrupted by #{signal_name}")
+      # Platform-specific status monitoring
+      setup_status_signal
+    end
+
+    # Handles shutdown signal by mode (continuous vs batch)
+    def handle_shutdown(signal_name)
+      if @continuous_mode
+        puts "\n#{signal_name} received. Initiating graceful shutdown..." if ENV["FRACTOR_DEBUG"]
+        stop
+      else
+        puts "\n#{signal_name} received. Initiating immediate shutdown..." if ENV["FRACTOR_DEBUG"]
+        Thread.current.raise(ShutdownSignal, "Interrupted by #{signal_name}")
+      end
+    rescue Exception => e
+      puts "Error in signal handler: #{e.class}: #{e.message}" if ENV["FRACTOR_DEBUG"]
+      puts e.backtrace.join("\n") if ENV["FRACTOR_DEBUG"]
+      exit!(1)
+    end
+
+    # Sets up platform-specific status monitoring signal
+    def setup_status_signal
+      if Gem.win_platform?
+        # Windows: Use SIGBREAK (Ctrl+Break)
+        Signal.trap("BREAK") { print_status }
+      else
+        # Unix/Linux/macOS: Use SIGUSR1
+        begin
+          Signal.trap("USR1") { print_status }
+        rescue ArgumentError
+          # SIGUSR1 not supported on this platform
         end
-      rescue Exception => e
-        puts "Error in signal handler: #{e.class}: #{e.message}" if ENV["FRACTOR_DEBUG"]
-        puts e.backtrace.join("\n") if ENV["FRACTOR_DEBUG"]
-        # As a last resort, force exit
-        exit!(1)
       end
+    end
 
-      # Trap SIGINT (Ctrl+C) - common for manual termination
-      Signal.trap("INT") do
-        shutdown_handler.call("SIGINT")
-      end
-
-      # Trap SIGTERM (kill, systemd, docker stop) - standard graceful shutdown
-      Signal.trap("TERM") do
-        shutdown_handler.call("SIGTERM")
-      end
-
-      # Trap SIGUSR1 for status information (optional)
-      Signal.trap("USR1") do
-        puts "\n=== Fractor Supervisor Status ===" if ENV["FRACTOR_DEBUG"]
-        puts "Mode: #{@continuous_mode ? 'Continuous' : 'Batch'}" if ENV["FRACTOR_DEBUG"]
-        puts "Running: #{@running}" if ENV["FRACTOR_DEBUG"]
-        puts "Workers: #{@workers.size}" if ENV["FRACTOR_DEBUG"]
-        puts "Idle workers: #{@idle_workers.size}" if ENV["FRACTOR_DEBUG"]
-        puts "Queue size: #{@work_queue.size}" if ENV["FRACTOR_DEBUG"]
-        puts "Results: #{@results.results.size}" if ENV["FRACTOR_DEBUG"]
-        puts "Errors: #{@results.errors.size}" if ENV["FRACTOR_DEBUG"]
-        puts "================================\n" if ENV["FRACTOR_DEBUG"]
-      end
+    # Prints current supervisor status
+    def print_status
+      puts "\n=== Fractor Supervisor Status ==="
+      puts "Mode: #{@continuous_mode ? 'Continuous' : 'Batch'}"
+      puts "Running: #{@running}"
+      puts "Workers: #{@workers.size}"
+      puts "Idle workers: #{@idle_workers.size}"
+      puts "Queue size: #{@work_queue.size}"
+      puts "Results: #{@results.results.size}"
+      puts "Errors: #{@results.errors.size}"
+      puts "================================\n"
     end
 
     # Runs the main processing loop.

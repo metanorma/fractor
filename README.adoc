@@ -924,6 +924,194 @@ supervisor_thread.join  # Wait for the supervisor thread to finish
 ----
 
 
+== Process monitoring and logging
+
+=== Status monitoring and health checks
+
+The signals SIGUSR1 (or SIGBREAK on Windows) can be used for health checks.
+
+When the signal is received, the supervisor prints its current status to
+standard output.
+
+[example]
+====
+Sending the signal:
+
+Unix:
+
+[source,sh]
+----
+# Send SIGUSR1 to the supervisor process
+kill -USR1 <pid>
+----
+
+Windows:
+
+[source,sh]
+----
+# Send SIGBREAK to the supervisor process
+kill -BREAK <pid>
+----
+
+Output:
+
+[source]
+----
+=== Fractor Supervisor Status ===
+Mode: Continuous
+Running: true
+Workers: 4
+Idle workers: 2
+Queue size: 15
+Results: 127
+Errors: 3
+----
+====
+
+==== Logging
+
+Fractor supports logging of its operations to a specified log file.
+To enable logging, set the `FRACTOR_LOG_FILE` environment variable to the
+desired log file path before starting your application.
+
+The log file will contain detailed information about the supervisor's
+operations, including worker activity, work distribution, results, and errors.
+
+To view the logs, you can use standard log monitoring tools or commands.
+
+.Examples of accessing logs
+[example]
+====
+[source,sh]
+----
+# Check if server is responsive (Unix/Linux/macOS)
+kill -USR1 <pid> && tail -f /path/to/logs/server.log
+
+# Monitor with systemd
+systemctl status fractor-server
+journalctl -u fractor-server -f
+
+# Monitor with Docker
+docker logs -f <container_id>
+----
+====
+
+
+== Signal handling
+
+=== General
+
+Fractor provides production-ready signal handling for process control and
+monitoring. The framework supports different signals depending on the operating
+system, enabling graceful shutdown and runtime status monitoring.
+
+=== Unix signals (Linux, macOS, Unix)
+
+==== SIGINT (Ctrl+C)
+
+Interactive interrupt signal for graceful shutdown.
+
+Usage:
+
+* Press `Ctrl+C` in the terminal running Fractor
+* Behavior depends on mode:
+** *Batch mode*: Stops immediately after current work completes
+** *Continuous mode*: Initiates graceful shutdown
+
+==== SIGTERM
+
+Standard Unix termination signal, preferred for production deployments.
+
+This ensures a graceful shutdown of the Fractor supervisor and its workers.
+
+Usage:
+
+[source,sh]
+----
+kill -TERM <pid>
+# or simply
+kill <pid>  # SIGTERM is the default
+----
+
+Typical signals from service managers:
+
+* Systemd sends SIGTERM on `systemctl stop`
+* Docker sends SIGTERM on `docker stop`
+* Kubernetes sends SIGTERM during pod termination
+
+[source,ini]
+----
+# Example systemd service
+[Service]
+ExecStart=/usr/bin/ruby /path/to/fractor_server.rb
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=30
+----
+
+==== SIGUSR1
+
+Real-time status monitoring without stopping the process.
+
+Usage:
+
+[source,sh]
+----
+kill -USR1 <pid>
+----
+
+Output example:
+
+[example]
+====
+[source]
+----
+=== Fractor Supervisor Status ===
+Mode: Continuous
+Running: true
+Workers: 4
+Idle workers: 2
+Queue size: 15
+Results: 127
+Errors: 3
+----
+====
+
+=== Windows signals
+
+==== SIGBREAK (Ctrl+Break)
+
+Windows alternative to SIGUSR1 for status monitoring.
+
+Usage:
+
+* Press `Ctrl+Break` in the terminal running Fractor
+* Same output as SIGUSR1 on Unix
+
+[NOTE]
+SIGUSR1 is not available on Windows. Use `Ctrl+Break` instead for status
+monitoring on Windows platforms.
+
+
+=== Signal behavior by mode
+
+==== Batch mode
+
+In batch processing mode:
+
+* SIGINT/SIGTERM: Stops immediately after current work completes
+* SIGUSR1/SIGBREAK: Displays current status
+
+==== Continuous mode
+
+In continuous mode (long-running servers):
+
+* SIGINT/SIGTERM: Graceful shutdown within ~2 seconds
+** Stops accepting new work
+** Completes in-progress work
+** Cleans up resources
+* SIGUSR1/SIGBREAK: Displays current status
+
 
 == Example applications
 

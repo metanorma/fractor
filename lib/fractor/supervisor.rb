@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "etc"
+require "timeout"
 
 module Fractor
   # Custom exception for shutdown signal handling
@@ -40,6 +41,9 @@ module Fractor
       @continuous_mode = continuous_mode
       @running = false
       @work_callbacks = []
+      @wakeup_ractor = nil # Control ractor for unblocking select
+      @timer_thread = nil # Timer thread for periodic wakeup
+      @idle_workers = [] # Track workers waiting for work
     end
 
     # Adds a single work item to the queue.
@@ -73,6 +77,23 @@ module Fractor
 
     # Starts the worker Ractors for all worker pools.
     def start_workers
+      # Create a wakeup Ractor for unblocking Ractor.select
+      @wakeup_ractor = Ractor.new do
+        puts "Wakeup Ractor started" if ENV["FRACTOR_DEBUG"]
+        loop do
+          msg = Ractor.receive
+          puts "Wakeup Ractor received: #{msg.inspect}" if ENV["FRACTOR_DEBUG"]
+          if msg == :wakeup || msg == :shutdown
+            Ractor.yield({ type: :wakeup, message: msg })
+            break if msg == :shutdown
+          end
+        end
+        puts "Wakeup Ractor shutting down" if ENV["FRACTOR_DEBUG"]
+      end
+
+      # Add wakeup ractor to the map with a special marker
+      @ractors_map[@wakeup_ractor] = :wakeup
+
       @worker_pools.each do |pool|
         worker_class = pool[:worker_class]
         num_workers = pool[:num_workers]
@@ -94,24 +115,51 @@ module Fractor
       puts "Workers started: #{@workers.size} active across #{@worker_pools.size} pools."
     end
 
-    # Sets up a signal handler for graceful shutdown (Ctrl+C).
+    # Sets up signal handlers for graceful shutdown.
+    # Handles SIGINT (Ctrl+C), SIGTERM (systemd/docker), and SIGUSR1 (status).
     def setup_signal_handler
       # Store references needed by the signal handler
       main_thread = Thread.current
 
-      # Trap INT signal (Ctrl+C)
-      Signal.trap("INT") do
-        puts "\nCtrl+C received. Initiating immediate shutdown..." if ENV["FRACTOR_DEBUG"]
-
-        # Raise ShutdownSignal in the main thread to interrupt any blocking operations
-        main_thread.raise(ShutdownSignal, "Interrupted by SIGINT")
-
-        puts "Shutdown signal raised in main thread." if ENV["FRACTOR_DEBUG"]
+      # Handler for graceful shutdown
+      shutdown_handler = proc do |signal_name|
+        if @continuous_mode
+          puts "\n#{signal_name} received. Initiating graceful shutdown..." if ENV["FRACTOR_DEBUG"]
+          # For continuous mode, call stop() to gracefully shut down
+          stop
+        else
+          puts "\n#{signal_name} received. Initiating immediate shutdown..." if ENV["FRACTOR_DEBUG"]
+          # For non-continuous mode, raise exception to exit the loop
+          main_thread.raise(ShutdownSignal, "Interrupted by #{signal_name}")
+        end
       rescue Exception => e
         puts "Error in signal handler: #{e.class}: #{e.message}" if ENV["FRACTOR_DEBUG"]
         puts e.backtrace.join("\n") if ENV["FRACTOR_DEBUG"]
         # As a last resort, force exit
         exit!(1)
+      end
+
+      # Trap SIGINT (Ctrl+C) - common for manual termination
+      Signal.trap("INT") do
+        shutdown_handler.call("SIGINT")
+      end
+
+      # Trap SIGTERM (kill, systemd, docker stop) - standard graceful shutdown
+      Signal.trap("TERM") do
+        shutdown_handler.call("SIGTERM")
+      end
+
+      # Trap SIGUSR1 for status information (optional)
+      Signal.trap("USR1") do
+        puts "\n=== Fractor Supervisor Status ===" if ENV["FRACTOR_DEBUG"]
+        puts "Mode: #{@continuous_mode ? 'Continuous' : 'Batch'}" if ENV["FRACTOR_DEBUG"]
+        puts "Running: #{@running}" if ENV["FRACTOR_DEBUG"]
+        puts "Workers: #{@workers.size}" if ENV["FRACTOR_DEBUG"]
+        puts "Idle workers: #{@idle_workers.size}" if ENV["FRACTOR_DEBUG"]
+        puts "Queue size: #{@work_queue.size}" if ENV["FRACTOR_DEBUG"]
+        puts "Results: #{@results.results.size}" if ENV["FRACTOR_DEBUG"]
+        puts "Errors: #{@results.errors.size}" if ENV["FRACTOR_DEBUG"]
+        puts "================================\n" if ENV["FRACTOR_DEBUG"]
       end
     end
 
@@ -122,6 +170,24 @@ module Fractor
 
       @running = true
       processed_count = 0
+
+      # Start timer thread for continuous mode to periodically check work sources
+      if @continuous_mode && !@work_callbacks.empty?
+        @timer_thread = Thread.new do
+          while @running
+            sleep(0.1) # Check work sources every 100ms
+            if @wakeup_ractor && @running
+              begin
+                @wakeup_ractor.send(:wakeup)
+              rescue StandardError => e
+                puts "Timer thread error sending wakeup: #{e.message}" if ENV["FRACTOR_DEBUG"]
+                break
+              end
+            end
+          end
+          puts "Timer thread shutting down" if ENV["FRACTOR_DEBUG"]
+        end
+      end
 
       begin
         # Main loop: Process events until conditions are met for termination
@@ -139,11 +205,24 @@ module Fractor
           # Get active Ractor objects from the map keys
           active_ractors = @ractors_map.keys
 
-          # Check for new work from callbacks if in continuous mode and queue is empty
-          if @continuous_mode && @work_queue.empty? && !@work_callbacks.empty?
+          # Check for new work from callbacks if in continuous mode
+          if @continuous_mode && !@work_callbacks.empty?
             @work_callbacks.each do |callback|
               new_work = callback.call
-              add_work_items(new_work) if new_work && !new_work.empty?
+              if new_work && !new_work.empty?
+                add_work_items(new_work)
+                puts "Work source provided #{new_work.size} new items" if ENV["FRACTOR_DEBUG"]
+
+                # Try to send work to idle workers first
+                while !@work_queue.empty? && !@idle_workers.empty?
+                  worker = @idle_workers.shift
+                  if send_next_work_if_available(worker)
+                    puts "Sent work to idle worker #{worker.name}" if ENV["FRACTOR_DEBUG"]
+                  else
+                    # Worker couldn't accept work, don't re-add to idle list
+                  end
+                end
+              end
             end
           end
 
@@ -159,11 +238,23 @@ module Fractor
 
             sleep(0.1) # Small delay to avoid CPU spinning
             next
-
           end
 
           # Ractor.select blocks until a message is available from any active Ractor
+          # The wakeup ractor ensures we can unblock this call when needed
           ready_ractor_obj, message = Ractor.select(*active_ractors)
+
+          # Check if this is the wakeup ractor
+          if ready_ractor_obj == @wakeup_ractor
+            puts "Wakeup signal received: #{message[:message]}" if ENV["FRACTOR_DEBUG"]
+            # Remove wakeup ractor from map if shutting down
+            if message[:message] == :shutdown
+              @ractors_map.delete(@wakeup_ractor)
+              @wakeup_ractor = nil
+            end
+            # Continue loop to check @running flag
+            next
+          end
 
           # Find the corresponding WrappedRactor instance
           wrapped_ractor = @ractors_map[ready_ractor_obj]
@@ -179,7 +270,17 @@ module Fractor
           when :initialize
             puts "Ractor initialized: #{message[:processor]}" if ENV["FRACTOR_DEBUG"]
             # Send work immediately upon initialization if available
-            send_next_work_if_available(wrapped_ractor)
+            if send_next_work_if_available(wrapped_ractor)
+              # Work was sent
+            else
+              # No work available, mark worker as idle
+              @idle_workers << wrapped_ractor unless @idle_workers.include?(wrapped_ractor)
+              puts "Worker #{wrapped_ractor.name} marked as idle" if ENV["FRACTOR_DEBUG"]
+            end
+          when :shutdown
+            puts "Ractor #{wrapped_ractor.name} acknowledged shutdown" if ENV["FRACTOR_DEBUG"]
+            # Remove from active ractors
+            @ractors_map.delete(ready_ractor_obj)
           when :result
             # The message[:result] should be a WorkResult object
             work_result = message[:result]
@@ -190,7 +291,13 @@ module Fractor
               puts "Aggregated Results: #{@results.inspect}" unless @continuous_mode
             end
             # Send next piece of work
-            send_next_work_if_available(wrapped_ractor)
+            if send_next_work_if_available(wrapped_ractor)
+              # Work was sent
+            else
+              # No work available, mark worker as idle
+              @idle_workers << wrapped_ractor unless @idle_workers.include?(wrapped_ractor)
+              puts "Worker #{wrapped_ractor.name} marked as idle after completing work" if ENV["FRACTOR_DEBUG"]
+            end
           when :error
             # The message[:result] should be a WorkResult object containing the error
             error_result = message[:result]
@@ -201,7 +308,13 @@ module Fractor
               puts "Aggregated Results (including errors): #{@results.inspect}" unless @continuous_mode
             end
             # Send next piece of work even after an error
-            send_next_work_if_available(wrapped_ractor)
+            if send_next_work_if_available(wrapped_ractor)
+              # Work was sent
+            else
+              # No work available, mark worker as idle
+              @idle_workers << wrapped_ractor unless @idle_workers.include?(wrapped_ractor)
+              puts "Worker #{wrapped_ractor.name} marked as idle after error" if ENV["FRACTOR_DEBUG"]
+            end
           else
             puts "Unknown message type received: #{message[:type]} from #{wrapped_ractor.name}" if ENV["FRACTOR_DEBUG"]
           end
@@ -237,6 +350,28 @@ module Fractor
     def stop
       @running = false
       puts "Stopping supervisor..." if ENV["FRACTOR_DEBUG"]
+
+      # Wait for timer thread to finish if it exists
+      if @timer_thread && @timer_thread.alive?
+        @timer_thread.join(1) # Wait up to 1 second
+        puts "Timer thread stopped" if ENV["FRACTOR_DEBUG"]
+      end
+
+      # Signal the wakeup ractor first to unblock Ractor.select
+      if @wakeup_ractor
+        begin
+          @wakeup_ractor.send(:shutdown)
+          puts "Sent shutdown signal to wakeup ractor" if ENV["FRACTOR_DEBUG"]
+        rescue StandardError => e
+          puts "Error sending shutdown to wakeup ractor: #{e.message}" if ENV["FRACTOR_DEBUG"]
+        end
+      end
+
+      # Send shutdown signal to all workers
+      @workers.each do |w|
+        w.send(:shutdown) rescue nil
+        puts "Sent shutdown signal to #{w.name}" if ENV["FRACTOR_DEBUG"]
+      end
     end
 
     private
@@ -253,6 +388,7 @@ module Fractor
     end
 
     # Helper method to send the next available work item to a specific Ractor.
+    # Returns true if work was sent, false otherwise.
     def send_next_work_if_available(wrapped_ractor)
       # Ensure the wrapped_ractor instance is valid and its underlying ractor is not closed
       if wrapped_ractor && !wrapped_ractor.closed?
@@ -267,17 +403,23 @@ module Fractor
             #   puts "Closed idle Ractor: #{wrapped_ractor.name}"
             # end
           end
+          false
         else
           work_item = @work_queue.pop # Now directly a Work object
 
           puts "Sending next work #{work_item.inspect} to Ractor: #{wrapped_ractor.name}" if ENV["FRACTOR_DEBUG"]
           wrapped_ractor.send(work_item) # Send the Work object
           puts "Work sent to #{wrapped_ractor.name}." if ENV["FRACTOR_DEBUG"]
+
+          # Remove from idle workers list since it's now busy
+          @idle_workers.delete(wrapped_ractor)
+          true
         end
       else
         puts "Attempted to send work to an invalid or closed Ractor: #{wrapped_ractor&.name || 'unknown'}." if ENV["FRACTOR_DEBUG"]
         # Remove from map if found but closed
         @ractors_map.delete(wrapped_ractor.ractor) if wrapped_ractor && @ractors_map.key?(wrapped_ractor.ractor)
+        false
       end
     end
   end

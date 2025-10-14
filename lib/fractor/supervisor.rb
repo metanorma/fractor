@@ -83,7 +83,7 @@ module Fractor
         loop do
           msg = Ractor.receive
           puts "Wakeup Ractor received: #{msg.inspect}" if ENV["FRACTOR_DEBUG"]
-          if msg == :wakeup || msg == :shutdown
+          if %i[wakeup shutdown].include?(msg)
             Ractor.yield({ type: :wakeup, message: msg })
             break if msg == :shutdown
           end
@@ -352,7 +352,7 @@ module Fractor
       puts "Stopping supervisor..." if ENV["FRACTOR_DEBUG"]
 
       # Wait for timer thread to finish if it exists
-      if @timer_thread && @timer_thread.alive?
+      if @timer_thread&.alive?
         @timer_thread.join(1) # Wait up to 1 second
         puts "Timer thread stopped" if ENV["FRACTOR_DEBUG"]
       end
@@ -369,7 +369,11 @@ module Fractor
 
       # Send shutdown signal to all workers
       @workers.each do |w|
-        w.send(:shutdown) rescue nil
+        begin
+          w.send(:shutdown)
+        rescue StandardError
+          nil
+        end
         puts "Sent shutdown signal to #{w.name}" if ENV["FRACTOR_DEBUG"]
       end
     end

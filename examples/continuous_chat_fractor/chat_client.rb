@@ -1,15 +1,15 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "socket"
-require "json"
-require "fileutils"
+require 'socket'
+require 'json'
+require 'fileutils'
 
 module ContinuousChat
   # Simple Chat Client using Ruby's standard socket library
   class ChatClient
-    def initialize(username, server_host = "localhost", server_port = 3000,
-log_file_path = nil)
+    def initialize(username, server_host = 'localhost', server_port = 3000,
+                   log_file_path = nil)
       @username = username
       @server_host = server_host
       @server_port = server_port
@@ -18,7 +18,7 @@ log_file_path = nil)
       # Set up logging
       @log_file_path = log_file_path || "logs/client_#{username}_messages.log"
       FileUtils.mkdir_p(File.dirname(@log_file_path))
-      @log_file = File.open(@log_file_path, "w")
+      @log_file = File.open(@log_file_path, 'w')
 
       log_message("Client initialized for #{username}, connecting to #{server_host}:#{server_port}")
     end
@@ -32,17 +32,17 @@ log_file_path = nil)
 
         # Send join message
         join_data = {
-          type: "join",
+          type: 'join',
           data: {
-            username: @username,
+            username: @username
           },
-          timestamp: Time.now.to_i,
+          timestamp: Time.now.to_i
         }
         @socket.puts(JSON.generate(join_data))
         log_message("Sent join message: #{join_data}")
 
-        puts "Connected to chat server!"
-        log_message("Connected to chat server")
+        puts 'Connected to chat server!'
+        log_message('Connected to chat server')
 
         true
       rescue StandardError => e
@@ -64,7 +64,7 @@ log_file_path = nil)
 
     # Main event loop that handles both user input and server messages
     def main_event_loop
-      log_message("Starting main event loop")
+      log_message('Starting main event loop')
 
       # Print initial prompt
       print "(#{@username})> "
@@ -88,7 +88,7 @@ log_file_path = nil)
         end
       end
     rescue Interrupt
-      log_message("Client interrupted")
+      log_message('Client interrupted')
       @running = false
     rescue StandardError => e
       log_message("Error in main event loop: #{e.message}")
@@ -103,19 +103,19 @@ log_file_path = nil)
       return unless text
 
       # Check if client wants to quit
-      if text == "/quit" || text.nil?
+      if text == '/quit' || text.nil?
         @running = false
         return
       end
 
       # Create message packet
       message_data = {
-        type: "message",
+        type: 'message',
         data: {
           content: text,
-          recipient: "all", # Default to broadcast
+          recipient: 'all' # Default to broadcast
         },
-        timestamp: Time.now.to_i,
+        timestamp: Time.now.to_i
       }
 
       # Send to server
@@ -136,7 +136,7 @@ log_file_path = nil)
 
       if line.nil?
         # Server closed the connection
-        log_message("Connection to server lost")
+        log_message('Connection to server lost')
         @running = false
         return
       end
@@ -146,16 +146,16 @@ log_file_path = nil)
       log_message("Received: #{line}")
 
       # Display formatted message based on type
-      case message["type"]
-      when "broadcast"
+      case message['type']
+      when 'broadcast'
         puts "\r#{message['data']['from']}: #{message['data']['content']}"
-      when "direct_message"
+      when 'direct_message'
         puts "\r[DM] #{message['data']['from']}: #{message['data']['content']}"
-      when "server_message"
+      when 'server_message'
         puts "\r[Server] #{message['data']['message']}"
-      when "user_list"
+      when 'user_list'
         puts "\r[Server] Users online: #{message['data']['users'].join(', ')}"
-      when "error"
+      when 'error'
         puts "\r[Error] #{message['data']['message']}"
       end
 
@@ -177,7 +177,7 @@ log_file_path = nil)
       # Send all messages in a non-blocking way
       batch_send_messages(messages)
 
-      log_message("Finished sending all predefined messages")
+      log_message('Finished sending all predefined messages')
 
       # Start the event loop to receive responses
       main_event_loop
@@ -189,17 +189,17 @@ log_file_path = nil)
     def batch_send_messages(messages)
       messages.each_with_index do |msg, index|
         content = msg[:content]
-        recipient = msg[:recipient] || "all"
+        recipient = msg[:recipient] || 'all'
 
         log_message("Sending message #{index + 1}: '#{content}' to #{recipient}")
 
         message_data = {
-          type: "message",
+          type: 'message',
           data: {
             content: content,
-            recipient: recipient,
+            recipient: recipient
           },
-          timestamp: Time.now.to_i,
+          timestamp: Time.now.to_i
         }
 
         @socket.puts(JSON.generate(message_data))
@@ -214,33 +214,33 @@ log_file_path = nil)
       return unless @running
 
       @running = false
-      log_message("Disconnecting from server")
+      log_message('Disconnecting from server')
 
       if @socket && !@socket.closed?
         # Send leave message
         leave_data = {
-          type: "leave",
+          type: 'leave',
           data: {
-            username: @username,
+            username: @username
           },
-          timestamp: Time.now.to_i,
+          timestamp: Time.now.to_i
         }
         @socket.puts(JSON.generate(leave_data))
-        log_message("Sent leave message")
+        log_message('Sent leave message')
 
         @socket.close
       end
 
       @log_file&.close
 
-      puts "Disconnected from server."
+      puts 'Disconnected from server.'
       true
     end
 
     private
 
     def log_message(message)
-      timestamp = Time.now.strftime("%Y-%m-%d %H:%M:%S.%L")
+      timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S.%L')
       log_entry = "[#{timestamp}] #{message}"
 
       @log_file.puts(log_entry)
@@ -251,20 +251,20 @@ end
 
 # When run directly, start the client
 if __FILE__ == $PROGRAM_NAME
-  require "fileutils"
-  require "json"
+  require 'fileutils'
+  require 'json'
 
-  puts "Chat Client"
-  puts "==========="
-  puts "This is the chat client that connects to the chat server."
-  puts "All messages are logged to a file for later analysis."
+  puts 'Chat Client'
+  puts '==========='
+  puts 'This is the chat client that connects to the chat server.'
+  puts 'All messages are logged to a file for later analysis.'
   puts
 
   # Get username from command line or prompt
   username = ARGV[0]
 
   unless username
-    print "Enter your username: "
+    print 'Enter your username: '
     username = gets.chomp
   end
 
@@ -276,7 +276,7 @@ if __FILE__ == $PROGRAM_NAME
   messages_file = "logs/client_#{username}_send_messages.json"
 
   # Create and run the client
-  client = ContinuousChat::ChatClient.new(username, "localhost", port, log_file)
+  client = ContinuousChat::ChatClient.new(username, 'localhost', port, log_file)
 
   if client.connect
     begin
@@ -299,5 +299,5 @@ if __FILE__ == $PROGRAM_NAME
     end
   end
 
-  puts "Chat client exited."
+  puts 'Chat client exited.'
 end

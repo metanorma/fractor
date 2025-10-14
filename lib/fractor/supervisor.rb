@@ -144,8 +144,13 @@ module Fractor
     # Sets up platform-specific status monitoring signal
     def setup_status_signal
       if Gem.win_platform?
-        # Windows: Use SIGBREAK (Ctrl+Break)
-        Signal.trap("BREAK") { print_status }
+        # Windows: Try SIGBREAK (Ctrl+Break) if available
+        begin
+          Signal.trap("BREAK") { print_status }
+        rescue ArgumentError
+          # SIGBREAK not supported on this Ruby version/platform
+          # Status monitoring unavailable on Windows
+        end
       else
         # Unix/Linux/macOS: Use SIGUSR1
         begin

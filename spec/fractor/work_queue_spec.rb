@@ -22,7 +22,7 @@ RSpec.describe Fractor::WorkQueue do
       end
 
       it "adds multiple work items to the queue" do
-        items = 5.times.map { |i| Fractor::Work.new("data_#{i}") }
+        items = Array.new(5) { |i| Fractor::Work.new("data_#{i}") }
         items.each { |item| work_queue << item }
         expect(work_queue.size).to eq(5)
       end
@@ -32,21 +32,21 @@ RSpec.describe Fractor::WorkQueue do
       it "raises ArgumentError for non-Work objects" do
         expect { work_queue << "not a work item" }.to raise_error(
           ArgumentError,
-          /must be an instance of Fractor::Work/
+          /must be an instance of Fractor::Work/,
         )
       end
 
       it "raises ArgumentError for nil" do
         expect { work_queue << nil }.to raise_error(
           ArgumentError,
-          /must be an instance of Fractor::Work/
+          /must be an instance of Fractor::Work/,
         )
       end
     end
 
     context "when used concurrently" do
       it "handles concurrent pushes safely" do
-        threads = 10.times.map do
+        threads = Array.new(10) do
           Thread.new do
             5.times { |i| work_queue << Fractor::Work.new("concurrent_#{i}") }
           end
@@ -109,7 +109,7 @@ RSpec.describe Fractor::WorkQueue do
         results = []
         results_mutex = Mutex.new
 
-        threads = 10.times.map do
+        threads = Array.new(10) do
           Thread.new do
             batch = work_queue.pop_batch(10)
             results_mutex.synchronize { results.concat(batch) }
@@ -161,7 +161,7 @@ RSpec.describe Fractor::WorkQueue do
     let(:supervisor) do
       Fractor::Supervisor.new(
         worker_pools: [],
-        continuous_mode: true
+        continuous_mode: true,
       )
     end
 

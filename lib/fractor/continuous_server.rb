@@ -92,14 +92,14 @@ module Fractor
     def setup_supervisor
       @supervisor = Supervisor.new(
         worker_pools: @worker_pools,
-        continuous_mode: true
+        continuous_mode: true,
       )
 
       # Auto-register work queue if provided
       if @work_queue
         @work_queue.register_with_supervisor(@supervisor)
         log_message(
-          "Work queue registered with supervisor (batch size: 10)"
+          "Work queue registered with supervisor (batch size: 10)",
         )
       end
     end

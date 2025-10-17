@@ -48,12 +48,13 @@ module Fractor
             puts "Sending result #{result.inspect} from Ractor #{name}" if ENV["FRACTOR_DEBUG"]
             # Wrap the result in a WorkResult object if not already wrapped
             work_result = if result.is_a?(Fractor::WorkResult)
-                           result
-                         else
-                           Fractor::WorkResult.new(result: result, work: work)
-                         end
+                            result
+                          else
+                            Fractor::WorkResult.new(result: result, work: work)
+                          end
             # Yield the result back
-            Ractor.yield({ type: :result, result: work_result, processor: name })
+            Ractor.yield({ type: :result, result: work_result,
+                           processor: name })
           rescue StandardError => e
             # Handle errors during processing
             puts "Error processing work #{work.inspect} in Ractor #{name}: #{e.message}\n#{e.backtrace.join("\n")}" if ENV["FRACTOR_DEBUG"]

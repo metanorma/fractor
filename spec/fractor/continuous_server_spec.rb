@@ -27,7 +27,7 @@ RSpec.describe Fractor::ContinuousServer do
     it "accepts optional work queue" do
       server = described_class.new(
         worker_pools: worker_pools,
-        work_queue: work_queue
+        work_queue: work_queue,
       )
       expect(server.work_queue).to eq(work_queue)
     end
@@ -35,7 +35,7 @@ RSpec.describe Fractor::ContinuousServer do
     it "accepts optional log file path" do
       server = described_class.new(
         worker_pools: worker_pools,
-        log_file: "logs/test.log"
+        log_file: "logs/test.log",
       )
       expect(server).to be_a(described_class)
     end
@@ -87,7 +87,7 @@ RSpec.describe Fractor::ContinuousServer do
     it "starts supervisor and processes work items" do
       server = described_class.new(
         worker_pools: worker_pools,
-        work_queue: work_queue
+        work_queue: work_queue,
       )
 
       results = []
@@ -117,7 +117,7 @@ RSpec.describe Fractor::ContinuousServer do
 
       server = described_class.new(
         worker_pools: [{ worker_class: error_worker, num_workers: 1 }],
-        work_queue: work_queue
+        work_queue: work_queue,
       )
 
       errors = []
@@ -141,7 +141,7 @@ RSpec.describe Fractor::ContinuousServer do
     it "stops cleanly when requested" do
       server = described_class.new(
         worker_pools: worker_pools,
-        work_queue: work_queue
+        work_queue: work_queue,
       )
 
       server_thread = Thread.new { server.run }
@@ -156,7 +156,7 @@ RSpec.describe Fractor::ContinuousServer do
     it "processes callbacks in order" do
       server = described_class.new(
         worker_pools: worker_pools,
-        work_queue: work_queue
+        work_queue: work_queue,
       )
 
       call_order = []
@@ -174,7 +174,7 @@ RSpec.describe Fractor::ContinuousServer do
       server.stop
       server_thread.join(2)
 
-      expect(call_order).to eq([:first, :second])
+      expect(call_order).to eq(%i[first second])
     end
   end
 
@@ -185,7 +185,7 @@ RSpec.describe Fractor::ContinuousServer do
 
       server = described_class.new(
         worker_pools: worker_pools,
-        log_file: log_path
+        log_file: log_path,
       )
 
       server_thread = Thread.new { server.run }
@@ -207,7 +207,7 @@ RSpec.describe Fractor::ContinuousServer do
 
       server = described_class.new(
         worker_pools: worker_pools,
-        log_file: log_path
+        log_file: log_path,
       )
 
       server_thread = Thread.new { server.run }
@@ -230,7 +230,7 @@ RSpec.describe Fractor::ContinuousServer do
 
       server = described_class.new(
         worker_pools: worker_pools,
-        log_file: log_path
+        log_file: log_path,
       )
 
       server_thread = Thread.new { server.run }
@@ -251,7 +251,7 @@ RSpec.describe Fractor::ContinuousServer do
     it "auto-registers work queue with supervisor" do
       server = described_class.new(
         worker_pools: worker_pools,
-        work_queue: work_queue
+        work_queue: work_queue,
       )
 
       results = []
@@ -298,7 +298,7 @@ RSpec.describe Fractor::ContinuousServer do
     it "continues processing even if callback raises error" do
       server = described_class.new(
         worker_pools: worker_pools,
-        work_queue: work_queue
+        work_queue: work_queue,
       )
 
       results = []

@@ -1,0 +1,329 @@
+= Simplified Workflow Syntax
+
+This example demonstrates the simplified workflow syntax that reduces boilerplate and makes workflow definition more intuitive.
+
+== Overview
+
+The simplified syntax provides three major improvements:
+
+1. **Smart Auto-Wiring**: Automatically infers input sources from dependencies
+2. **Smart Defaults**: Auto-detects start and end jobs
+3. **Shorthand Syntax**: Concise job definitions with keyword parameters
+
+Additionally, two new APIs are provided:
+
+4. **Workflow.define**: Create workflows without inheritance
+5. **Chain API**: Fluent interface for linear workflows
+
+== Running the Example
+
+[source,shell]
+----
+ruby examples/workflow/simplified/simplified_workflow.rb
+----
+
+== Approach 1: Shorthand Syntax with Auto-Wiring
+
+=== General
+
+The shorthand syntax allows defining jobs concisely while smart defaults handle boilerplate configuration.
+
+=== Benefits
+
+* No need for `start_with` and `end_with` declarations
+* No need for explicit `inputs_from_*` calls for single dependencies
+* Automatic detection of workflow entry and exit points
+
+=== Usage
+
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "example" do
+    job "uppercase", UppercaseWorker
+    job "reverse", ReverseWorker, needs: "uppercase"
+    job "finalize", FinalizeWorker, needs: "reverse"
+  end
+end
+----
+
+Instead of the verbose form:
+
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "example" do
+    start_with "uppercase"
+    end_with "finalize"
+
+    job "uppercase" do
+      runs_with UppercaseWorker
+      inputs_from_workflow
+    end
+
+    job "reverse" do
+      needs "uppercase"
+      runs_with ReverseWorker
+      inputs_from_job "uppercase"
+    end
+
+    job "finalize" do
+      needs "reverse"
+      runs_with FinalizeWorker
+      inputs_from_job "reverse"
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+----
+
+== Approach 2: Workflow.define (No Inheritance)
+
+=== General
+
+Create workflow classes without explicit inheritance, useful for dynamic workflow generation or storing workflows in variables.
+
+=== Benefits
+
+* No need to create a class definition
+* Can be stored in constants or variables
+* Returns workflow class directly
+
+=== Usage
+
+[source,ruby]
+----
+MyWorkflow = Fractor::Workflow.define("example") do
+  job "uppercase", UppercaseWorker
+  job "reverse", ReverseWorker, needs: "uppercase"
+  job "finalize", FinalizeWorker, needs: "reverse"
+end
+
+# Use it the same way
+workflow = MyWorkflow.new
+result = workflow.execute(input: data)
+----
+
+== Approach 3: Chain API (Fluent Interface)
+
+=== General
+
+The Chain API provides a fluent interface specifically optimized for linear (sequential) workflows.
+
+=== Benefits
+
+* Most concise syntax for linear workflows
+* Chainable method calls
+* No explicit dependency management needed
+* Reads naturally: step → step → step
+
+=== Usage
+
+[source,ruby]
+----
+workflow_class = Fractor::Workflow.chain("pipeline")
+  .step("uppercase", UppercaseWorker)
+  .step("reverse", ReverseWorker)
+  .step("finalize", FinalizeWorker)
+  .build
+
+workflow = workflow_class.new
+result = workflow.execute(input: data)
+----
+
+== Smart Auto-Wiring Rules
+
+The auto-wiring system follows these rules:
+
+=== Single Dependency
+
+Jobs with exactly one dependency automatically wire inputs from that dependency:
+
+[source,ruby]
+----
+job "process", ProcessWorker, needs: "validate"
+# Automatically adds: inputs_from_job "validate"
+----
+
+=== No Dependencies (Start Jobs)
+
+Jobs with no dependencies automatically wire inputs from the workflow:
+
+[source,ruby]
+----
+job "start", StartWorker
+# Automatically adds: inputs_from_workflow
+----
+
+=== Multiple Dependencies
+
+Jobs with multiple dependencies require explicit input configuration:
+
+[source,ruby]
+----
+job "merge", MergeWorker, needs: %w[process1 process2],
+    inputs: { "process1" => { data: :data1 }, "process2" => { data: :data2 } }
+----
+
+== Smart Defaults
+
+=== Start Job Detection
+
+When only one job has no dependencies, it is automatically set as the start job.
+
+=== End Job Detection
+
+Jobs with no dependents (leaf nodes) are automatically marked as end jobs with:
+
+* `outputs_to_workflow`
+* `terminates_workflow`
+
+=== Multiple Start Jobs
+
+When multiple jobs have no dependencies, you must explicitly specify `start_with`:
+
+[source,ruby]
+----
+workflow "multi-start" do
+  start_with "primary"  # Required when ambiguous
+
+  job "primary", PrimaryWorker
+  job "secondary", SecondaryWorker
+  job "merge", MergeWorker, needs: %w[primary secondary]
+end
+----
+
+== Shorthand Job Syntax
+
+=== Worker Class Parameter
+
+Pass the worker class as the second parameter:
+
+[source,ruby]
+----
+job "process", ProcessWorker
+----
+
+=== Keyword Parameters
+
+All job configuration can be passed as keyword parameters:
+
+[source,ruby]
+----
+job "process", ProcessWorker,
+    needs: "validate",           # Dependencies
+    inputs: :workflow,           # Input source
+    outputs: :workflow,          # Output destination
+    workers: 3,                  # Parallel workers
+    condition: ->(ctx) { ... }   # Conditional execution
+----
+
+=== Mixing with DSL Block
+
+Shorthand syntax can be combined with DSL blocks:
+
+[source,ruby]
+----
+job "process", ProcessWorker, needs: "validate" do
+  parallel_workers 5
+  # Additional DSL configuration
+end
+----
+
+== Comparison: Before vs After
+
+=== Linear Workflow (3 jobs)
+
+==== Before (Verbose - 20 lines)
+
+[source,ruby]
+----
+class Pipeline < Fractor::Workflow
+  workflow "pipeline" do
+    input_type InputData
+    output_type OutputData
+    start_with "step1"
+    end_with "step3"
+
+    job "step1" do
+      runs_with Worker1
+      inputs_from_workflow
+    end
+
+    job "step2" do
+      needs "step1"
+      runs_with Worker2
+      inputs_from_job "step1"
+    end
+
+    job "step3" do
+      needs "step2"
+      runs_with Worker3
+      inputs_from_job "step2"
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+----
+
+==== After (Shorthand - 6 lines)
+
+[source,ruby]
+----
+class Pipeline < Fractor::Workflow
+  workflow "pipeline" do
+    job "step1", Worker1
+    job "step2", Worker2, needs: "step1"
+    job "step3", Worker3, needs: "step2"
+  end
+end
+----
+
+==== After (Chain API - 5 lines)
+
+[source,ruby]
+----
+Pipeline = Fractor::Workflow.chain("pipeline")
+  .step("step1", Worker1)
+  .step("step2", Worker2)
+  .step("step3", Worker3)
+  .build
+----
+
+== Backward Compatibility
+
+All existing verbose syntax continues to work. The simplified syntax is purely additive:
+
+* Explicit `start_with` and `end_with` override auto-detection
+* Explicit `inputs_from_*` overrides auto-wiring
+* DSL blocks still work as before
+* All validation rules remain the same
+
+== When to Use Each Approach
+
+=== Use Shorthand Syntax When:
+
+* You have simple linear or branching workflows
+* Dependencies are straightforward
+* You want to keep class-based definition
+
+=== Use Workflow.define When:
+
+* You need to generate workflows dynamically
+* You want to store workflows in variables
+* You prefer functional style over inheritance
+
+=== Use Chain API When:
+
+* You have strictly linear workflows
+* You want maximum conciseness
+* Dependencies are purely sequential
+
+=== Use Verbose Syntax When:
+
+* You have complex input mappings
+* You need fine-grained control
+* Multiple jobs depend on multiple sources
+* Documentation/clarity is more important than conciseness

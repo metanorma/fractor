@@ -1991,6 +1991,252 @@ Key features:
 * Routing of work items to appropriately specialized workers
 * Optimization of resources and logic per task type
 
+==== Workflow examples
+
+The Workflow examples (link:examples/workflow/[examples/workflow/]) demonstrate
+how to define and execute complex data processing workflows using a declarative
+GitHub Actions-style DSL. Workflows coordinate multiple jobs with dependencies,
+type-safe data flow, and support both sequential and parallel execution
+patterns.
+
+Key features:
+
+* *Declarative workflow DSL*: Define workflows similar to GitHub Actions
+* *Type-safe data flow*: Input/output types declared for each job
+* *Dependency management*: Automatic topological sorting and execution ordering
+* *Multiple execution patterns*: Linear pipelines, fan-out/fan-in, conditional execution
+* *Workflow validation*: Cycle detection, reachability checks, type validation
+* *Composable jobs*: Reusable worker definitions with clear interfaces
+
+Available examples:
+
+* link:examples/workflow/simple_linear_workflow.rb[Simple Linear Workflow]:
+  Three-job sequential pipeline demonstrating basic workflow concepts
+* link:examples/workflow/fan_out_workflow.rb[Fan-Out Workflow]: One job feeding
+  multiple parallel jobs, then aggregating results
+* link:examples/workflow/conditional_workflow.rb[Conditional Workflow]: Jobs
+  that execute based on runtime conditions
+
+See link:examples/workflow/README.adoc[the workflow README] for detailed
+documentation on the workflow system.
+
+===== Alternative workflow definition methods
+
+Fractor provides three complementary ways to define workflows, each suited to
+different use cases:
+
+====== YAML workflows (declarative configuration)
+
+Define workflows in YAML files similar to GitHub Actions syntax. This is ideal
+for:
+
+* Configuration-driven workflows
+* Non-programmer workflow definition
+* CI/CD integration
+* Version-controlled workflow definitions
+
+[source,yaml]
+----
+name: my-workflow
+input_type: SimpleLinearExample::TextData
+output_type: SimpleLinearExample::FinalOutput
+
+jobs:
+  - id: uppercase
+    worker: SimpleLinearExample::UppercaseWorker
+    inputs: workflow
+    outputs_to_workflow: false
+
+  - id: reverse
+    worker: SimpleLinearExample::ReverseWorker
+    needs: uppercase
+    inputs: uppercase
+    outputs_to_workflow: false
+
+  - id: finalize
+    worker: SimpleLinearExample::FinalizeWorker
+    needs: reverse
+    inputs: reverse
+    outputs_to_workflow: true
+    terminates: true
+----
+
+Load and execute YAML workflows:
+
+[source,ruby]
+----
+require 'fractor/workflow/yaml_loader'
+
+# Define worker registry for class name mapping
+worker_registry = {
+  'SimpleLinearExample::UppercaseWorker' => SimpleLinearExample::UppercaseWorker,
+  'SimpleLinearExample::ReverseWorker' => SimpleLinearExample::ReverseWorker,
+  'SimpleLinearExample::FinalizeWorker' => SimpleLinearExample::FinalizeWorker,
+  'SimpleLinearExample::TextData' => SimpleLinearExample::TextData,
+  'SimpleLinearExample::FinalOutput' => SimpleLinearExample::FinalOutput
+}
+
+# Load workflow from YAML file
+workflow_class = Fractor::Workflow::YamlLoader.load_file(
+  'path/to/workflow.yml',
+  worker_registry: worker_registry
+)
+
+# Execute the workflow
+result = workflow_class.new.execute(input_data)
+----
+
+====== Programmatic Builder API (dynamic construction)
+
+Build workflows programmatically using a fluent API. This is ideal for:
+
+* Dynamic workflow generation
+* Conditional workflow structures
+* Programmatic workflow templates
+* Runtime workflow modifications
+
+[source,ruby]
+----
+require 'fractor/workflow/builder'
+
+builder = Fractor::Workflow::Builder.new("dynamic-workflow")
+  .input_type(InputData)
+  .output_type(OutputData)
+  .add_job("process", ProcessWorker, inputs: :workflow)
+  .add_job("validate", ValidateWorker,
+           needs: "process",
+           inputs: "process")
+  .add_job("finalize", FinalizeWorker,
+           needs: "validate",
+           inputs: "validate",
+           outputs_to_workflow: true,
+           terminates: true)
+
+# Build and execute
+workflow_class = builder.build!
+result = workflow_class.new.execute(input_data)
+
+# Or clone and modify for variants
+dev_builder = builder.clone
+dev_builder.add_job("debug", DebugWorker, needs: "validate")
+dev_workflow = dev_builder.build!
+----
+
+====== Ruby DSL (embedded workflows)
+
+Define workflows directly in Ruby code using the declarative DSL. This is ideal
+for:
+
+* In-code workflow definitions
+* Strong typing and IDE support
+* Complex workflow logic
+* Integration with application code
+
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "my-workflow" do
+    input_type InputData
+    output_type OutputData
+
+    start_with "process"
+    end_with "finalize"
+
+    job "process" do
+      runs_with ProcessWorker
+      inputs_from_workflow
+    end
+
+    job "finalize" do
+      needs "process"
+      runs_with FinalizeWorker
+      inputs_from_job "process"
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+
+result = MyWorkflow.new.execute(input_data)
+----
+
+====== Helper worker base classes
+
+Fractor provides helper base classes that reduce boilerplate for common worker
+patterns:
+
+[source,ruby]
+----
+require 'fractor/workflow/helpers'
+
+# Simple transformation pattern
+class UppercaseWorker < Fractor::Workflow::SimpleWorker
+  input_type TextData
+  output_type TextResult
+
+  def transform(input)
+    TextResult.new(text: input.text.upcase)
+  end
+end
+
+# Collection mapping pattern
+class ProcessItemsWorker < Fractor::Workflow::MapWorker
+  input_type ItemList
+  output_type ProcessedList
+
+  def map_item(item)
+    # Transform each item
+    ProcessedItem.new(data: item.data.upcase)
+  end
+end
+
+# Collection filtering pattern
+class FilterValidWorker < Fractor::Workflow::FilterWorker
+  input_type ItemList
+  output_type FilteredList
+
+  def filter_item?(item)
+    item.valid? && item.score > 0.5
+  end
+end
+
+# Collection aggregation pattern
+class SummarizeWorker < Fractor::Workflow::ReduceWorker
+  input_type ItemList
+  output_type Summary
+
+  def reduce_items(items)
+    total = items.sum(&:value)
+    Summary.new(total: total, count: items.size)
+  end
+end
+
+# Validation pattern with error collection
+class ValidateDataWorker < Fractor::Workflow::ValidationWorker
+  input_type InputData
+  output_type ValidationResult
+
+  def validate(input)
+    errors = []
+    errors << "Name is required" if input.name.nil?
+    errors << "Age must be positive" if input.age <= 0
+
+    ValidationResult.new(
+      valid: errors.empty?,
+      errors: errors,
+      data: input
+    )
+  end
+end
+----
+
+These helper classes handle the boilerplate of creating WorkResult objects and
+managing the worker lifecycle, allowing you to focus on the core transformation
+logic.
+
+See link:examples/workflow/yaml_example/[the YAML workflow example] for a
+complete demonstration of loading and executing YAML workflows.
+
 === Continuous mode examples
 
 ==== Plain socket implementation

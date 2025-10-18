@@ -10,6 +10,7 @@ require_relative "fractor/wrapped_ractor"
 require_relative "fractor/supervisor"
 require_relative "fractor/work_queue"
 require_relative "fractor/continuous_server"
+require_relative "fractor/workflow"
 
 # Fractor: Function-driven Ractors framework
 module Fractor

@@ -1,45 +1,595 @@
 = Multi-Work Type Example
 
-== Overview
+== Purpose
 
-This example demonstrates how to handle multiple types of work items within a single Fractor supervisor. It shows how a single worker can process different work types intelligently, applying different strategies based on the work's type.
+Demonstrates how to handle multiple types of work items within a single Fractor supervisor, showcasing polymorphic processing where a single worker can intelligently process different work types with type-specific strategies.
 
-== Key Concepts
+== Focus
 
-* *Multiple Work Types*: Supporting different work classes within the same system
-* *Polymorphic Processing*: Workers that adapt their processing based on work type
-* *Type Detection*: Identifying and handling different work types appropriately
-* *Unified Workflow*: Managing diverse work through a common supervisor
+This example focuses on demonstrating:
 
-== Example Explanation
+* Multiple work type classes inheriting from `Fractor::Work`
+* Polymorphic processing in workers using type detection
+* Type-based processing strategies within a single worker
+* Unified workflow managing heterogeneous work items
+* Result classification and organization by work type
+* Type-specific error handling
 
-This example implements a system that processes two distinct work types:
+== Architecture
 
-1. *TextWork*: Handles text in various formats (plain text, Markdown, HTML, JSON)
-2. *ImageWork*: Processes image data with different dimensions and formats
+.Multi-Work Type Processing Flow
+[source]
+----
+Work Items (Mixed Types)
+    │
+    ├─→ TextWork (Markdown)
+    ├─→ TextWork (HTML)
+    ├─→ TextWork (JSON)
+    ├─→ ImageWork (JPEG)
+    ├─→ ImageWork (PNG)
+    └─→ ImageWork (GIF)
+        │
+        ▼
+    Work Queue
+        │
+        ├──────────────────┬──────────────────┐
+        │                  │                  │
+        ▼                  ▼                  ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│MultiFormat   │  │MultiFormat   │  │MultiFormat   │
+│Worker        │  │Worker        │  │Worker        │
+│(Ractor 1)    │  │(Ractor 2)    │  │(Ractor 3)    │
+└──────────────┘  └──────────────┘  └──────────────┘
+        │                  │                  │
+        │    Type Detection & Processing      │
+        │                  │                  │
+        ├─→ if TextWork    ├─→ if ImageWork   ├─→ if TextWork
+        │   process_text   │   process_image  │   process_text
+        │                  │                  │
+        ▼                  ▼                  ▼
+    Results (Typed)
+        │
+        ├─→ Text Results   (format, word_count, char_count)
+        ├─→ Image Results  (dimensions, filters, compression)
+        └─→ Errors         (unsupported types)
+----
 
-A single worker type (`MultiFormatWorker`) is capable of handling both work types, adapting its processing strategies based on the work's class.
+.Worker Type Detection Logic
+[source]
+----
+MultiFormatWorker.process(work)
+        │
+        ├─→ Is work a TextWork?
+        │       │
+        │       ├─→ Yes → process_text(work)
+        │       │           │
+        │       │           ├─→ format == :markdown?
+        │       │           │       └─→ process_markdown()
+        │       │           │
+        │       │           ├─→ format == :html?
+        │       │           │       └─→ process_html()
+        │       │           │
+        │       │           ├─→ format == :json?
+        │       │           │       └─→ process_json()
+        │       │           │
+        │       │           └─→ else (plain text)
+        │       │                   └─→ upcase()
+        │       │
+        │       └─→ No → Is work an ImageWork?
+        │                   │
+        │                   ├─→ Yes → process_image(work)
+        │                   │           │
+        │                   │           └─→ Apply filters
+        │                   │               (sharpen, contrast)
+        │                   │
+        │                   └─→ No → Return TypeError
+        │                           (unsupported work type)
+        ▼
+    Return WorkResult
+----
 
-== Features Demonstrated
+== Key Components
 
-* Creating and using multiple work type classes
-* Designing workers that can handle diverse work types
-* Type-based processing logic
-* Proper error handling across different work types
-* Classification and reporting of heterogeneous results
+=== Work Type Classes
 
-== Running the Example
+Define distinct work types for different content:
 
-[source,sh]
+[source,ruby]
+----
+class TextWork < Fractor::Work
+  def initialize(data, format = :plain, options = {})
+    super({ data: data, format: format, options: options })  # <1>
+  end
+
+  def data
+    input[:data]  # <2>
+  end
+
+  def format
+    input[:format]
+  end
+
+  def to_s
+    "TextWork: format=#{format}, data=#{data[0..30]}..."
+  end
+end
+
+class ImageWork < Fractor::Work
+  def initialize(data, dimensions = [0, 0], format = :png)
+    super({ data: data, dimensions: dimensions, format: format })
+  end
+
+  def data
+    input[:data]
+  end
+
+  def dimensions
+    input[:dimensions]
+  end
+
+  def format
+    input[:format]
+  end
+end
+----
+<1> Store type-specific data in input hash
+<2> Provide accessor methods for each work type
+
+=== Polymorphic Worker
+
+Single worker handles multiple work types:
+
+[source,ruby]
+----
+class MultiFormatWorker < Fractor::Worker
+  def process(work)
+    # Type detection and routing
+    if work.is_a?(TextWork)          # <1>
+      process_text(work)              # <2>
+    elsif work.is_a?(ImageWork)
+      process_image(work)
+    else
+      # Handle unsupported types
+      error = TypeError.new("Unsupported work type: #{work.class}")
+      Fractor::WorkResult.new(error: error, work: work)  # <3>
+    end
+  end
+
+  private
+
+  def process_text(work)              # <4>
+    processed = case work.format
+                when :markdown then process_markdown(work.data)
+                when :html then process_html(work.data)
+                when :json then process_json(work.data)
+                else work.data.upcase
+                end
+
+    Fractor::WorkResult.new(
+      result: {
+        work_type: :text,
+        original_format: work.format,
+        transformed_data: processed,
+        metadata: {
+          word_count: processed.split(/\s+/).size,
+          char_count: processed.length
+        }
+      },
+      work: work
+    )
+  end
+
+  def process_image(work)             # <5>
+    Fractor::WorkResult.new(
+      result: {
+        work_type: :image,
+        dimensions: work.dimensions,
+        format: work.format,
+        applied_filters: [:sharpen, :contrast],
+        processing_metadata: {
+          original_size: work.data.size,
+          processed_size: (work.data.size * 0.8).to_i
+        }
+      },
+      work: work
+    )
+  end
+end
+----
+<1> Use `is_a?` to detect work type
+<2> Route to type-specific processing method
+<3> Return error for unsupported types
+<4> Text-specific processing with format handling
+<5> Image-specific processing with filter application
+
+=== Mixed Content Processing
+
+Process heterogeneous work items together:
+
+[source,ruby]
+----
+# Create supervisor with single worker pool
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MultiFormatWorker, num_workers: 4 }  # <1>
+  ]
+)
+
+# Add mixed work types
+text_works = text_items.map do |item|
+  TextWork.new(item[:data], item[:format])
+end
+supervisor.add_work_items(text_works)  # <2>
+
+image_works = image_items.map do |item|
+  ImageWork.new(item[:data], item[:dimensions], item[:format])
+end
+supervisor.add_work_items(image_works)  # <3>
+
+# Process all work together
+supervisor.run  # <4>
+
+# Classify results by type
+results.results.each do |result|
+  if result.work.is_a?(TextWork)
+    text_results << result
+  elsif result.work.is_a?(ImageWork)
+    image_results << result
+  end
+end
+----
+<1> Single worker pool handles all types
+<2> Add text work items
+<3> Add image work items
+<4> Process all work in parallel
+
+== Usage
+
+Run the example from the project root:
+
+[source,shell]
 ----
 ruby examples/multi_work_type/multi_work_type.rb
 ----
 
 == Expected Output
 
-The example will show:
-* Processing of multiple work types
-* Different processing strategies applied to each type
-* Type-specific result formats
-* Performance statistics for each work type
-* Aggregated results organized by type
+[example]
+====
+[source]
+----
+Starting Multi-Work Type Processing Example
+==========================================
+This example demonstrates processing different types of work items:
+1. Text documents in various formats (plain, markdown, HTML, JSON)
+2. Image data with different formats and dimensions
+Both are processed by the same worker but with different strategies
+
+Processing with 4 workers...
+
+Processed 4 text items and 3 image items
+Encountered 0 errors
+Processing Results:
+-----------------
+Total items: 7
+Processed text items: 4
+Processed image items: 3
+Errors: 0
+
+Text Processing Results:
+Text Item 1 (plain):
+  THIS IS A PLAIN TEXT DOCUMENT. IT HAS NO SPECIAL FORMATTING.
+  Word count: 10
+  Character count: 59
+
+Text Item 2 (markdown):
+  Processed Markdown: 87 chars, 1 headers, 1 links
+  Word count: 18
+  Character count: 182
+
+Text Item 3 (html):
+  Processed HTML: 74 chars, 4 tags
+  Word count: 22
+  Character count: 126
+
+Text Item 4 (json):
+  Processed JSON: 3 top-level keys
+  Word count: 11
+  Character count: 89
+
+Image Processing Results:
+Image Item 1 (jpeg):
+  Dimensions: 800x600
+  Applied filters: sharpen, contrast
+  Compression: 20%
+
+Image Item 2 (png):
+  Dimensions: 1024x768
+  Applied filters: sharpen, contrast
+  Compression: 20%
+
+Image Item 3 (gif):
+  Dimensions: 320x240
+  Applied filters: sharpen, contrast
+  Compression: 20%
+
+Processing completed in 0.24 seconds
+----
+====
+
+== Learning Points
+
+=== Polymorphic Processing
+
+Single worker processes multiple types:
+
+* **Type Detection**: Use `is_a?` to identify work type
+* **Routing**: Direct to type-specific processing methods
+* **Encapsulation**: Keep type-specific logic in private methods
+* **Error Handling**: Return error for unsupported types
+
+Benefits:
+- Simpler supervisor configuration (one worker pool)
+- Code reuse for common processing logic
+- Flexible work type combinations
+- Easier maintenance
+
+=== Type-Specific Strategies
+
+Different processing for each work type:
+
+[source,ruby]
+----
+def process_text(work)
+  case work.format
+  when :markdown
+    # Parse headers, links, emphasis
+    process_markdown(work.data)
+  when :html
+    # Extract tags, process DOM
+    process_html(work.data)
+  when :json
+    # Parse JSON, validate structure
+    process_json(work.data)
+  else
+    # Default text processing
+    work.data.upcase
+  end
+end
+
+def process_image(work)
+  # Apply image-specific operations
+  filters = [:sharpen, :contrast]
+  apply_filters(work.data, filters)
+end
+----
+
+=== Work Type Design
+
+Best practices for creating work types:
+
+[source,ruby]
+----
+# Good: Clear, focused work types
+class TextWork < Fractor::Work
+  def initialize(data, format, options = {})
+    super({ data: data, format: format, options: options })
+  end
+
+  # Provide accessors for all attributes
+  def data; input[:data]; end
+  def format; input[:format]; end
+  def options; input[:options]; end
+
+  # Helpful string representation
+  def to_s
+    "TextWork: format=#{format}"
+  end
+end
+
+# Avoid: Overly generic work types
+class GenericWork < Fractor::Work  # Too generic
+  def initialize(data, type, metadata)
+    super({ data: data, type: type, metadata: metadata })
+  end
+end
+----
+
+=== Result Classification
+
+Organize results by work type:
+
+[source,ruby]
+----
+results = {
+  text: [],
+  image: [],
+  errors: []
+}
+
+supervisor.results.results.each do |result|
+  case result.work
+  when TextWork
+    results[:text] << result.result
+  when ImageWork
+    results[:image] << result.result
+  end
+end
+
+supervisor.results.errors.each do |error_result|
+  results[:errors] << {
+    error: error_result.error,
+    work_type: error_result.work.class.name
+  }
+end
+----
+
+=== Alternative Patterns
+
+==== Specialized Workers (Alternative Approach)
+
+Instead of one polymorphic worker, use specialized workers:
+
+[source,ruby]
+----
+# Separate workers for each type
+class TextWorker < Fractor::Worker
+  def process(work)
+    return error_result unless work.is_a?(TextWork)
+    # Process text only
+  end
+end
+
+class ImageWorker < Fractor::Worker
+  def process(work)
+    return error_result unless work.is_a?(ImageWork)
+    # Process images only
+  end
+end
+
+# Multiple worker pools
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: TextWorker, num_workers: 4 },
+    { worker_class: ImageWorker, num_workers: 2 }
+  ]
+)
+----
+
+Benefits:
+- Clearer separation of concerns
+- Independent scaling for each type
+- Easier to test individual workers
+
+Trade-offs:
+- More complex supervisor configuration
+- Less flexible for ad-hoc type combinations
+
+==== Type Registry Pattern
+
+For many work types, use a registry:
+
+[source,ruby]
+----
+class MultiTypeWorker < Fractor::Worker
+  PROCESSORS = {
+    TextWork => :process_text,
+    ImageWork => :process_image,
+    VideoWork => :process_video
+  }
+
+  def process(work)
+    processor = PROCESSORS[work.class]
+
+    if processor
+      send(processor, work)
+    else
+      unsupported_type_error(work)
+    end
+  end
+end
+----
+
+== Use Cases
+
+=== Content Management System
+
+Process different content types:
+
+[source,ruby]
+----
+# Articles, images, videos in one workflow
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ContentProcessor }
+  ]
+)
+
+supervisor.add_work_items([
+  ArticleWork.new(content: "...", format: :markdown),
+  ImageWork.new(data: "...", dimensions: [1200, 800]),
+  VideoWork.new(data: "...", duration: 120)
+])
+----
+
+=== Data Pipeline
+
+ETL with multiple data formats:
+
+[source,ruby]
+----
+# CSV, JSON, XML from different sources
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: DataExtractor }
+  ]
+)
+
+supervisor.add_work_items([
+  CsvWork.new(file: "data.csv"),
+  JsonWork.new(file: "data.json"),
+  XmlWork.new(file: "data.xml")
+])
+----
+
+=== Batch Processing
+
+Mixed batch operations:
+
+[source,ruby]
+----
+# Emails, notifications, reports
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: BatchProcessor }
+  ]
+)
+
+supervisor.add_work_items([
+  EmailWork.new(to: "user@example.com", template: :welcome),
+  SmsWork.new(to: "+1234567890", message: "..."),
+  ReportWork.new(type: :monthly, period: "2024-01")
+])
+----
+
+== Performance Considerations
+
+=== Type Detection Overhead
+
+Type checking has minimal overhead:
+
+[source,ruby]
+----
+# Fast: Direct class check
+if work.is_a?(TextWork)
+  process_text(work)
+end
+
+# Slower: String comparison (avoid)
+if work.class.name == "TextWork"
+  process_text(work)
+end
+----
+
+=== Worker Pool Sizing
+
+Balance workers based on work type distribution:
+
+[source,ruby]
+----
+# If 80% text, 20% images
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: TextWorker, num_workers: 8 },
+    { worker_class: ImageWorker, num_workers: 2 }
+  ]
+)
+----
+
+== Next Steps
+
+After understanding multi-work type processing, explore:
+
+* link:../specialized_workers/README.adoc[Specialized Workers] - Separate worker pools for different work types
+* link:../simple/README.adoc[Simple Example] - Basic Fractor concepts
+* link:../pipeline_processing/README.adoc[Pipeline Processing] - Sequential multi-stage processing

@@ -1,31 +1,158 @@
 = Auto-Detection Example
 
-This example demonstrates Fractor's automatic worker detection feature.
-
 == Purpose
 
-Shows how Fractor can automatically detect the number of available processors on your system and create the optimal number of workers without manual configuration.
+Demonstrates Fractor's automatic worker detection feature, showing how the framework adapts to different hardware environments by automatically detecting and utilizing available CPU cores.
 
-== What This Demonstrates
+== Focus
 
-* How Fractor automatically detects the number of available processors
+This example focuses on demonstrating:
+
+* Automatic detection of available processors using `Etc.nprocessors`
 * Comparison between auto-detection and explicit worker configuration
-* Mixed configuration (some pools with auto-detection, some explicit)
-* How to verify the number of workers being used
+* Mixed configuration strategies (combining both approaches)
+* Resource utilization optimization without manual tuning
+* Portable code that adapts to different environments
 
-== When to Use Auto-Detection
+== Architecture
 
-* For portable code that adapts to different environments
-* When you want optimal resource utilization without manual tuning
-* For development where the number of cores varies across machines
+.Auto-Detection vs Explicit Configuration
+[source]
+----
+System Hardware
+    │
+    ├─→ Etc.nprocessors
+    │       │
+    │       └─→ Returns: 8 (example)
+    │
+    ▼
+┌─────────────────────────────────────────────┐
+│         Fractor Supervisor                  │
+└─────────────────────────────────────────────┘
+    │
+    ├─→ Auto-Detection Mode
+    │       │
+    │       └─→ Worker Pool { worker_class: ComputeWorker }
+    │               │
+    │               └─→ Creates 8 Ractors (auto-detected)
+    │                       │
+    │                       ├─→ Ractor 1 (ComputeWorker)
+    │                       ├─→ Ractor 2 (ComputeWorker)
+    │                       ├─→ Ractor 3 (ComputeWorker)
+    │                       ├─→ ...
+    │                       └─→ Ractor 8 (ComputeWorker)
+    │
+    └─→ Explicit Configuration Mode
+            │
+            └─→ Worker Pool { worker_class: ComputeWorker, num_workers: 4 }
+                    │
+                    └─→ Creates 4 Ractors (explicit)
+                            │
+                            ├─→ Ractor 1 (ComputeWorker)
+                            ├─→ Ractor 2 (ComputeWorker)
+                            ├─→ Ractor 3 (ComputeWorker)
+                            └─→ Ractor 4 (ComputeWorker)
+----
 
-== When to Set Explicit Values
+.Resource Utilization Comparison
+[source]
+----
+Machine A (4 cores)          Machine B (16 cores)
+────────────────────────────────────────────────────────
 
-* When you need precise control over resource usage
-* For production environments with specific requirements
-* When limiting workers due to memory or other constraints
+Auto-Detection:
+  4 workers created            16 workers created
+  100% CPU utilization         100% CPU utilization
+  ✓ Optimal                    ✓ Optimal
 
-== Running the Example
+Explicit (num_workers: 4):
+  4 workers created            4 workers created
+  100% CPU utilization         25% CPU utilization
+  ✓ Optimal                    ✗ Underutilized
+
+Explicit (num_workers: 8):
+  8 workers created            8 workers created
+  200% oversubscribed          50% CPU utilization
+  ✗ Oversubscribed             ✗ Underutilized
+----
+
+== Key Components
+
+=== Auto-Detection Configuration
+
+Create supervisor without specifying `num_workers`:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ComputeWorker }  # <1>
+  ]
+)
+----
+<1> Omitting `num_workers` triggers auto-detection
+
+Fractor internally uses:
+
+[source,ruby]
+----
+require 'etc'
+
+num_workers = Etc.nprocessors  # <1>
+# Creates num_workers Ractor instances
+----
+<1> Returns the number of available processors
+
+=== Explicit Configuration
+
+Specify exact number of workers:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ComputeWorker, num_workers: 4 }  # <1>
+  ]
+)
+----
+<1> Always creates exactly 4 workers regardless of hardware
+
+=== Mixed Configuration
+
+Combine both approaches in different worker pools:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: FastWorker },              # <1>
+    { worker_class: SlowWorker, num_workers: 2 }  # <2>
+  ]
+)
+----
+<1> Auto-detects optimal workers for FastWorker
+<2> Limits SlowWorker to 2 workers (e.g., memory intensive)
+
+=== Worker Implementation
+
+Simple worker for demonstration:
+
+[source,ruby]
+----
+class ComputeWorker < Fractor::Worker
+  def process(work)
+    result = work.value * work.value  # <1>
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue StandardError => e
+    Fractor::WorkResult.new(error: e, work: work)
+  end
+end
+----
+<1> Simple computation (squares the input value)
+
+== Usage
+
+Run the example from the project root:
 
 [source,shell]
 ----
@@ -34,19 +161,270 @@ ruby examples/auto_detection/auto_detection.rb
 
 == Expected Output
 
-The script will:
+[example]
+====
+[source]
+----
+================================================================================
+Fractor Auto-Detection Example
+================================================================================
 
-1. Display the number of processors detected on your system
-2. Run three examples:
-   * Example 1: Auto-detection (uses all available processors)
-   * Example 2: Explicit configuration (uses exactly 4 workers)
-   * Example 3: Mixed configuration (combines both approaches)
-3. Show results from processing work items in parallel
-4. Provide a summary of benefits for each approach
+System Information:
+  Available processors: 8
 
-== Key Takeaways
+--------------------------------------------------------------------------------
+Example 1: Auto-Detection
+--------------------------------------------------------------------------------
+Creating supervisor WITHOUT specifying num_workers...
+Fractor will automatically detect and use 8 workers
 
-* Auto-detection provides automatic adaptation to different environments
-* Explicit configuration provides precise control when needed
-* You can mix both approaches in the same supervisor
-* Best practice: use auto-detection for development, tune for production if needed
+Processing 10 work items with auto-detected workers...
+Results: 1, 4, 9, 16, 25, 36, 49, 64, 81, 100
+✓ Auto-detection successful!
+
+--------------------------------------------------------------------------------
+Example 2: Explicit Configuration
+--------------------------------------------------------------------------------
+Creating supervisor WITH explicit num_workers=4...
+
+Processing 10 work items with 4 explicitly configured workers...
+Results: 121, 144, 169, 196, 225, 256, 289, 324, 361, 400
+✓ Explicit configuration successful!
+
+--------------------------------------------------------------------------------
+Example 3: Mixed Auto-Detection and Explicit Configuration
+--------------------------------------------------------------------------------
+Creating supervisor with multiple worker pools:
+  - Pool 1: Auto-detected workers
+  - Pool 2: 2 explicitly configured workers
+
+Processing 10 work items with mixed configuration...
+Results: 441, 484, 529, 576, 625, 676, 729, 784, 841, 900
+✓ Mixed configuration successful!
+
+================================================================================
+Summary
+================================================================================
+
+Auto-detection provides:
+  ✓ Automatic adaptation to different environments
+  ✓ Optimal resource utilization by default
+  ✓ Less configuration needed
+  ✓ Portability across machines with different CPU counts
+
+Explicit configuration provides:
+  ✓ Precise control over worker count
+  ✓ Ability to limit resource usage
+  ✓ Predictable behavior in production
+
+Best practice: Use auto-detection for development and testing,
+               then tune explicitly for production if needed.
+
+================================================================================
+----
+====
+
+== Learning Points
+
+=== When to Use Auto-Detection
+
+Auto-detection is ideal for:
+
+* **Development environments**: Different developers may have different hardware
+* **Portable code**: Applications that run on various machines
+* **Default optimization**: When you want optimal performance without tuning
+* **CI/CD pipelines**: Runners may have varying CPU counts
+* **Container deployments**: CPU allocation may vary by environment
+
+Example use cases:
+[source,ruby]
+----
+# Development script - works well on any machine
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: DataProcessor }]
+)
+
+# CI pipeline - adapts to runner hardware
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: TestRunner }]
+)
+----
+
+=== When to Use Explicit Configuration
+
+Explicit configuration is better for:
+
+* **Production systems**: Predictable resource usage for capacity planning
+* **Resource-constrained environments**: Limit workers to avoid overwhelming system
+* **Memory-intensive tasks**: Fewer workers to prevent memory exhaustion
+* **I/O-bound tasks**: More workers than CPUs for better throughput
+* **Mixed workloads**: Different worker counts for different task types
+
+Example use cases:
+[source,ruby]
+----
+# Memory-intensive processing - limit workers
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MemoryHeavyWorker, num_workers: 2 }
+  ]
+)
+
+# I/O-bound tasks - more workers than CPUs
+num_io_workers = Etc.nprocessors * 2  # <1>
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ApiWorker, num_workers: num_io_workers }
+  ]
+)
+----
+<1> I/O-bound tasks benefit from more workers
+
+=== Auto-Detection Mechanism
+
+Fractor uses Ruby's `Etc.nprocessors`:
+
+[source,ruby]
+----
+require 'etc'
+
+# Returns number of available processors
+# - Physical cores on bare metal
+# - Virtual CPUs in VMs
+# - CPU quota in containers (if set)
+num_processors = Etc.nprocessors
+----
+
+Behavior in different environments:
+
+* **Bare metal**: Returns physical CPU cores
+* **Virtual machines**: Returns allocated vCPUs
+* **Docker containers**: Returns container CPU quota (if set) or host CPUs
+* **Kubernetes pods**: Returns CPU limit (if set) or node CPUs
+
+=== Performance Considerations
+
+==== CPU-Bound Tasks
+
+For CPU-intensive work, auto-detection provides optimal parallelism:
+
+[source,ruby]
+----
+# Good: One worker per CPU core
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: CpuIntensiveWorker }]
+)
+----
+
+==== I/O-Bound Tasks
+
+For I/O-heavy work, consider explicit over-subscription:
+
+[source,ruby]
+----
+# Better: More workers than CPUs for I/O tasks
+io_workers = Etc.nprocessors * 2
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ApiClient, num_workers: io_workers }
+  ]
+)
+----
+
+==== Memory-Intensive Tasks
+
+For memory-heavy work, limit workers to prevent exhaustion:
+
+[source,ruby]
+----
+# Better: Fewer workers for memory-intensive tasks
+max_workers = [Etc.nprocessors / 2, 2].max  # <1>
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: LargeDataProcessor, num_workers: max_workers }
+  ]
+)
+----
+<1> Use half the CPUs, minimum of 2
+
+=== Mixed Configuration Strategy
+
+Combine auto-detection with explicit limits:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    # Light CPU work - auto-detect
+    { worker_class: FastWorker },
+
+    # Heavy memory work - limit to 2
+    { worker_class: MemoryHeavyWorker, num_workers: 2 },
+
+    # I/O work - 2x CPUs
+    { worker_class: IoWorker, num_workers: Etc.nprocessors * 2 }
+  ]
+)
+----
+
+== Best Practices
+
+=== Development
+
+Use auto-detection for development:
+
+[source,ruby]
+----
+# Good for development - adapts to developer's machine
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker }]
+)
+----
+
+=== Production
+
+Start with auto-detection, then tune based on monitoring:
+
+[source,ruby]
+----
+# Production approach
+num_workers = ENV.fetch('NUM_WORKERS', Etc.nprocessors).to_i
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: num_workers }
+  ]
+)
+----
+
+This allows:
+- Auto-detection by default
+- Environment-based override for production tuning
+- Easy testing of different worker counts
+
+=== Container Environments
+
+In containers, consider CPU quotas:
+
+[source,ruby]
+----
+# Respect container CPU limits
+def optimal_workers
+  # Auto-detection respects container quotas
+  Etc.nprocessors
+end
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: optimal_workers }
+  ]
+)
+----
+
+== Next Steps
+
+After understanding auto-detection, explore:
+
+* link:../simple/README.adoc[Simple Example] - Basic Fractor concepts
+* link:../specialized_workers/README.adoc[Specialized Workers] - Multiple worker pools with different configurations
+* link:../multi_work_type/README.adoc[Multi Work Type] - Handling different work types efficiently

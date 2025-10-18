@@ -5,6 +5,7 @@ require_relative "workflow/workflow_context"
 require_relative "workflow/workflow_executor"
 require_relative "workflow/workflow_validator"
 require_relative "workflow/builder"
+require_relative "workflow/chain_builder"
 require_relative "workflow/helpers"
 require_relative "workflow/logger"
 require_relative "workflow/structured_logger"
@@ -19,6 +20,44 @@ module Fractor
     class << self
       attr_reader :workflow_name, :workflow_mode, :jobs, :start_job_name,
                   :end_job_names, :input_model_class, :output_model_class
+
+      # Create a workflow class without inheritance.
+      # This is a convenience method that creates an anonymous workflow class.
+      #
+      # @param name [String] The workflow name
+      # @param mode [Symbol] :pipeline (default) or :continuous
+      # @yield Block containing job definitions using workflow DSL
+      # @return [Class] A new Workflow subclass
+      #
+      # @example
+      #   workflow = Fractor::Workflow.define("my-workflow") do
+      #     job "step1", Worker1
+      #     job "step2", Worker2, needs: "step1"
+      #     job "step3", Worker3, needs: "step2"
+      #   end
+      #   instance = workflow.new
+      #   result = instance.execute(input: data)
+      def define(name, mode: :pipeline, &block)
+        Class.new(Workflow) do
+          workflow(name, mode: mode, &block)
+        end
+      end
+
+      # Create a linear chain workflow for sequential processing.
+      # This provides a fluent API for simple pipelines.
+      #
+      # @param name [String] The workflow name
+      # @return [ChainBuilder] A builder for constructing the chain
+      #
+      # @example
+      #   workflow = Fractor::Workflow.chain("pipeline")
+      #     .step("uppercase", UppercaseWorker)
+      #     .step("reverse", ReverseWorker)
+      #     .step("finalize", FinalizeWorker)
+      #     .build
+      def chain(name)
+        ChainBuilder.new(name)
+      end
 
       # Define a workflow with the given name and optional mode.
       #
@@ -73,8 +112,27 @@ module Fractor
       # Define a job in the workflow.
       #
       # @param name [String, Symbol] The job name
-      # @yield Block containing job configuration
-      def job(name, &)
+      # @param worker_class [Class] Optional worker class (shorthand syntax)
+      # @param needs [String, Symbol, Array] Optional dependencies (shorthand)
+      # @param inputs [Symbol, String, Hash] Optional input configuration (shorthand)
+      # @param outputs [Symbol] Optional :workflow to mark outputs (shorthand)
+      # @param workers [Integer] Optional parallel worker count (shorthand)
+      # @param condition [Proc] Optional conditional execution (shorthand)
+      # @yield Block containing job configuration (DSL syntax)
+      #
+      # @example DSL syntax (original)
+      #   job "process" do
+      #     runs_with ProcessWorker
+      #     needs "validate"
+      #   end
+      #
+      # @example Shorthand syntax (simplified)
+      #   job "process", ProcessWorker, needs: "validate"
+      #
+      # @example Shorthand with multiple options
+      #   job "process", ProcessWorker, needs: "validate", outputs: :workflow
+      def job(name, worker_class = nil, needs: nil, inputs: nil, outputs: nil,
+              workers: nil, condition: nil, &block)
         job_name = name.to_s
         if @jobs.key?(job_name)
           raise ArgumentError,
@@ -82,7 +140,43 @@ module Fractor
         end
 
         job_obj = Job.new(job_name, self)
-        job_obj.instance_eval(&) if block
+
+        # Apply shorthand parameters if provided
+        if worker_class
+          job_obj.runs_with(worker_class)
+        end
+
+        if needs
+          needs_array = needs.is_a?(Array) ? needs : [needs]
+          job_obj.needs(*needs_array)
+        end
+
+        if inputs
+          case inputs
+          when :workflow, "workflow"
+            job_obj.inputs_from_workflow
+          when String, Symbol
+            job_obj.inputs_from_job(inputs.to_s)
+          when Hash
+            job_obj.inputs_from_multiple(inputs)
+          end
+        end
+
+        if outputs == :workflow
+          job_obj.outputs_to_workflow
+        end
+
+        if workers
+          job_obj.parallel_workers(workers)
+        end
+
+        if condition
+          job_obj.if_condition(condition)
+        end
+
+        # Apply DSL block if provided
+        job_obj.instance_eval(&block) if block
+
         @jobs[job_name] = job_obj
       end
 

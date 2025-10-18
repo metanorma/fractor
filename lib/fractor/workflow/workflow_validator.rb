@@ -17,6 +17,8 @@ module Fractor
       # Raises appropriate errors if validation fails.
       def validate!
         validate_basic_structure!
+        apply_smart_defaults!
+        auto_wire_job_inputs!
         validate_entry_exit_points! unless continuous_mode?
         validate_job_workers!
         validate_dependencies!
@@ -34,6 +36,47 @@ module Fractor
         if @workflow_class.jobs.empty?
           raise WorkflowError,
                 "Workflow '#{@workflow_class.workflow_name}' has no jobs defined"
+        end
+      end
+
+      # Apply smart defaults for start/end jobs if not explicitly configured
+      def apply_smart_defaults!
+        return if continuous_mode?
+
+        # Auto-detect start job if not specified
+        unless @workflow_class.start_job_name
+          start_jobs = @workflow_class.jobs.values.select do |job|
+            job.dependencies.empty?
+          end
+
+          if start_jobs.size == 1
+            @workflow_class.instance_variable_set(:@start_job_name,
+                                                  start_jobs.first.name)
+          end
+        end
+
+        # Auto-detect end jobs if not specified
+        if @workflow_class.end_job_names.empty?
+          # Find jobs with no dependents (leaf jobs)
+          all_dependencies = @workflow_class.jobs.values.flat_map(&:dependencies).to_set
+          end_job_candidates = @workflow_class.jobs.keys.reject do |job_name|
+            all_dependencies.include?(job_name)
+          end
+
+          end_job_candidates.each do |job_name|
+            job = @workflow_class.jobs[job_name]
+            job.outputs_to_workflow
+            job.terminates_workflow
+            @workflow_class.end_job_names << { name: job_name,
+                                               condition: :success }
+          end
+        end
+      end
+
+      # Auto-wire job inputs based on dependencies
+      def auto_wire_job_inputs!
+        @workflow_class.jobs.each_value do |job|
+          job.auto_wire_inputs!
         end
       end
 
@@ -133,17 +176,16 @@ module Fractor
 
       def validate_input_mappings!
         @workflow_class.jobs.each do |name, job|
-          # First job should map from workflow
-          if job.dependencies.empty? && !continuous_mode? && (job.input_mappings.empty? || !job.input_mappings[:workflow])
-            raise WorkflowError,
-                  "Job '#{name}' has no dependencies and should use inputs_from_workflow"
-          end
-
-          # Jobs with dependencies should map from those dependencies
-          if job.dependencies.any? && job.input_mappings.empty?
-            raise WorkflowError,
-                  "Job '#{name}' has dependencies but no input mappings. " \
-                  "Use inputs_from_job or inputs_from_multiple"
+          # After auto-wiring, all jobs should have input mappings
+          if job.input_mappings.empty?
+            if job.dependencies.size > 1
+              raise WorkflowError,
+                    "Job '#{name}' has multiple dependencies (#{job.dependencies.join(', ')}). " \
+                    "Please explicitly configure inputs using inputs_from_job or inputs_from_multiple"
+            else
+              raise WorkflowError,
+                    "Job '#{name}' has no input mappings configured"
+            end
           end
 
           # Validate source jobs exist in mappings

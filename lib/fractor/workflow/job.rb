@@ -58,6 +58,21 @@ module Fractor
       end
       alias inputs_from :inputs_from_workflow
 
+      # Auto-wire inputs from dependencies if not explicitly configured.
+      # Called during workflow finalization.
+      def auto_wire_inputs!
+        return unless @input_mappings.empty?
+
+        if @dependencies.empty?
+          # No dependencies = must be a start job
+          @input_mappings[:workflow] = true
+        elsif @dependencies.size == 1
+          # Single dependency = auto-wire from that job
+          @input_mappings[@dependencies.first] = :all
+        end
+        # Multiple dependencies require explicit configuration
+      end
+
       # Map inputs from a single upstream job.
       #
       # @param source_job [String, Symbol] The source job name

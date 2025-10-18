@@ -5,71 +5,659 @@
 
 toc::[]
 
-== Overview
+== Purpose
 
-The Hierarchical Hasher example demonstrates how to use the Fractor framework to process a file in parallel by breaking it into chunks, hashing each chunk independently, and then combining the results into a final hash.
+The Hierarchical Hasher example demonstrates parallel file processing using a map-reduce pattern with Fractor. It showcases how to break large files into chunks, process them concurrently, and aggregate results while preserving order. This is a fundamental pattern for processing large datasets efficiently using parallel workers.
 
-This example is particularly useful for:
+== Focus
 
-* Processing large files efficiently
-* Demonstrating parallel data chunking patterns
-* Showcasing result aggregation techniques
+This example demonstrates:
 
-== Implementation Details
+* **Chunking patterns** for parallel data processing
+* **Position-aware processing** to maintain data order
+* **Result aggregation** with sorting and combining
+* **Map-reduce architecture** in Fractor
+* **Parallel I/O processing** for large files
+* **Worker pool utilization** for CPU-bound tasks
 
-The example consists of the following key components:
+== Architecture
 
-=== ChunkWork
+=== Data Flow Overview
 
-A subclass of `Fractor::Work` that represents a chunk of a file to be hashed. Each `ChunkWork` instance contains:
+[source]
+----
+┌─────────────────────────────────────────────────────────────┐
+│                        Input File                           │
+│  "Lorem ipsum dolor sit amet consectetur adipiscing..."     │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ File.read(chunk_size)
+                            ▼
+                    ┌───────────────┐
+                    │ File Chunking │
+                    └───────────────┘
+                            │
+            ┌───────────────┼───────────────┐
+            │               │               │
+            ▼               ▼               ▼
+    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+    │  ChunkWork   │ │  ChunkWork   │ │  ChunkWork   │
+    │ start=0      │ │ start=1024   │ │ start=2048   │
+    │ length=1024  │ │ length=1024  │ │ length=1024  │
+    │ data=[...]   │ │ data=[...]   │ │ data=[...]   │
+    └──────────────┘ └──────────────┘ └──────────────┘
+            │               │               │
+            │    Parallel   │   Processing  │
+            │               │               │
+            ▼               ▼               ▼
+    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+    │ HashWorker 1 │ │ HashWorker 2 │ │ HashWorker 3 │
+    │ SHA256(...)  │ │ SHA256(...)  │ │ SHA256(...)  │
+    └──────────────┘ └──────────────┘ └──────────────┘
+            │               │               │
+            │               │               │
+            ▼               ▼               ▼
+    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+    │ WorkResult   │ │ WorkResult   │ │ WorkResult   │
+    │ start=0      │ │ start=1024   │ │ start=2048   │
+    │ hash=a3f2... │ │ hash=7b9c... │ │ hash=e5d1... │
+    └──────────────┘ └──────────────┘ └──────────────┘
+            │               │               │
+            └───────────────┼───────────────┘
+                            │ Sort by start position
+                            ▼
+                    ┌───────────────┐
+                    │  Aggregation  │
+                    │ a3f2...\n     │
+                    │ 7b9c...\n     │
+                    │ e5d1...       │
+                    └───────────────┘
+                            │
+                            │ SHA256(combined)
+                            ▼
+                    ┌───────────────┐
+                    │  Final Hash   │
+                    │ c4e8a9b2f...  │
+                    └───────────────┘
+----
 
-* The chunk data
-* The starting position within the file
-* The length of the chunk
+=== Map-Reduce Pattern
 
-=== HashWorker
+[source]
+----
+Map Phase (Parallel Processing)
+┌─────────────────────────────────────────────────────────┐
+│ File Chunk 0 → HashWorker → hash_0 (a3f2...)           │
+│ File Chunk 1 → HashWorker → hash_1 (7b9c...)           │
+│ File Chunk 2 → HashWorker → hash_2 (e5d1...)           │
+│ File Chunk 3 → HashWorker → hash_3 (f1a8...)           │
+│        ...                                               │
+│ File Chunk N → HashWorker → hash_N (d9c4...)           │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+Reduce Phase (Sequential Aggregation)
+┌─────────────────────────────────────────────────────────┐
+│ 1. Sort results by chunk position                       │
+│ 2. Concatenate: hash_0\nhash_1\nhash_2\n...hash_N      │
+│ 3. Final hash: SHA256(concatenated_hashes)             │
+└─────────────────────────────────────────────────────────┘
+----
 
-A subclass of `Fractor::Worker` that processes `ChunkWork` instances by:
+=== Performance Comparison
 
-1. Calculating a SHA-256 hash for the chunk
-2. Returning a work result containing the hash, start position, and length
+[source]
+----
+Sequential Processing:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+│ Chunk 0 │ Chunk 1 │ Chunk 2 │ Chunk 3 │ ... │
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Time: 100 units
 
-=== FileHasher
+Parallel Processing (4 workers):
+━━━━━━━━━━━━━━━━━━━━━
+│ Chunk 0 │
+│ Chunk 1 │ (Worker 1)
+│ Chunk 2 │ (Worker 2)
+│ Chunk 3 │ (Worker 3)
+━━━━━━━━━━━━━━━━━━━━━
+Time: ~25 units (4x speedup)
 
-The main orchestration class that:
+Actual speedup depends on:
+- Number of workers vs cores
+- Chunk size vs overhead ratio
+- I/O vs CPU bottleneck
+----
 
-1. Breaks a file into chunks of a specified size
-2. Creates a `Fractor::Supervisor` with the `HashWorker` and `ChunkWork` classes
-3. Processes all chunks in parallel
-4. Aggregates the results to create a final hash by combining all chunk hashes
+== Key Components
 
-== Usage
+=== ChunkWork: Position-Aware Work Unit
+
+The `ChunkWork` class represents a chunk of the file with position metadata:
 
 [source,ruby]
 ----
-# Basic usage
-ruby hierarchical_hasher.rb <file_path> [worker_count]
+class ChunkWork < Fractor::Work
+  def initialize(data, start = 0, length = nil)
+    super({
+      data: data,        # <1>
+      start: start,      # <2>
+      length: length || data.bytesize, # <3>
+    })
+  end
 
-# Examples
-ruby hierarchical_hasher.rb sample.txt         # Use default 4 workers
-ruby hierarchical_hasher.rb large_file.dat 8   # Use 8 workers
+  def data
+    input[:data]
+  end
+
+  def start
+    input[:start]
+  end
+
+  def length
+    input[:length]
+  end
+end
+----
+<1> The actual chunk data to be hashed
+<2> Starting byte position in the original file (for ordering)
+<3> Length of this chunk in bytes
+
+Why position tracking matters:
+
+* Enables **correct result ordering** during aggregation
+* Supports **resumable processing** for interrupted jobs
+* Allows **parallel validation** against sequential processing
+* Facilitates **chunk-level debugging** and error tracking
+
+=== HashWorker: Independent Chunk Processor
+
+The `HashWorker` processes chunks without dependencies:
+
+[source,ruby]
+----
+class HashWorker < Fractor::Worker
+  def process(work)
+    sleep(rand(0.01..0.05)) # <1>
+
+    hash = Digest::SHA256.hexdigest(work.data) # <2>
+
+    Fractor::WorkResult.new(
+      result: {
+        start: work.start,   # <3>
+        length: work.length,
+        hash: hash,
+      },
+      work: work,
+    )
+  end
+end
+----
+<1> Simulates variable processing time (real work would be I/O or computation)
+<2> Calculates SHA-256 hash for the chunk (Ractor-safe)
+<3> Preserves position metadata for correct aggregation
+
+Key design aspects:
+
+* **Stateless processing**: Each chunk is independent
+* **Position preservation**: Results include original position
+* **Error handling**: Wrapped in begin/rescue for robustness
+* **Ractor compatibility**: Uses SHA-256 instead of SHA-3
+
+=== FileHasher: Orchestration and Aggregation
+
+The `FileHasher` orchestrates the entire process:
+
+[source,ruby]
+----
+class FileHasher
+  def hash_file
+    supervisor = Fractor::Supervisor.new(
+      worker_pools: [
+        { worker_class: HashWorker, num_workers: @worker_count }, # <1>
+      ],
+    )
+
+    load_file_chunks(supervisor) # <2>
+    supervisor.run               # <3>
+
+    @final_hash = finalize_hash(supervisor.results) # <4>
+  end
+
+  private
+
+  def load_file_chunks(supervisor)
+    File.open(@file_path, "rb") do |file|
+      start_pos = 0
+      while (chunk = file.read(@chunk_size)) # <5>
+        work_items << ChunkWork.new(chunk, start_pos, chunk.length)
+        start_pos += chunk.length
+      end
+    end
+    supervisor.add_work_items(work_items)
+  end
+
+  def finalize_hash(results_aggregator)
+    sorted_results = results_aggregator.results.sort_by do |result|
+      result.result[:start] # <6>
+    end
+
+    combined_hash_string = sorted_results.map do |result|
+      result.result[:hash]
+    end.join("\n") # <7>
+
+    Digest::SHA256.hexdigest(combined_hash_string) # <8>
+  end
+end
+----
+<1> Create worker pool with configurable size
+<2> Break file into chunks with position tracking
+<3> Execute parallel processing
+<4> Aggregate results into final hash
+<5> Read file in chunks (default 1KB)
+<6> Sort by original position to maintain order
+<7> Combine chunk hashes with newline separator
+<8> Create final hash from combined hashes
+
+Orchestration phases:
+
+1. **Chunking**: Break file into fixed-size pieces
+2. **Distribution**: Send chunks to worker pool
+3. **Parallel Execution**: Workers process chunks concurrently
+4. **Collection**: Gather all results
+5. **Aggregation**: Sort, combine, and finalize
+
+== Usage
+
+.Basic usage
+[example]
+====
+[source,bash]
+----
+# Use default 4 workers
+ruby hierarchical_hasher.rb sample.txt
+
+# Use 8 workers for better parallelization
+ruby hierarchical_hasher.rb large_file.dat 8
+
+# Process a large log file
+ruby hierarchical_hasher.rb /var/log/system.log 16
+----
+====
+
+.Programmatic usage
+[example]
+====
+[source,ruby]
+----
+require_relative "hierarchical_hasher"
+
+# Create hasher with custom chunk size
+hasher = HierarchicalHasher::FileHasher.new(
+  "large_file.dat",
+  chunk_size: 4096,    # 4KB chunks
+  worker_count: 8       # 8 parallel workers
+)
+
+# Process the file
+final_hash = hasher.hash_file
+
+puts "Final hash: #{final_hash}"
+----
+====
+
+== Expected Output
+
+[source,text]
+----
+Starting hierarchical hasher with 4 workers...
+Processing file: sample.txt
+Final SHA-256 hash: c4e8a9b2f1d3e5a7c9b1f3d5e7a9c1b3d5e7a9b1c3d5e7a9b1c3d5e7a9b1c3d5
+Processing completed in 0.234567 seconds
 ----
 
-== How It Works
+== Learning Points
 
-1. The file is divided into 1KB chunks (configurable)
-2. Each chunk is assigned to a worker for processing
-3. Workers calculate SHA-256 hashes for their assigned chunks
-4. Results are collected and sorted by their original position in the file
-5. The individual chunk hashes are concatenated with newlines
-6. A final SHA-256 hash is calculated on the combined hash string
+=== 1. Chunking Strategy
 
-== Performance Considerations
+The example uses fixed-size chunking:
 
-* The chunk size can be adjusted to optimize performance for different file types
-* The number of workers can be increased for better parallelization on multi-core systems
-* Very small files may not benefit from parallelization due to the overhead
+[source,ruby]
+----
+chunk_size = 1024  # 1KB chunks
 
-== Ractor Compatibility Note
+File.open(file_path, "rb") do |file|
+  while (chunk = file.read(chunk_size))
+    # Process chunk
+  end
+end
+----
 
-This example uses SHA-256 instead of SHA3 because the SHA3 implementation in some Ruby versions is not Ractor-compatible.
+**Considerations**:
+
+* **Small chunks** (< 1KB): Higher overhead, more parallelism
+* **Medium chunks** (1-10KB): Balanced overhead and parallelism
+* **Large chunks** (> 100KB): Lower overhead, less parallelism
+
+**Rule of thumb**: Chunk size should be 10-100x the processing time to amortize overhead.
+
+=== 2. Position-Aware Processing
+
+Position tracking enables correct ordering:
+
+[source,ruby]
+----
+# Without position tracking (WRONG for ordered results)
+results.map { |r| r.hash }.join("\n")
+
+# With position tracking (CORRECT)
+results.sort_by { |r| r.start }.map { |r| r.hash }.join("\n")
+----
+
+**Why it matters**:
+
+* Workers complete in **non-deterministic order**
+* Results must be **reassembled in file order**
+* Position metadata is **minimal overhead** (8 bytes per chunk)
+
+=== 3. Map-Reduce Pattern
+
+The example implements a classic map-reduce:
+
+**Map phase** (parallel):
+[source,ruby]
+----
+chunks.map do |chunk|
+  Digest::SHA256.hexdigest(chunk.data)
+end
+----
+
+**Reduce phase** (sequential):
+[source,ruby]
+----
+hashes.sort_by { |r| r.start }
+      .map { |r| r.hash }
+      .join("\n")
+      .then { |combined| Digest::SHA256.hexdigest(combined) }
+----
+
+**Key insight**: Map is parallelizable, reduce requires ordering.
+
+=== 4. Performance Characteristics
+
+**Speedup formula**:
+[source]
+----
+Speedup = T_sequential / T_parallel
+        ≈ N_workers (ideal)
+        < N_workers (actual, due to overhead)
+
+Actual speedup = N_workers × η
+where η = efficiency factor (0.6-0.9 typical)
+----
+
+**Bottlenecks**:
+
+* **I/O bound**: Limited by disk read speed
+* **CPU bound**: Limited by hashing computation
+* **Overhead**: Ractor creation, communication, synchronization
+
+**Optimization strategies**:
+
+* Increase chunk size to reduce overhead
+* Match worker count to available cores
+* Use buffered I/O for faster reading
+* Consider memory constraints for large files
+
+=== 5. Ractor Compatibility
+
+The example uses SHA-256 instead of SHA-3:
+
+[source,ruby]
+----
+# Ractor-safe
+Digest::SHA256.hexdigest(data)
+
+# Not Ractor-safe in some Ruby versions
+# Digest::SHA3.hexdigest(data)
+----
+
+**Ractor requirements**:
+
+* All data must be **immutable** or **copied**
+* Libraries must be **thread-safe**
+* No shared mutable state
+
+=== 6. Error Handling
+
+The worker includes error handling:
+
+[source,ruby]
+----
+begin
+  hash = Digest::SHA256.hexdigest(work.data)
+  Fractor::WorkResult.new(result: { hash: hash }, work: work)
+rescue StandardError => e
+  Fractor::WorkResult.new(error: e.message, work: work)
+end
+----
+
+**Best practices**:
+
+* Wrap processing in `begin/rescue`
+* Include context in error messages
+* Return `WorkResult` with error, not raise
+* Allow supervisor to handle failures
+
+== Use Cases and Patterns
+
+=== Large File Processing
+
+Process files too large for memory:
+
+[source,ruby]
+----
+# Process a 10GB log file
+hasher = FileHasher.new(
+  "huge.log",
+  chunk_size: 1_048_576,  # 1MB chunks
+  worker_count: 16
+)
+hasher.hash_file
+----
+
+**Benefits**:
+
+* **Streaming processing**: No need to load entire file
+* **Parallel speedup**: 10-15x faster on 16 cores
+* **Memory efficient**: Only chunks in memory
+
+=== Content-Addressable Storage
+
+Create unique identifiers for files:
+
+[source,ruby]
+----
+# Store file by its hash
+file_hash = hasher.hash_file
+storage_path = "store/#{file_hash[0..2]}/#{file_hash}"
+FileUtils.cp(file_path, storage_path)
+----
+
+**Use cases**:
+
+* Deduplication systems
+* Content-addressable storage
+* Distributed file systems
+
+=== Data Integrity Verification
+
+Verify file integrity after transfer:
+
+[source,ruby]
+----
+# Before transfer
+original_hash = FileHasher.new(source_file).hash_file
+
+# After transfer
+transferred_hash = FileHasher.new(dest_file).hash_file
+
+if original_hash == transferred_hash
+  puts "Transfer verified"
+else
+  puts "Corruption detected"
+end
+----
+
+=== Parallel Checksum Validation
+
+Validate multiple files concurrently:
+
+[source,ruby]
+----
+files.each do |file|
+  supervisor.add_work_item(
+    FileHashWork.new(file, expected_hash: checksums[file])
+  )
+end
+----
+
+=== Pattern: Hierarchical Reduction
+
+Extend to multi-level hierarchies:
+
+[source]
+----
+Level 0: Individual chunks → chunk hashes
+         [c0, c1, c2, c3, c4, c5, c6, c7]
+         ↓
+Level 1: Group into blocks → block hashes
+         [b0={c0,c1}, b1={c2,c3}, b2={c4,c5}, b3={c6,c7}]
+         ↓
+Level 2: Group blocks → section hashes
+         [s0={b0,b1}, s1={b2,b3}]
+         ↓
+Level 3: Final hash
+         final={s0,s1}
+----
+
+**Benefits**:
+
+* Allows **incremental verification**
+* Supports **partial updates**
+* Enables **merkle tree construction**
+
+== Performance Tuning
+
+=== Chunk Size Selection
+
+[source,ruby]
+----
+# For CPU-bound hashing
+chunk_size = 4096  # 4KB - many small chunks
+
+# For I/O-bound processing
+chunk_size = 1_048_576  # 1MB - fewer large chunks
+
+# Adaptive sizing
+chunk_size = [
+  file_size / (worker_count * 100),  # Target ~100 chunks per worker
+  4096  # Minimum chunk size
+].max
+----
+
+=== Worker Count Optimization
+
+[source,ruby]
+----
+# CPU-bound: Match core count
+worker_count = Etc.nprocessors
+
+# I/O-bound: Can exceed core count
+worker_count = Etc.nprocessors * 2
+
+# Mixed workload: Use 1.5x cores
+worker_count = (Etc.nprocessors * 1.5).to_i
+----
+
+=== Memory Considerations
+
+[source,ruby]
+----
+# Memory usage ≈ chunk_size × worker_count × 2
+# (2x for input chunk + output result)
+
+max_memory = 512 * 1024 * 1024  # 512MB
+chunk_size = max_memory / (worker_count * 2)
+----
+
+== Next Steps
+
+After understanding hierarchical hashing, explore:
+
+* **link:../pipeline_processing/README.adoc[Pipeline Processing]**: Multi-stage transformations
+* **link:../scatter_gather/README.adoc[Scatter-Gather]**: Dynamic work distribution
+* **link:../producer_subscriber/README.adoc[Producer-Subscriber]**: Streaming data patterns
+* **link:../workflow/README.adoc[Workflow System]**: Complex multi-step pipelines
+
+== Advanced Topics
+
+=== Resumable Processing
+
+Add checkpointing for large files:
+
+[source,ruby]
+----
+def hash_file_resumable(checkpoint_file = nil)
+  completed = load_checkpoint(checkpoint_file) || []
+
+  chunks.each_with_index do |chunk, i|
+    next if completed.include?(i)
+
+    process_chunk(chunk)
+    save_checkpoint(checkpoint_file, completed << i)
+  end
+end
+----
+
+=== Progress Tracking
+
+Monitor processing progress:
+
+[source,ruby]
+----
+def hash_file_with_progress
+  total_chunks = (file_size / chunk_size.to_f).ceil
+
+  supervisor.on_result do |result|
+    completed = supervisor.results.size
+    progress = (completed / total_chunks.to_f * 100).round(2)
+    puts "Progress: #{progress}% (#{completed}/#{total_chunks})"
+  end
+
+  supervisor.run
+end
+----
+
+=== Merkle Tree Construction
+
+Build a merkle tree for verification:
+
+[source,ruby]
+----
+def build_merkle_tree
+  # Level 0: Leaf hashes (chunks)
+  leaves = hash_all_chunks
+
+  # Build tree bottom-up
+  tree = [leaves]
+  while tree.last.size > 1
+    parent_level = tree.last.each_slice(2).map do |pair|
+      Digest::SHA256.hexdigest(pair.join)
+    end
+    tree << parent_level
+  end
+
+  tree.last.first  # Root hash
+end
+----

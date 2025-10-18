@@ -1,44 +1,758 @@
 = Pipeline Processing Example
+:toc: macro
+:toc-title: Table of Contents
+:toclevels: 3
 
-== Overview
+toc::[]
 
-This example demonstrates the Pipeline Processing pattern implemented with Fractor. In this pattern, data flows through a series of sequential processing stages, where the output of one stage becomes the input to the next.
+== Purpose
 
-== Key Concepts
+The Pipeline Processing example demonstrates how to implement multi-stage processing pipelines using Fractor. It showcases automatic stage progression where work flows through sequential transformations, with each stage feeding its output to the next stage. This is a fundamental pattern for building ETL (Extract, Transform, Load) systems, media processing workflows, and data transformation pipelines.
 
-* *Pipeline*: A series of connected processing stages
-* *Data Flow*: Information passes through each stage in sequence
-* *Transformation*: Each stage performs a specific operation on the data
-* *Concurrency*: Multiple items can be at different stages of the pipeline simultaneously
+== Focus
 
-== Example Explanation
+This example demonstrates:
 
-This example processes data through a multi-stage pipeline:
+* **Sequential stage processing** with automatic progression
+* **Pipeline orchestration** using callbacks
+* **Metadata propagation** through processing stages
+* **Stage-specific transformations** within a unified worker
+* **Automatic work generation** for downstream stages
+* **Concurrent pipeline execution** for multiple items
 
-1. *Input Stage*: Raw data is prepared for processing
-2. *Processing Stages*: Data moves through a series of transformations
-3. *Output Stage*: Final results are collected and reported
+== Architecture
 
-Each stage of the pipeline can run concurrently on different workers, allowing for efficient parallel processing while maintaining the required order of operations.
+=== Pipeline Flow Overview
 
-== Features Demonstrated
-
-* Sequential processing with dependencies between stages
-* Concurrent execution of pipeline stages
-* Processing optimizations through specialized workers
-* Handling data flow between processing stages
-
-== Running the Example
-
-[source,sh]
+[source]
 ----
-ruby examples/pipeline_processing/pipeline_processing.rb
+┌──────────────────────────────────────────────────────────────┐
+│                     Input Images                             │
+│     [sunset.jpg, mountains.png, beach.jpg, ...]             │
+└──────────────────────────────────────────────────────────────┘
+                            │
+                            │ Create initial work items
+                            ▼
+            ┌───────────────────────────────┐
+            │  Stage 1: RESIZE              │
+            │  MediaWork(data, :resize)     │
+            └───────────────────────────────┘
+                            │
+                            │ PipelineWorker.process
+                            ▼
+            ┌───────────────────────────────┐
+            │  Result: resized image        │
+            │  next_stage = :filter         │
+            └───────────────────────────────┘
+                            │
+                            │ on_new_result callback
+                            │ auto-creates next work
+                            ▼
+            ┌───────────────────────────────┐
+            │  Stage 2: FILTER              │
+            │  MediaWork(resized, :filter)  │
+            └───────────────────────────────┘
+                            │
+                            │ PipelineWorker.process
+                            ▼
+            ┌───────────────────────────────┐
+            │  Result: filtered image       │
+            │  next_stage = :compress       │
+            └───────────────────────────────┘
+                            │
+                            │ on_new_result callback
+                            ▼
+            ┌───────────────────────────────┐
+            │  Stage 3: COMPRESS            │
+            │  MediaWork(filtered,:compress)│
+            └───────────────────────────────┘
+                            │
+                            │ PipelineWorker.process
+                            ▼
+            ┌───────────────────────────────┐
+            │  Result: compressed image     │
+            │  next_stage = :tag            │
+            └───────────────────────────────┘
+                            │
+                            │ on_new_result callback
+                            ▼
+            ┌───────────────────────────────┐
+            │  Stage 4: TAG                 │
+            │  MediaWork(compressed, :tag)  │
+            └───────────────────────────────┘
+                            │
+                            │ PipelineWorker.process
+                            ▼
+            ┌───────────────────────────────┐
+            │  Result: tagged image         │
+            │  next_stage = nil (complete)  │
+            └───────────────────────────────┘
+                            │
+                            ▼
+            ┌───────────────────────────────┐
+            │  Final Results Collection     │
+            └───────────────────────────────┘
 ----
+
+=== Concurrent Pipeline Execution
+
+[source]
+----
+Multiple images flowing through the pipeline concurrently:
+
+Time →
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Image 1:  [Resize]─[Filter]─[Compress]─[Tag]─[Done]
+Image 2:     [Resize]─[Filter]─[Compress]─[Tag]─[Done]
+Image 3:        [Resize]─[Filter]─[Compress]─[Tag]─[Done]
+Image 4:           [Resize]─[Filter]─[Compress]─[Tag]─[Done]
+Image 5:              [Resize]─[Filter]─[Compress]─[Tag]─[Done]
+
+Each image moves through stages independently while workers
+process different images at different stages concurrently.
+----
+
+=== Stage Progression Mechanism
+
+[source]
+----
+┌─────────────────────────────────────────────────────────┐
+│                  PipelineWorker                         │
+│                                                         │
+│  1. Receive work with current stage                    │
+│  2. Process based on stage (:resize/:filter/etc)       │
+│  3. Determine next stage from sequence                 │
+│  4. Return result with next_stage information          │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         │ Result with next_stage
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│              ResultAggregator Callback                  │
+│                                                         │
+│  on_new_result { |result|                              │
+│    if result.next_stage exists:                        │
+│      - Create new MediaWork for next stage             │
+│      - Copy processed_data as input                    │
+│      - Preserve and enhance metadata                   │
+│      - Add work back to supervisor                     │
+│  }                                                      │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         │ New work created
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│               Work Queue (Next Stage)                   │
+│  Newly created work is queued for processing           │
+└─────────────────────────────────────────────────────────┘
+----
+
+== Key Components
+
+=== MediaWork: Stage-Aware Work Unit
+
+The `MediaWork` class carries both data and stage information:
+
+[source,ruby]
+----
+class MediaWork < Fractor::Work
+  def initialize(data, stage = :resize, metadata = {})
+    super({
+      data: data,        # <1>
+      stage: stage,      # <2>
+      metadata: metadata # <3>
+    })
+  end
+
+  def stage
+    input[:stage]
+  end
+end
+----
+<1> The actual data being processed (image path, processed output, etc.)
+<2> Current processing stage (`:resize`, `:filter`, `:compress`, `:tag`)
+<3> Metadata tracking processing history and timing
+
+Why stage information in work items:
+
+* **Single worker type** can handle all stages
+* **Dynamic routing** based on current stage
+* **Clear state tracking** throughout pipeline
+* **Enables stage-specific processing** logic
+
+=== PipelineWorker: Polymorphic Stage Processor
+
+The `PipelineWorker` handles all stages using a case statement:
+
+[source,ruby]
+----
+class PipelineWorker < Fractor::Worker
+  def process(work)
+    result = case work.stage # <1>
+             when :resize then process_resize(work)
+             when :filter then process_filter(work)
+             when :compress then process_compress(work)
+             when :tag then process_tag(work)
+             else
+               return Fractor::WorkResult.new(
+                 error: "Unknown stage: #{work.stage}",
+                 work: work
+               )
+             end
+
+    stages = [:resize, :filter, :compress, :tag] # <2>
+    current_index = stages.index(work.stage)
+    next_stage = current_index < stages.size - 1 ? stages[current_index + 1] : nil # <3>
+
+    updated_metadata = work.metadata.merge( # <4>
+      "#{work.stage}_completed" => true,
+      "#{work.stage}_time" => Time.now.to_s
+    )
+
+    Fractor::WorkResult.new(
+      result: {
+        processed_data: result,      # <5>
+        current_stage: work.stage,
+        next_stage: next_stage,
+        metadata: updated_metadata
+      },
+      work: work
+    )
+  end
+end
+----
+<1> Route to appropriate processing method based on stage
+<2> Define the complete pipeline stage sequence
+<3> Calculate the next stage (or `nil` if at the end)
+<4> Augment metadata with completion tracking
+<5> Package result with stage progression information
+
+Design benefits:
+
+* **Centralized stage logic**: All stages in one worker class
+* **Sequential guarantee**: Explicit stage ordering
+* **Metadata enrichment**: Each stage adds its completion info
+* **Clear termination**: `nil` next_stage signals completion
+
+=== MediaPipeline: Automatic Stage Progression
+
+The `MediaPipeline` orchestrates automatic work flow:
+
+[source,ruby]
+----
+class MediaPipeline
+  def initialize(worker_count = 4)
+    @supervisor = Fractor::Supervisor.new(
+      worker_pools: [
+        { worker_class: PipelineWorker, num_workers: worker_count }
+      ]
+    )
+
+    @supervisor.results.on_new_result do |result| # <1>
+      next_stage = result.result[:next_stage]
+
+      if next_stage # <2>
+        new_work = MediaWork.new(
+          result.result[:processed_data], # <3>
+          next_stage,                      # <4>
+          result.result[:metadata]         # <5>
+        )
+        @supervisor.add_work_item(new_work) # <6>
+      end
+    end
+  end
+
+  def process_images(images)
+    initial_work_items = images.map do |image| # <7>
+      MediaWork.new(image, :resize, {
+        original_filename: image,
+        started_at: Time.now.to_s
+      })
+    end
+
+    @supervisor.add_work_items(initial_work_items)
+    @supervisor.run # <8>
+
+    # Collect completed results (where next_stage is nil)
+    @supervisor.results.results.each do |result|
+      if result.result[:next_stage].nil? # <9>
+        @results[:completed] << result.result
+      end
+    end
+  end
+end
+----
+<1> Register callback for each completed work item
+<2> Check if there's another stage to process
+<3> Use processed output as input for next stage
+<4> Progress to the next stage in the pipeline
+<5> Carry forward the metadata chain
+<6> Dynamically add new work to the supervisor
+<7> Create initial work items (all start at `:resize`)
+<8> Execute pipeline (processes all stages automatically)
+<9> Identify completed items (those that have finished all stages)
+
+Pipeline orchestration features:
+
+* **Callback-driven**: Each result triggers next stage creation
+* **Dynamic work injection**: New work added during execution
+* **Automatic progression**: No manual stage management needed
+* **Completion detection**: Tracks which items finished all stages
+
+== Usage
+
+.Basic usage
+[example]
+====
+[source,bash]
+----
+# Run the pipeline processing example
+ruby pipeline_processing.rb
+----
+====
+
+.Programmatic usage
+[example]
+====
+[source,ruby]
+----
+require_relative "pipeline_processing"
+
+# Create pipeline with 8 workers
+pipeline = PipelineProcessing::MediaPipeline.new(8)
+
+# Process a batch of images
+images = ["photo1.jpg", "photo2.jpg", "photo3.jpg"]
+result = pipeline.process_images(images)
+
+puts "Completed: #{result[:completed]} images"
+result[:results].each do |image_result|
+  puts "Processed: #{image_result[:processed_data]}"
+  puts "Metadata: #{image_result[:metadata]}"
+end
+----
+====
 
 == Expected Output
 
-The example will show:
-* Data moving through each stage of the pipeline
-* Workers processing different stages concurrently
-* The transformation of data at each stage
-* Final results after passing through the complete pipeline
+[source,text]
+----
+Starting Pipeline Processing Example
+=====================================
+This example demonstrates a media processing pipeline with multiple stages:
+1. Resize - Adjusts image dimensions
+2. Filter - Applies visual filters
+3. Compress - Optimizes file size
+4. Tag - Analyzes and adds metadata tags
+
+Processing 5 images with 4 workers...
+
+Pipeline Results:
+----------------
+Total images: 5
+Completed: 5
+In progress: 0
+
+Processed Images:
+Image 1: Tagged image: Compressed image: Applied vibrance filter to: Resized image: sunset.jpg (1024x768) (reduced by 45%) (tags: landscape, nature)
+  Processing path:
+    resize_completed: true
+    resize_time: 2025-10-18 07:30:15 +0800
+    filter_completed: true
+    filter_time: 2025-10-18 07:30:16 +0800
+    compress_completed: true
+    compress_time: 2025-10-18 07:30:17 +0800
+    tag_completed: true
+    tag_time: 2025-10-18 07:30:18 +0800
+
+Image 2: Tagged image: Compressed image: Applied grayscale filter to: ...
+  ...
+
+Processing completed in 0.456789 seconds
+----
+
+== Learning Points
+
+=== 1. Callback-Driven Pipeline Progression
+
+The example uses callbacks to automatically create next-stage work:
+
+[source,ruby]
+----
+@supervisor.results.on_new_result do |result|
+  next_stage = result.result[:next_stage]
+
+  if next_stage
+    # Automatically create and queue next stage work
+    new_work = MediaWork.new(
+      result.result[:processed_data],
+      next_stage,
+      result.result[:metadata]
+    )
+    @supervisor.add_work_item(new_work)
+  end
+end
+----
+
+**Key insight**: The supervisor continues running while the callback adds new work, enabling seamless stage transitions.
+
+=== 2. Stage Sequencing
+
+The pipeline defines a fixed stage sequence:
+
+[source,ruby]
+----
+stages = [:resize, :filter, :compress, :tag]
+current_index = stages.index(work.stage)
+next_stage = current_index < stages.size - 1 ? stages[current_index + 1] : nil
+----
+
+**Alternatives**:
+
+* **Hash-based routing**: `NEXT_STAGE = { resize: :filter, filter: :compress, ... }`
+* **State machine**: Use a formal state transition table
+* **Dynamic routing**: Determine next stage based on data content
+
+=== 3. Metadata Propagation
+
+Each stage enriches metadata:
+
+[source,ruby]
+----
+updated_metadata = work.metadata.merge(
+  "#{work.stage}_completed" => true,
+  "#{work.stage}_time" => Time.now.to_s
+)
+----
+
+**Benefits**:
+
+* **Complete audit trail**: Track when each stage completed
+* **Performance analysis**: Measure per-stage processing time
+* **Debugging support**: Identify which stage caused issues
+* **Lineage tracking**: Full data processing history
+
+=== 4. Pipeline vs. Workflow
+
+**Pipeline Pattern** (this example):
+* Fixed stage sequence
+* Automatic progression
+* All items follow same path
+* Simple, linear flow
+
+**Workflow Pattern** (see workflow examples):
+* Flexible stage dependencies
+* Conditional branching
+* Parallel execution paths
+* Complex orchestration
+
+Choose pipelines for:
+
+* ETL processes
+* Media transformations
+* Data validation chains
+* Sequential transformations
+
+=== 5. Error Handling in Pipelines
+
+Current implementation processes all items. For production:
+
+[source,ruby]
+----
+def process(work)
+  begin
+    result = case work.stage
+             when :resize then process_resize(work)
+             # ... other stages
+             end
+
+    # Return success with next stage
+    Fractor::WorkResult.new(result: { ... })
+
+  rescue StandardError => e
+    # Return error, stops this item's pipeline
+    Fractor::WorkResult.new(
+      error: "Stage #{work.stage} failed: #{e.message}",
+      work: work
+    )
+  end
+end
+----
+
+**Error strategies**:
+
+* **Fail-fast**: Stop item at failed stage
+* **Retry**: Attempt stage again (add retry count to metadata)
+* **Skip**: Continue to next stage with error flag
+* **Rollback**: Undo previous stages (if possible)
+
+=== 6. Performance Characteristics
+
+**Throughput analysis**:
+
+[source]
+----
+Total stages: 4
+Items: 5
+Workers: 4
+
+Time per stage: 0.03s (average)
+Sequential time: 5 items × 4 stages × 0.03s = 0.6s
+
+With pipelining:
+- Initial fill: 4 stages × 0.03s = 0.12s
+- Steady state: 5 items × 0.03s = 0.15s
+- Total: ~0.27s (2.2x speedup)
+
+Actual speedup depends on stage duration variance and worker count.
+----
+
+== Use Cases and Patterns
+
+=== ETL Pipeline
+
+Extract, Transform, Load data processing:
+
+[source,ruby]
+----
+stages = [:extract, :validate, :transform, :enrich, :load]
+
+def process(work)
+  result = case work.stage
+           when :extract then read_from_source(work)
+           when :validate then check_data_quality(work)
+           when :transform then apply_business_rules(work)
+           when :enrich then add_derived_fields(work)
+           when :load then write_to_destination(work)
+           end
+  # ... next stage logic
+end
+----
+
+=== Media Processing Pipeline
+
+Video/image processing workflow:
+
+[source,ruby]
+----
+stages = [:transcode, :watermark, :thumbnail, :upload]
+
+def process(work)
+  result = case work.stage
+           when :transcode then convert_format(work)
+           when :watermark then apply_branding(work)
+           when :thumbnail then generate_previews(work)
+           when :upload then store_in_cdn(work)
+           end
+  # ... next stage logic
+end
+----
+
+=== Data Validation Chain
+
+Multi-stage data validation:
+
+[source,ruby]
+----
+stages = [:format_check, :schema_validation, :business_rules, :duplicate_check]
+
+def process(work)
+  result = case work.stage
+           when :format_check then validate_file_format(work)
+           when :schema_validation then check_against_schema(work)
+           when :business_rules then apply_domain_rules(work)
+           when :duplicate_check then find_duplicates(work)
+           end
+  # ... next stage logic
+end
+----
+
+=== Document Processing
+
+Multi-step document transformation:
+
+[source,ruby]
+----
+stages = [:parse, :extract_text, :classify, :index]
+
+def process(work)
+  result = case work.stage
+           when :parse then parse_pdf(work)
+           when :extract_text then ocr_if_needed(work)
+           when :classify then categorize_document(work)
+           when :index then add_to_search_engine(work)
+           end
+  # ... next stage logic
+end
+----
+
+== Advanced Patterns
+
+=== Conditional Stages
+
+Add stage skipping logic:
+
+[source,ruby]
+----
+def determine_next_stage(work, result)
+  case work.stage
+  when :validate
+    result[:valid] ? :transform : :error_queue
+  when :transform
+    result[:needs_enrichment] ? :enrich : :load
+  else
+    # Default sequential progression
+    stages[stages.index(work.stage) + 1]
+  end
+end
+----
+
+=== Parallel Sub-Pipelines
+
+Fork into parallel processing paths:
+
+[source,ruby]
+----
+@supervisor.results.on_new_result do |result|
+  if result.result[:current_stage] == :split
+    # Create multiple parallel work items
+    result.result[:chunks].each do |chunk|
+      @supervisor.add_work_item(
+        MediaWork.new(chunk, :process_chunk, result.result[:metadata])
+      )
+    end
+  elsif result.result[:current_stage] == :process_chunk
+    # Collect for merging
+    @completed_chunks << result
+    if all_chunks_complete?
+      @supervisor.add_work_item(
+        MediaWork.new(merged_data, :merge, metadata)
+      )
+    end
+  else
+    # Normal progression
+    # ...
+  end
+end
+----
+
+=== Stage Retry Logic
+
+Add automatic retry for failed stages:
+
+[source,ruby]
+----
+MAX_RETRIES = 3
+
+def process(work)
+  retry_count = work.metadata["#{work.stage}_retries"] || 0
+
+  begin
+    result = execute_stage(work)
+    Fractor::WorkResult.new(result: { ... })
+
+  rescue StandardError => e
+    if retry_count < MAX_RETRIES
+      # Retry same stage
+      @supervisor.add_work_item(
+        MediaWork.new(
+          work.data,
+          work.stage,  # Same stage
+          work.metadata.merge("#{work.stage}_retries" => retry_count + 1)
+        )
+      )
+      Fractor::WorkResult.new(result: { retrying: true })
+    else
+      # Max retries exceeded
+      Fractor::WorkResult.new(error: "Failed after #{retry_count} retries: #{e}")
+    end
+  end
+end
+----
+
+=== Pipeline Monitoring
+
+Add detailed progress tracking:
+
+[source,ruby]
+----
+def initialize(worker_count = 4)
+  @stage_metrics = Hash.new { |h, k| h[k] = { count: 0, total_time: 0 } }
+
+  @supervisor.results.on_new_result do |result|
+    stage = result.result[:current_stage]
+    duration = calculate_duration(result)
+
+    @stage_metrics[stage][:count] += 1
+    @stage_metrics[stage][:total_time] += duration
+
+    log_progress(result)
+    create_next_stage_work(result)
+  end
+end
+
+def print_metrics
+  @stage_metrics.each do |stage, metrics|
+    avg_time = metrics[:total_time] / metrics[:count]
+    puts "#{stage}: #{metrics[:count]} items, avg #{avg_time}s"
+  end
+end
+----
+
+== Performance Tuning
+
+=== Worker Pool Sizing
+
+[source,ruby]
+----
+# For CPU-bound stages (encoding, compression)
+worker_count = Etc.nprocessors
+
+# For I/O-bound stages (reading, writing)
+worker_count = Etc.nprocessors * 2
+
+# For mixed workloads
+worker_count = (Etc.nprocessors * 1.5).to_i
+----
+
+=== Batching for Efficiency
+
+Process multiple items per work unit:
+
+[source,ruby]
+----
+def process_images(images)
+  batch_size = 10
+  batches = images.each_slice(batch_size).to_a
+
+  batches.map do |batch|
+    MediaWork.new(batch, :resize_batch, { batch_size: batch.size })
+  end
+end
+----
+
+=== Stage-Specific Optimization
+
+Optimize each stage individually:
+
+[source,ruby]
+----
+def process_resize(work)
+  # Use faster resize for small images
+  if work.data.size < 1_000_000
+    quick_resize(work)
+  else
+    high_quality_resize(work)
+  end
+end
+----
+
+== Next Steps
+
+After understanding pipeline processing, explore:
+
+* **link:../producer_subscriber/README.adoc[Producer-Subscriber]**: Streaming data patterns
+* **link:../scatter_gather/README.adoc[Scatter-Gather]**: Dynamic distribution and collection
+* **link:../workflow/README.adoc[Workflow System]**: Complex multi-path pipelines with branching
+* **link:../hierarchical_hasher/README.adoc[Hierarchical Hasher]**: Map-reduce aggregation patterns

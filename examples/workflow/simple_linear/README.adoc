@@ -1,0 +1,267 @@
+= Simple Linear Workflow
+
+== Purpose
+
+Demonstrates sequential job processing with data transformation at each stage using Fractor's workflow system.
+
+== Focus
+
+This example focuses on demonstrating:
+
+* Sequential job dependencies using `needs`
+* Type-safe data flow with `input_type` and `output_type` declarations
+* Workflow entry point definition with `start_with`
+* Workflow exit point definition with `end_with`
+* Job output mapping using `inputs_from_job`
+* Data transformation through a pipeline of workers
+
+== Architecture
+
+.Data Flow Through Sequential Jobs
+[source]
+----
+[Workflow Input]
+      │
+      │ TextData { text: "hello world from fractor" }
+      ▼
+┌─────────────────┐
+│ Uppercase Job   │
+│ UppercaseWorker │
+└─────────────────┘
+      │
+      │ UppercaseOutput { uppercased_text: "HELLO...", char_count: 24 }
+      ▼
+┌─────────────────┐
+│  Reverse Job    │
+│  ReverseWorker  │
+└─────────────────┘
+      │
+      │ ReversedOutput { reversed_text: "ROTCARF...", word_count: 4 }
+      ▼
+┌─────────────────┐
+│ Finalize Job    │
+│ FinalizeWorker  │
+└─────────────────┘
+      │
+      │ FinalOutput { result: "ROTCARF MORF DLROW OLLEH", total_operations: 3 }
+      ▼
+[Workflow Output]
+----
+
+.Workflow Execution Flow
+[source]
+----
+Main Thread
+    │
+    ├─→ Create Workflow Input (TextData)
+    │
+    ├─→ Execute Workflow
+    │       │
+    │       ├─→ Validate Workflow Structure
+    │       │     • Check dependencies (topological sort)
+    │       │     • Verify entry/exit points
+    │       │     • Validate type declarations
+    │       │
+    │       ├─→ Execute Job: "uppercase"
+    │       │     │
+    │       │     ├─→ Create Work from workflow input
+    │       │     ├─→ Spawn Worker Ractor (UppercaseWorker)
+    │       │     ├─→ Process work
+    │       │     └─→ Store result in context
+    │       │
+    │       ├─→ Execute Job: "reverse"
+    │       │     │
+    │       │     ├─→ Build input from "uppercase" output
+    │       │     ├─→ Spawn Worker Ractor (ReverseWorker)
+    │       │     ├─→ Process work
+    │       │     └─→ Store result in context
+    │       │
+    │       └─→ Execute Job: "finalize"
+    │             │
+    │             ├─→ Build input from "reverse" output
+    │             ├─→ Spawn Worker Ractor (FinalizeWorker)
+    │             ├─→ Process work
+    │             └─→ Store result in context
+    │
+    └─→ Return Workflow Result
+            • Status: SUCCESS/FAILED
+            • Output: FinalOutput object
+            • Execution time
+            • Completed jobs list
+----
+
+== Key Components
+
+=== Data Models
+
+Each stage requires explicit input and output type declarations:
+
+[source,ruby]
+----
+class TextData
+  attr_accessor :text
+
+  def initialize(text:)
+    @text = text
+  end
+end
+
+class UppercaseOutput
+  attr_accessor :uppercased_text, :char_count
+
+  def initialize(uppercased_text:, char_count:)
+    @uppercased_text = uppercased_text
+    @char_count = char_count
+  end
+end
+----
+
+=== Workers
+
+Workers declare their expected input and output types using class methods:
+
+[source,ruby]
+----
+class UppercaseWorker < Fractor::Worker
+  input_type TextData      # <1>
+  output_type UppercaseOutput  # <2>
+
+  def process(work)
+    input = work.input
+    uppercased = input.text.upcase
+
+    output = UppercaseOutput.new(
+      uppercased_text: uppercased,
+      char_count: uppercased.length,
+    )
+
+    Fractor::WorkResult.new(result: output, work: work)  # <3>
+  end
+end
+----
+<1> Declares the expected input type for type validation
+<2> Declares the output type returned by this worker
+<3> Returns a WorkResult wrapping the output
+
+=== Workflow Definition
+
+The workflow DSL defines the job dependencies and data flow:
+
+[source,ruby]
+----
+class SimpleLinearWorkflow < Fractor::Workflow
+  workflow "simple-linear" do
+    # Declare workflow input/output types
+    input_type TextData      # <1>
+    output_type FinalOutput  # <2>
+
+    # Define workflow boundaries
+    start_with "uppercase"   # <3>
+    end_with "finalize"      # <4>
+
+    # Job 1: Uppercase the text
+    job "uppercase" do
+      runs_with UppercaseWorker  # <5>
+      inputs_from_workflow       # <6>
+    end
+
+    # Job 2: Reverse the uppercased text
+    job "reverse" do
+      needs "uppercase"              # <7>
+      runs_with ReverseWorker
+      inputs_from_job "uppercase"    # <8>
+    end
+
+    # Job 3: Finalize the result
+    job "finalize" do
+      needs "reverse"
+      runs_with FinalizeWorker
+      inputs_from_job "reverse"
+      outputs_to_workflow           # <9>
+      terminates_workflow           # <10>
+    end
+  end
+end
+----
+<1> Workflow accepts TextData as input
+<2> Workflow returns FinalOutput as output
+<3> First job to execute
+<4> Last job that completes the workflow
+<5> Associates job with worker class
+<6> Job takes input directly from workflow input
+<7> Job dependency - must run after "uppercase"
+<8> Job takes input from "uppercase" job's output
+<9> Job's output becomes workflow output
+<10> Job terminates the workflow when complete
+
+== Usage
+
+Run the example from the project root:
+
+[source,shell]
+----
+ruby examples/workflow/simple_linear/simple_linear_workflow.rb
+----
+
+== Expected Output
+
+[example]
+====
+[source]
+----
+Simple Linear Workflow Example
+==================================================
+
+Input: hello world from fractor
+
+Workflow Results:
+--------------------------------------------------
+Status: SUCCESS
+Execution Time: 0.002s
+Completed Jobs: uppercase, reverse, finalize
+
+Final Output:
+  Result: ROTCARF MORF DLROW OLLEH
+  Total Operations: 3
+----
+====
+
+== Learning Points
+
+=== Sequential Dependencies
+
+* Jobs execute in topological order based on `needs` declarations
+* Each job waits for its dependencies to complete before starting
+* The workflow engine automatically computes the execution order
+
+=== Type Safety
+
+* Workers declare expected input/output types using `input_type` and `output_type`
+* Workflow validates type compatibility at definition time
+* Type declarations serve as documentation and enable validation
+
+=== Data Flow
+
+* `inputs_from_workflow`: Job receives workflow input directly
+* `inputs_from_job "source"`: Job receives output from specified job
+* `outputs_to_workflow`: Job's output becomes the workflow result
+
+=== Workflow Boundaries
+
+* `start_with`: Defines entry point(s) for the workflow
+* `end_with`: Defines exit point(s) for the workflow
+* `terminates_workflow`: Marks jobs that complete the workflow
+
+=== Error Handling
+
+* If any job fails, the workflow stops immediately
+* Workflow result includes success status and error information
+* Completed jobs are tracked even if workflow fails partway through
+
+== Next Steps
+
+After understanding simple linear workflows, explore:
+
+* link:../fan_out/README.adoc[Fan-Out Workflow] - Parallel job execution patterns
+* link:../conditional/README.adoc[Conditional Workflow] - Runtime conditional execution
+* link:../README.adoc[Workflow Overview] - Complete workflow system documentation

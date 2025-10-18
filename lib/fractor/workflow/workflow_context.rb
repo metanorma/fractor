@@ -5,11 +5,13 @@ module Fractor
     # Manages data flow and state during workflow execution.
     # Stores workflow inputs, job outputs, and provides resolution of data dependencies.
     class WorkflowContext
-      attr_reader :workflow_input, :job_outputs
+      attr_reader :workflow_input, :job_outputs, :correlation_id, :logger
 
-      def initialize(workflow_input)
+      def initialize(workflow_input, correlation_id: nil, logger: nil)
         @workflow_input = workflow_input
         @job_outputs = {}
+        @correlation_id = correlation_id || generate_correlation_id
+        @logger = logger || WorkflowLogger.new(correlation_id: @correlation_id)
       end
 
       # Store the output of a completed job.
@@ -84,7 +86,21 @@ module Fractor
         @job_outputs.key?(job_name)
       end
 
+      # Convert context to hash for debugging/logging
+      def to_h
+        {
+          correlation_id: @correlation_id,
+          workflow_input: @workflow_input.class.name,
+          completed_jobs: @job_outputs.keys,
+        }
+      end
+
       private
+
+      def generate_correlation_id
+        require "securerandom"
+        "wf-#{SecureRandom.hex(8)}"
+      end
 
       def copy_all_attributes(source, target_hash, input_type)
         # Copy all compatible attributes from source to target

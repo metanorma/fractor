@@ -6,6 +6,9 @@ require_relative "workflow/workflow_executor"
 require_relative "workflow/workflow_validator"
 require_relative "workflow/builder"
 require_relative "workflow/helpers"
+require_relative "workflow/logger"
+require_relative "workflow/structured_logger"
+require_relative "workflow/execution_trace"
 
 module Fractor
   # Base class for defining workflows using a declarative DSL.
@@ -30,7 +33,7 @@ module Fractor
         @input_model_class = nil
         @output_model_class = nil
 
-        instance_eval(&block) if block_given?
+        instance_eval(&block) if block
 
         validate_workflow!
       end
@@ -70,12 +73,15 @@ module Fractor
       #
       # @param name [String, Symbol] The job name
       # @yield Block containing job configuration
-      def job(name, &block)
+      def job(name, &)
         job_name = name.to_s
-        raise ArgumentError, "Job '#{job_name}' already defined" if @jobs.key?(job_name)
+        if @jobs.key?(job_name)
+          raise ArgumentError,
+                "Job '#{job_name}' already defined"
+        end
 
         job_obj = Job.new(job_name, self)
-        job_obj.instance_eval(&block) if block_given?
+        job_obj.instance_eval(&) if block
         @jobs[job_name] = job_obj
       end
 
@@ -104,11 +110,25 @@ module Fractor
     # Execute the workflow with the given input.
     #
     # @param input [Lutaml::Model::Serializable] The workflow input
+    # @param correlation_id [String] Optional correlation ID for tracking
+    # @param logger [Logger] Optional logger instance
+    # @param trace [Boolean] Whether to generate execution trace
+    # @yield [WorkflowExecutor] Optional block for registering hooks
     # @return [WorkflowResult] The execution result
-    def execute(input:)
+    def execute(input:, correlation_id: nil, logger: nil, trace: false, &block)
       validate_input!(input)
 
-      executor = WorkflowExecutor.new(self, input)
+      executor = WorkflowExecutor.new(
+        self,
+        input,
+        correlation_id: correlation_id,
+        logger: logger,
+        trace: trace,
+      )
+
+      # Allow block to register hooks
+      block&.call(executor)
+
       executor.execute
     end
 

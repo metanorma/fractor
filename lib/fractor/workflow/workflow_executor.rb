@@ -6,19 +6,36 @@ module Fractor
   class Workflow
     # Orchestrates workflow execution by managing job execution order and data flow.
     class WorkflowExecutor
-      attr_reader :workflow, :context, :completed_jobs, :failed_jobs
+      attr_reader :workflow, :context, :completed_jobs, :failed_jobs,
+                  :trace, :hooks
 
-      def initialize(workflow, input)
+      def initialize(workflow, input, correlation_id: nil, logger: nil,
+trace: false)
         @workflow = workflow
-        @context = WorkflowContext.new(input)
+        @correlation_id = correlation_id
+        @logger = logger
+        @context = WorkflowContext.new(
+          input,
+          correlation_id: correlation_id,
+          logger: logger,
+        )
         @completed_jobs = Set.new
         @failed_jobs = Set.new
+        @hooks = ExecutionHooks.new
+        @trace = trace ? create_trace : nil
       end
 
       # Execute the workflow and return the result.
       #
       # @return [WorkflowResult] The execution result
       def execute
+        log_workflow_start
+        @hooks.trigger(:workflow_start, workflow)
+        @trace&.start_job(
+          job_name: "workflow",
+          worker_class: workflow.class.name,
+        )
+
         execution_order = compute_execution_order
         start_time = Time.now
 
@@ -28,8 +45,20 @@ module Fractor
         end
 
         end_time = Time.now
+        @trace&.complete!
 
-        build_result(start_time, end_time)
+        log_workflow_complete(end_time - start_time)
+        result = build_result(start_time, end_time)
+        @hooks.trigger(:workflow_complete, result)
+        result
+      end
+
+      # Register a hook for workflow/job lifecycle events
+      #
+      # @param event [Symbol] The event to hook into
+      # @param block [Proc] The callback to execute
+      def on(event, &)
+        @hooks.register(event, &)
       end
 
       private
@@ -97,9 +126,22 @@ module Fractor
         puts "Executing job: #{job.name}" if ENV["FRACTOR_DEBUG"]
         job.state(:running)
 
+        # Start job trace
+        job_trace = @trace&.start_job(
+          job_name: job.name,
+          worker_class: job.worker_class.name,
+        )
+
+        # Log and trigger hook
+        log_job_start(job)
+        @hooks.trigger(:job_start, job, @context)
+
+        start_time = Time.now
+
         begin
           # Build input for this job
           job_input = @context.build_job_input(job)
+          job_trace&.set_input(job_input)
 
           # Create work item
           work = Work.new(job_input)
@@ -107,15 +149,34 @@ module Fractor
           # Execute using existing Fractor infrastructure
           output = execute_job_with_supervisor(job, work)
 
+          # Calculate duration
+          duration = Time.now - start_time
+
           # Store output in context
           @context.store_job_output(job.name, output)
           @completed_jobs.add(job.name)
           job.state(:completed)
 
+          # Update trace
+          job_trace&.complete!(output: output)
+
+          # Log and trigger hook
+          log_job_complete(job, duration)
+          @hooks.trigger(:job_complete, job, output, duration)
+
           puts "Job '#{job.name}' completed successfully" if ENV["FRACTOR_DEBUG"]
         rescue StandardError => e
+          Time.now - start_time
           @failed_jobs.add(job.name)
           job.state(:failed)
+
+          # Update trace
+          job_trace&.fail!(error: e)
+
+          # Log and trigger hook
+          log_job_error(job, e)
+          @hooks.trigger(:job_error, job, e, @context)
+
           puts "Job '#{job.name}' failed: #{e.message}" if ENV["FRACTOR_DEBUG"]
           raise WorkflowExecutionError,
                 "Job '#{job.name}' failed: #{e.message}\n#{e.backtrace.join("\n")}"
@@ -221,6 +282,69 @@ module Fractor
         false
       end
 
+      def create_trace
+        require "securerandom"
+        execution_id = "exec-#{SecureRandom.hex(8)}"
+        ExecutionTrace.new(
+          workflow_name: workflow.class.workflow_name,
+          execution_id: execution_id,
+          correlation_id: @context.correlation_id,
+        )
+      end
+
+      def log_workflow_start
+        return unless @context.logger
+
+        @context.logger.info(
+          "Workflow starting",
+          workflow: workflow.class.workflow_name,
+          correlation_id: @context.correlation_id,
+        )
+      end
+
+      def log_workflow_complete(duration)
+        return unless @context.logger
+
+        @context.logger.info(
+          "Workflow complete",
+          workflow: workflow.class.workflow_name,
+          duration_ms: (duration * 1000).round(2),
+          jobs_completed: @completed_jobs.size,
+          jobs_failed: @failed_jobs.size,
+        )
+      end
+
+      def log_job_start(job)
+        return unless @context.logger
+
+        @context.logger.info(
+          "Job starting",
+          job: job.name,
+          worker: job.worker_class.name,
+        )
+      end
+
+      def log_job_complete(job, duration)
+        return unless @context.logger
+
+        @context.logger.info(
+          "Job complete",
+          job: job.name,
+          duration_ms: (duration * 1000).round(2),
+        )
+      end
+
+      def log_job_error(job, error)
+        return unless @context.logger
+
+        @context.logger.error(
+          "Job failed",
+          job: job.name,
+          error: error.class.name,
+          message: error.message,
+        )
+      end
+
       def build_result(start_time, end_time)
         # Find the output from the end job
         output = find_workflow_output
@@ -232,6 +356,8 @@ module Fractor
           failed_jobs: @failed_jobs.to_a,
           execution_time: end_time - start_time,
           success: @failed_jobs.empty?,
+          trace: @trace,
+          correlation_id: @context.correlation_id,
         )
       end
 
@@ -263,16 +389,18 @@ module Fractor
     # Represents the result of a workflow execution.
     class WorkflowResult
       attr_reader :workflow_name, :output, :completed_jobs, :failed_jobs,
-                  :execution_time, :success
+                  :execution_time, :success, :trace, :correlation_id
 
       def initialize(workflow_name:, output:, completed_jobs:, failed_jobs:,
-                     execution_time:, success:)
+                     execution_time:, success:, trace: nil, correlation_id: nil)
         @workflow_name = workflow_name
         @output = output
         @completed_jobs = completed_jobs
         @failed_jobs = failed_jobs
         @execution_time = execution_time
         @success = success
+        @trace = trace
+        @correlation_id = correlation_id
       end
 
       def success?
@@ -281,6 +409,28 @@ module Fractor
 
       def failed?
         !@success
+      end
+
+      # Get execution time in milliseconds
+      def execution_time_ms
+        (@execution_time * 1000).round(2)
+      end
+    end
+
+    # Manages lifecycle hooks for workflow execution
+    class ExecutionHooks
+      def initialize
+        @hooks = Hash.new { |h, k| h[k] = [] }
+      end
+
+      def register(event, &block)
+        @hooks[event] << block
+      end
+
+      def trigger(event, *args)
+        @hooks[event].each do |hook|
+          hook.call(*args)
+        end
       end
     end
   end

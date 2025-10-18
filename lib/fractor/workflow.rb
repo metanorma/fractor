@@ -9,6 +9,7 @@ require_relative "workflow/helpers"
 require_relative "workflow/logger"
 require_relative "workflow/structured_logger"
 require_relative "workflow/execution_trace"
+require_relative "workflow/visualizer"
 
 module Fractor
   # Base class for defining workflows using a declarative DSL.
@@ -83,6 +84,32 @@ module Fractor
         job_obj = Job.new(job_name, self)
         job_obj.instance_eval(&) if block
         @jobs[job_name] = job_obj
+      end
+
+      # Generate a Mermaid flowchart diagram of the workflow
+      #
+      # @return [String] Mermaid diagram syntax
+      def to_mermaid
+        Visualizer.new(self).to_mermaid
+      end
+
+      # Generate a DOT/Graphviz diagram of the workflow
+      #
+      # @return [String] DOT diagram syntax
+      def to_dot
+        Visualizer.new(self).to_dot
+      end
+
+      # Generate an ASCII art diagram of the workflow
+      #
+      # @return [String] ASCII art representation
+      def to_ascii
+        Visualizer.new(self).to_ascii
+      end
+
+      # Print ASCII diagram to stdout
+      def print_diagram
+        Visualizer.new(self).print
       end
 
       private

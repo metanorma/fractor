@@ -5,7 +5,7 @@ require "spec_helper"
 RSpec.describe Fractor::WorkerManager do
   let(:worker_pools) do
     [
-      { worker_class: TestWorker, num_workers: 2 }
+      { worker_class: TestWorker, num_workers: 2 },
     ]
   end
 

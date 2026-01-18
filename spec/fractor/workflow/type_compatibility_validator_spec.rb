@@ -49,7 +49,7 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       it "returns true when all jobs have valid types" do
         jobs = [
           create_job("job1", input_type: String, output_type: String),
-          create_job("job2", input_type: String, output_type: Integer)
+          create_job("job2", input_type: String, output_type: Integer),
         ]
         validator = described_class.new(jobs)
 
@@ -59,7 +59,7 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       it "returns true when jobs have no type declarations" do
         jobs = [
           create_job("job1"),
-          create_job("job2")
+          create_job("job2"),
         ]
         validator = described_class.new(jobs)
 
@@ -94,10 +94,10 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
 
         validator = described_class.new([job])
 
-        expect {
+        expect do
           validator.validate!
-        }.to raise_error(Fractor::Workflow::TypeCompatibilityValidator::TypeError,
-                         /too generic to be useful/)
+        end.to raise_error(Fractor::Workflow::TypeCompatibilityValidator::TypeError,
+                           /too generic to be useful/)
       end
     end
   end
@@ -143,9 +143,9 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
 
         validator = described_class.new([job])
 
-        expect {
+        expect do
           validator.check_job_compatibility(job)
-        }.to raise_error(Fractor::Workflow::TypeCompatibilityValidator::TypeError)
+        end.to raise_error(Fractor::Workflow::TypeCompatibilityValidator::TypeError)
       end
     end
   end
@@ -168,29 +168,30 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       end
 
       it "returns true for Integer type" do
-        expect(validator.check_type_declaration(job, :input, Integer)).to be true
+        expect(validator.check_type_declaration(job, :input,
+                                                Integer)).to be true
       end
     end
 
     context "with invalid types" do
       it "raises TypeError for non-class value" do
-        expect {
+        expect do
           validator.check_type_declaration(job, :input, "not_a_class")
-        }.to raise_error(Fractor::Workflow::TypeCompatibilityValidator::TypeError,
-                         /is not a class/)
+        end.to raise_error(Fractor::Workflow::TypeCompatibilityValidator::TypeError,
+                           /is not a class/)
       end
 
       it "raises TypeError for BasicObject" do
-        expect {
+        expect do
           validator.check_type_declaration(job, :input, BasicObject)
-        }.to raise_error(Fractor::Workflow::TypeCompatibilityValidator::TypeError,
-                         /too generic to be useful/)
+        end.to raise_error(Fractor::Workflow::TypeCompatibilityValidator::TypeError,
+                           /too generic to be useful/)
       end
 
       it "includes suggestion in error message" do
-        expect {
+        expect do
           validator.check_type_declaration(job, :input, BasicObject)
-        }.to raise_error(/Suggestion:/)
+        end.to raise_error(/Suggestion:/)
       end
     end
 
@@ -216,7 +217,8 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       it "returns empty array for matching types" do
         jobs = [
           create_job("producer", output_type: String),
-          create_job("consumer", input_type: String, dependencies: ["producer"])
+          create_job("consumer", input_type: String,
+                                 dependencies: ["producer"]),
         ]
         validator = described_class.new(jobs)
 
@@ -227,7 +229,8 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       it "returns empty array when types are compatible (covariance)" do
         jobs = [
           create_job("producer", output_type: String), # String < Object
-          create_job("consumer", input_type: Object, dependencies: ["producer"])
+          create_job("consumer", input_type: Object,
+                                 dependencies: ["producer"]),
         ]
         validator = described_class.new(jobs)
 
@@ -238,7 +241,8 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       it "returns empty array for Numeric compatibility" do
         jobs = [
           create_job("producer", output_type: Integer),
-          create_job("consumer", input_type: Numeric, dependencies: ["producer"])
+          create_job("consumer", input_type: Numeric,
+                                 dependencies: ["producer"]),
         ]
         validator = described_class.new(jobs)
 
@@ -249,7 +253,7 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       it "returns empty array when types are not declared" do
         jobs = [
           create_job("producer"),
-          create_job("consumer", dependencies: ["producer"])
+          create_job("consumer", dependencies: ["producer"]),
         ]
         validator = described_class.new(jobs)
 
@@ -262,7 +266,8 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       it "returns issue for String producer, Integer consumer" do
         jobs = [
           create_job("producer", output_type: String),
-          create_job("consumer", input_type: Integer, dependencies: ["producer"])
+          create_job("consumer", input_type: Integer,
+                                 dependencies: ["producer"]),
         ]
         validator = described_class.new(jobs)
 
@@ -275,7 +280,8 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
       it "includes suggestion in issue" do
         jobs = [
           create_job("producer", output_type: String),
-          create_job("consumer", input_type: Integer, dependencies: ["producer"])
+          create_job("consumer", input_type: Integer,
+                                 dependencies: ["producer"]),
         ]
         validator = described_class.new(jobs)
 
@@ -289,9 +295,11 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
     it "validates complex workflow with multiple type-compatible jobs" do
       jobs = [
         create_job("start", output_type: String),
-        create_job("process1", input_type: String, output_type: String, dependencies: ["start"]),
-        create_job("process2", input_type: String, output_type: Integer, dependencies: ["process1"]),
-        create_job("finalize", input_type: Integer, dependencies: ["process2"])
+        create_job("process1", input_type: String, output_type: String,
+                               dependencies: ["start"]),
+        create_job("process2", input_type: String, output_type: Integer,
+                               dependencies: ["process1"]),
+        create_job("finalize", input_type: Integer, dependencies: ["process2"]),
       ]
       validator = described_class.new(jobs)
 
@@ -302,7 +310,7 @@ RSpec.describe Fractor::Workflow::TypeCompatibilityValidator do
     it "detects type incompatibilities in complex workflow" do
       jobs = [
         create_job("start", output_type: String),
-        create_job("bad_process", input_type: Integer, dependencies: ["start"]) # String -> Integer
+        create_job("bad_process", input_type: Integer, dependencies: ["start"]), # String -> Integer
       ]
       validator = described_class.new(jobs)
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require_relative "../../lib/fractor/result_aggregator"
 
 RSpec.describe Fractor::MainLoopHandler do
   let(:worker_class) do
@@ -21,7 +22,7 @@ RSpec.describe Fractor::MainLoopHandler do
   end
 
   let(:supervisor) do
-    instance_double("Fractor::Supervisor",
+    instance_double(Fractor::Supervisor,
                     work_queue: Queue.new,
                     workers: [],
                     results: Fractor::ResultAggregator.new,
@@ -56,7 +57,7 @@ RSpec.describe Fractor::MainLoopHandler do
   describe "#get_processed_count" do
     it "returns sum of results and errors" do
       allow(supervisor).to receive(:results).and_return(
-        instance_double("ResultAggregator", results: [1, 2], errors: [:error])
+        instance_double(Fractor::ResultAggregator, results: [1, 2], errors: [:error]),
       )
 
       count = handler.send(:get_processed_count)
@@ -65,7 +66,7 @@ RSpec.describe Fractor::MainLoopHandler do
 
     it "returns 0 when no results" do
       allow(supervisor).to receive(:results).and_return(
-        instance_double("ResultAggregator", results: [], errors: [])
+        instance_double(Fractor::ResultAggregator, results: [], errors: []),
       )
 
       expect(handler.send(:get_processed_count)).to eq(0)
@@ -117,7 +118,7 @@ RSpec.describe Fractor::MainLoopHandler do
 
     before do
       allow(supervisor).to receive(:instance_variable_get).with(:@ractors_map).and_return(
-        { ractor1 => :worker1, ractor2 => :worker2 }
+        { ractor1 => :worker1, ractor2 => :worker2 },
       )
       allow(supervisor).to receive(:instance_variable_get).with(:@wakeup_ractor).and_return(nil)
     end
@@ -138,7 +139,8 @@ RSpec.describe Fractor::MainLoopHandler do
     it "includes wakeup ractor in continuous mode with callbacks" do
       allow(supervisor).to receive(:instance_variable_get).with(:@wakeup_ractor).and_return(ractor1)
       allow(supervisor).to receive(:instance_variable_get).with(:@continuous_mode).and_return(true)
-      allow(supervisor).to receive(:instance_variable_get).with(:@work_callbacks).and_return([-> {}])
+      allow(supervisor).to receive(:instance_variable_get).with(:@work_callbacks).and_return([-> {
+      }])
 
       active = handler.send(:get_active_ractors)
       expect(active).to contain_exactly(ractor1, ractor2)
@@ -147,7 +149,7 @@ RSpec.describe Fractor::MainLoopHandler do
 
   describe "#handle_edge_cases" do
     let(:work_distribution_manager) do
-      instance_double("Fractor::WorkDistributionManager")
+      instance_double(Fractor::WorkDistributionManager)
     end
 
     before do
@@ -161,7 +163,7 @@ RSpec.describe Fractor::MainLoopHandler do
         allow(supervisor).to receive(:instance_variable_get).with(:@continuous_mode).and_return(false)
         allow(supervisor).to receive(:instance_variable_get).with(:@total_work_count).and_return(10)
         allow(supervisor).to receive(:results).and_return(
-          instance_double("ResultAggregator", results: [], errors: [])
+          instance_double(Fractor::ResultAggregator, results: [], errors: []),
         )
       end
 
@@ -195,7 +197,7 @@ RSpec.describe Fractor::MainLoopHandler do
 
   describe "#process_message" do
     let(:wrapped_ractor) do
-      instance_double("Fractor::WrappedRactor",
+      instance_double(Fractor::WrappedRactor,
                       name: "test-worker",
                       worker_class: worker_class)
     end
@@ -205,12 +207,11 @@ RSpec.describe Fractor::MainLoopHandler do
 
     before do
       allow(supervisor).to receive(:instance_variable_get).with(:@ractors_map).and_return(ractors_map)
-      allow(supervisor).to receive(:workers).and_return([wrapped_ractor])
       allow(supervisor).to receive(:instance_variable_get).with(:@work_distribution_manager).and_return(
-        instance_double("Fractor::WorkDistributionManager")
+        instance_double(Fractor::WorkDistributionManager),
       )
-      allow(supervisor).to receive(:results).and_return(Fractor::ResultAggregator.new)
-      allow(supervisor).to receive(:error_reporter).and_return(Fractor::ErrorReporter.new)
+      allow(supervisor).to receive_messages(workers: [wrapped_ractor],
+                                            results: Fractor::ResultAggregator.new, error_reporter: Fractor::ErrorReporter.new)
       # Allow calling private methods
       allow(supervisor).to receive(:send)
     end
@@ -231,7 +232,7 @@ RSpec.describe Fractor::MainLoopHandler do
       let(:message) { { type: :initialize, processor: worker_class } }
 
       it "assigns work to worker" do
-        wdm = instance_double("Fractor::WorkDistributionManager")
+        wdm = instance_double(Fractor::WorkDistributionManager)
         allow(supervisor).to receive(:instance_variable_get).with(:@work_distribution_manager).and_return(wdm)
         expect(wdm).to receive(:assign_work_to_worker).with(wrapped_ractor).and_return(true)
 
@@ -252,26 +253,31 @@ RSpec.describe Fractor::MainLoopHandler do
       let(:message) { { type: :unknown } }
 
       it "does not raise error" do
-        expect { handler.send(:process_message, ractor, message) }.not_to raise_error
+        expect do
+          handler.send(:process_message, ractor, message)
+        end.not_to raise_error
       end
     end
   end
 
   describe "#handle_result_message" do
     let(:wrapped_ractor) do
-      instance_double("Fractor::WrappedRactor",
+      instance_double(Fractor::WrappedRactor,
                       name: "test-worker",
                       worker_class: worker_class)
     end
 
     let(:work) { work_class.new(5) }
     let(:work_result) { Fractor::WorkResult.new(result: 10, work: work) }
-    let(:message) { { type: :result, result: work_result, processor: worker_class } }
-    let(:work_distribution_manager) { instance_double("Fractor::WorkDistributionManager") }
+    let(:message) do
+      { type: :result, result: work_result, processor: worker_class }
+    end
+    let(:work_distribution_manager) { instance_double(Fractor::WorkDistributionManager) }
 
     before do
-      allow(supervisor).to receive(:results).and_return(Fractor::ResultAggregator.new)
-      allow(supervisor).to receive(:error_reporter).and_return(Fractor::ErrorReporter.new)
+      allow(supervisor).to receive_messages(
+        results: Fractor::ResultAggregator.new, error_reporter: Fractor::ErrorReporter.new,
+      )
       allow(supervisor).to receive(:instance_variable_get).with(:@performance_monitor).and_return(nil)
       allow(supervisor).to receive(:instance_variable_get).with(:@work_distribution_manager).and_return(work_distribution_manager)
       allow(supervisor).to receive(:instance_variable_get).with(:@continuous_mode).and_return(false)
@@ -287,14 +293,15 @@ RSpec.describe Fractor::MainLoopHandler do
     end
 
     it "records error to error reporter" do
-      expect(supervisor.error_reporter).to receive(:record).with(work_result, job_name: worker_class.name)
+      expect(supervisor.error_reporter).to receive(:record).with(work_result,
+                                                                 job_name: worker_class.name)
       handler.send(:handle_result_message, wrapped_ractor, message)
     end
   end
 
   describe "#handle_error_message" do
     let(:wrapped_ractor) do
-      instance_double("Fractor::WrappedRactor",
+      instance_double(Fractor::WrappedRactor,
                       name: "test-worker",
                       worker_class: worker_class)
     end
@@ -302,11 +309,12 @@ RSpec.describe Fractor::MainLoopHandler do
     let(:work) { work_class.new(5) }
     let(:error_result) { Fractor::WorkResult.new(error: StandardError.new("Test error"), work: work) }
     let(:message) { { type: :error, result: error_result } }
-    let(:work_distribution_manager) { instance_double("Fractor::WorkDistributionManager") }
+    let(:work_distribution_manager) { instance_double(Fractor::WorkDistributionManager) }
 
     before do
-      allow(supervisor).to receive(:results).and_return(Fractor::ResultAggregator.new)
-      allow(supervisor).to receive(:error_reporter).and_return(Fractor::ErrorReporter.new)
+      allow(supervisor).to receive_messages(
+        results: Fractor::ResultAggregator.new, error_reporter: Fractor::ErrorReporter.new,
+      )
       allow(supervisor).to receive(:instance_variable_get).with(:@performance_monitor).and_return(nil)
       allow(supervisor).to receive(:instance_variable_get).with(:@work_distribution_manager).and_return(work_distribution_manager)
       allow(supervisor).to receive(:instance_variable_get).with(:@error_callbacks).and_return([])
@@ -323,19 +331,20 @@ RSpec.describe Fractor::MainLoopHandler do
     end
 
     it "records error to error reporter" do
-      expect(supervisor.error_reporter).to receive(:record).with(error_result, job_name: worker_class.name)
+      expect(supervisor.error_reporter).to receive(:record).with(error_result,
+                                                                 job_name: worker_class.name)
       handler.send(:handle_error_message, wrapped_ractor, message)
     end
   end
 
   describe "#assign_next_work_or_shutdown" do
     let(:wrapped_ractor) do
-      instance_double("Fractor::WrappedRactor",
+      instance_double(Fractor::WrappedRactor,
                       name: "test-worker",
                       worker_class: worker_class)
     end
 
-    let(:work_distribution_manager) { instance_double("Fractor::WorkDistributionManager") }
+    let(:work_distribution_manager) { instance_double(Fractor::WorkDistributionManager) }
 
     before do
       allow(supervisor).to receive(:instance_variable_get).with(:@work_distribution_manager)

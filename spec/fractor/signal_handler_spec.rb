@@ -4,7 +4,9 @@ require "spec_helper"
 
 RSpec.describe Fractor::SignalHandler do
   let(:continuous_mode) { false }
-  let(:handler) { described_class.new(continuous_mode: continuous_mode, debug: false) }
+  let(:handler) do
+    described_class.new(continuous_mode: continuous_mode, debug: false)
+  end
 
   describe "#initialize" do
     it "stores continuous mode setting" do
@@ -31,7 +33,7 @@ RSpec.describe Fractor::SignalHandler do
         continuous_mode: false,
         debug: false,
         status_callback: -> { status_called << true },
-        shutdown_callback: ->(mode) { shutdown_called << mode }
+        shutdown_callback: ->(mode) { shutdown_called << mode },
       )
     end
 

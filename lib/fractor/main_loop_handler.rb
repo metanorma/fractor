@@ -231,7 +231,8 @@ module Fractor
                        worker_class: wrapped_ractor.worker_class)
 
       # Record result to error reporter
-      error_reporter.record(work_result, job_name: wrapped_ractor.worker_class.name)
+      error_reporter.record(work_result,
+                            job_name: wrapped_ractor.worker_class.name)
 
       results.add_result(work_result)
 
@@ -261,17 +262,20 @@ module Fractor
                        worker_class: wrapped_ractor.worker_class)
 
       # Record error to error reporter
-      error_reporter.record(error_result, job_name: wrapped_ractor.worker_class.name)
+      error_reporter.record(error_result,
+                            job_name: wrapped_ractor.worker_class.name)
 
       # Invoke error callbacks
       error_callbacks.each do |callback|
-        callback.call(error_result, wrapped_ractor.name, wrapped_ractor.worker_class)
+        callback.call(error_result, wrapped_ractor.name,
+                      wrapped_ractor.worker_class)
       rescue StandardError => e
         puts "Error in error callback: #{e.message}" if @debug
       end
 
       # Enhanced error message with context
-      error_context = @supervisor.send(:format_error_context, wrapped_ractor, error_result)
+      error_context = @supervisor.send(:format_error_context, wrapped_ractor,
+                                       error_result)
       puts error_context if @debug
 
       results.add_result(error_result)

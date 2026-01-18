@@ -102,7 +102,7 @@ module Fractor
         @ractors_map,
         debug: @debug,
         continuous_mode: @continuous_mode,
-        performance_monitor: @performance_monitor
+        performance_monitor: @performance_monitor,
       )
 
       # Initialize shutdown handler (manages graceful shutdown)
@@ -111,7 +111,7 @@ module Fractor
         @wakeup_ractor,
         @timer_thread,
         @performance_monitor,
-        debug: @debug
+        debug: @debug,
       )
 
       # Initialize signal handler for graceful shutdown
@@ -119,7 +119,7 @@ module Fractor
         continuous_mode: @continuous_mode,
         debug: @debug,
         status_callback: -> { print_status },
-        shutdown_callback: ->(mode) { handle_shutdown_callback(mode) }
+        shutdown_callback: ->(mode) { handle_shutdown_callback(mode) },
       )
 
       # Initialize error formatter for error messages
@@ -299,7 +299,8 @@ module Fractor
       @shutdown_handler.instance_variable_set(:@workers, @workers)
       @shutdown_handler.instance_variable_set(:@wakeup_ractor, @wakeup_ractor)
       @shutdown_handler.instance_variable_set(:@timer_thread, @timer_thread)
-      @shutdown_handler.instance_variable_set(:@performance_monitor, @performance_monitor)
+      @shutdown_handler.instance_variable_set(:@performance_monitor,
+                                              @performance_monitor)
 
       @shutdown_handler.shutdown
     end
@@ -427,9 +428,9 @@ module Fractor
           {
             class: work.class.name,
             input: work.input,
-            inspect: work.inspect
+            inspect: work.inspect,
           }
-        end
+        end,
       }
     end
 
@@ -451,11 +452,11 @@ module Fractor
             workers: pool[:workers].map do |w|
               {
                 name: w.name,
-                idle: @work_distribution_manager.idle_workers_list.include?(w)
+                idle: @work_distribution_manager.idle_workers_list.include?(w),
               }
-            end
+            end,
           }
-        end
+        end,
       }
     end
 

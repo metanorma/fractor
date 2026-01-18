@@ -50,9 +50,9 @@ RSpec.describe Fractor::Workflow::ExecutionStrategy do
       strategy = described_class.new(executor)
       job_group = workflow.class.jobs.values
 
-      expect {
+      expect do
         strategy.execute(job_group)
-      }.to raise_error(NotImplementedError, /must implement #execute/)
+      end.to raise_error(NotImplementedError, /must implement #execute/)
     end
   end
 
@@ -123,7 +123,7 @@ RSpec.describe Fractor::Workflow::SequentialExecutionStrategy do
 
   describe "#execute" do
     it "executes jobs sequentially" do
-      strategy = Fractor::Workflow::SequentialExecutionStrategy.new(executor)
+      strategy = described_class.new(executor)
       job_group = workflow.class.jobs.values
 
       result = strategy.execute(job_group)
@@ -168,7 +168,7 @@ RSpec.describe Fractor::Workflow::ParallelExecutionStrategy do
 
   describe "#execute" do
     it "executes jobs in parallel" do
-      strategy = Fractor::Workflow::ParallelExecutionStrategy.new(executor)
+      strategy = described_class.new(executor)
       job_group = workflow.class.jobs.values
 
       result = strategy.execute(job_group)
@@ -212,7 +212,7 @@ RSpec.describe Fractor::Workflow::PipelineExecutionStrategy do
 
   describe "#execute" do
     it "executes a single job as pipeline" do
-      strategy = Fractor::Workflow::PipelineExecutionStrategy.new(executor)
+      strategy = described_class.new(executor)
       job_group = workflow.class.jobs.values
 
       result = strategy.execute(job_group)
@@ -242,12 +242,13 @@ RSpec.describe Fractor::Workflow::PipelineExecutionStrategy do
         end
       end
 
-      strategy = Fractor::Workflow::PipelineExecutionStrategy.new(executor)
+      strategy = described_class.new(executor)
       job_group = workflow_with_two.jobs.values.to_a
 
-      expect {
+      expect do
         strategy.execute(job_group)
-      }.to raise_error(Fractor::WorkflowError, /Pipeline strategy expects exactly 1 job/)
+      end.to raise_error(Fractor::WorkflowError,
+                         /Pipeline strategy expects exactly 1 job/)
     end
   end
 end

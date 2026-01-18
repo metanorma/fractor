@@ -36,7 +36,7 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
           { worker_class: worker_class, num_workers: 2 },
         ],
         continuous_mode: true,
-        debug: false
+        debug: false,
       )
 
       # Register a work source that provides work continuously
@@ -74,7 +74,7 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
           { worker_class: worker_class, num_workers: 2 },
         ],
         continuous_mode: true,
-        debug: false
+        debug: false,
       )
 
       # Add some work
@@ -115,7 +115,7 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
           { worker_class: slow_worker, num_workers: 2 },
         ],
         continuous_mode: true,
-        debug: false
+        debug: false,
       )
 
       # Add slow work
@@ -144,11 +144,11 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
         worker_pools: [
           { worker_class: worker_class, num_workers: 2 },
         ],
-        debug: false
+        debug: false,
       )
 
       # Add work
-      work_items = 10.times.map { |i| work_class.new(i + 1) }
+      work_items = Array.new(10) { |i| work_class.new(i + 1) }
       supervisor.add_work_items(work_items)
 
       # Run to completion
@@ -166,7 +166,7 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
         worker_pools: [
           { worker_class: worker_class, num_workers: 2 },
         ],
-        debug: false
+        debug: false,
       )
 
       # Add work
@@ -198,7 +198,7 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
           { worker_class: worker_class, num_workers: 2 },
         ],
         continuous_mode: true,
-        debug: false
+        debug: false,
       )
 
       # Start workers
@@ -218,7 +218,7 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
       supervisor = Fractor::Supervisor.new(
         worker_pools: [
           { worker_class: worker_class, num_workers: 2 },
-        ]
+        ],
       )
 
       # Default is false unless FRACTOR_DEBUG env var is set
@@ -239,7 +239,7 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
       supervisor = Fractor::Supervisor.new(
         worker_pools: [
           { worker_class: worker_class, num_workers: 2 },
-        ]
+        ],
       )
 
       # Queue is empty initially
@@ -265,7 +265,7 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
       supervisor = Fractor::Supervisor.new(
         worker_pools: [
           { worker_class: worker_class, num_workers: 3 },
-        ]
+        ],
       )
 
       # Before starting workers

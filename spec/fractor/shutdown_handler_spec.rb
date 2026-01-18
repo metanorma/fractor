@@ -13,7 +13,7 @@ RSpec.describe Fractor::ShutdownHandler do
       wakeup_ractor,
       timer_thread,
       performance_monitor,
-      debug: false
+      debug: false,
     )
   end
 
@@ -32,13 +32,13 @@ RSpec.describe Fractor::ShutdownHandler do
 
   describe "#shutdown" do
     it "calls stop_performance_monitor" do
-      pm = instance_double("Fractor::PerformanceMonitor", stop: true)
+      pm = instance_double(Fractor::PerformanceMonitor, stop: true)
       handler = described_class.new(
         workers,
         wakeup_ractor,
         timer_thread,
         pm,
-        debug: false
+        debug: false,
       )
 
       expect(pm).to receive(:stop).once
@@ -52,7 +52,7 @@ RSpec.describe Fractor::ShutdownHandler do
         wakeup_ractor,
         thread,
         performance_monitor,
-        debug: false
+        debug: false,
       )
 
       expect(thread).to receive(:join).with(1).once
@@ -61,13 +61,13 @@ RSpec.describe Fractor::ShutdownHandler do
     end
 
     it "calls signal_wakeup_ractor when wakeup_ractor exists" do
-      ractor = instance_double("Ractor", send: true)
+      ractor = instance_double(Ractor, send: true)
       handler = described_class.new(
         workers,
         ractor,
         timer_thread,
         performance_monitor,
-        debug: false
+        debug: false,
       )
 
       expect(ractor).to receive(:send).with(:shutdown).once
@@ -75,16 +75,16 @@ RSpec.describe Fractor::ShutdownHandler do
     end
 
     it "calls signal_all_workers" do
-      worker = instance_double("Fractor::WrappedRactor",
-                              name: "worker-1",
-                              send: true,
-                              closed?: true)
+      worker = instance_double(Fractor::WrappedRactor,
+                               name: "worker-1",
+                               send: true,
+                               closed?: true)
       handler = described_class.new(
         [worker],
         wakeup_ractor,
         timer_thread,
         performance_monitor,
-        debug: false
+        debug: false,
       )
 
       expect(worker).to receive(:send).with(:shutdown).once
@@ -95,7 +95,7 @@ RSpec.describe Fractor::ShutdownHandler do
   describe "#stop_performance_monitor" do
     context "when performance monitor is enabled" do
       let(:pm) do
-        instance_double("Fractor::PerformanceMonitor",
+        instance_double(Fractor::PerformanceMonitor,
                         stop: true)
       end
 
@@ -105,7 +105,7 @@ RSpec.describe Fractor::ShutdownHandler do
           wakeup_ractor,
           timer_thread,
           pm,
-          debug: false
+          debug: false,
         )
       end
 
@@ -139,7 +139,7 @@ RSpec.describe Fractor::ShutdownHandler do
           wakeup_ractor,
           thread,
           performance_monitor,
-          debug: false
+          debug: false,
         )
       end
 
@@ -165,7 +165,7 @@ RSpec.describe Fractor::ShutdownHandler do
 
     context "when timer thread is not alive" do
       let(:thread) do
-        t = Thread.new { }
+        t = Thread.new {}
         t.kill
         # Wait for thread to actually die
         sleep(0.01) until !t.alive?
@@ -178,7 +178,7 @@ RSpec.describe Fractor::ShutdownHandler do
           wakeup_ractor,
           thread,
           performance_monitor,
-          debug: false
+          debug: false,
         )
       end
 
@@ -192,7 +192,7 @@ RSpec.describe Fractor::ShutdownHandler do
   describe "#signal_wakeup_ractor" do
     context "when wakeup_ractor exists" do
       let(:ractor) do
-        instance_double("Ractor", send: true)
+        instance_double(Ractor, send: true)
       end
 
       let(:handler) do
@@ -201,7 +201,7 @@ RSpec.describe Fractor::ShutdownHandler do
           ractor,
           timer_thread,
           performance_monitor,
-          debug: false
+          debug: false,
         )
       end
 
@@ -226,14 +226,14 @@ RSpec.describe Fractor::ShutdownHandler do
   describe "#signal_all_workers" do
     context "with multiple workers" do
       let(:worker1) do
-        instance_double("Fractor::WrappedRactor",
+        instance_double(Fractor::WrappedRactor,
                         name: "worker-1",
                         send: true,
                         closed?: true)
       end
 
       let(:worker2) do
-        instance_double("Fractor::WrappedRactor",
+        instance_double(Fractor::WrappedRactor,
                         name: "worker-2",
                         send: true,
                         closed?: false)
@@ -245,7 +245,7 @@ RSpec.describe Fractor::ShutdownHandler do
           wakeup_ractor,
           timer_thread,
           performance_monitor,
-          debug: false
+          debug: false,
         )
       end
 
@@ -272,7 +272,7 @@ RSpec.describe Fractor::ShutdownHandler do
   describe "#complete?" do
     context "when all components are stopped" do
       let(:thread) do
-        t = Thread.new { }
+        t = Thread.new {}
         t.kill
         # Wait for thread to actually die
         sleep(0.01) until !t.alive?
@@ -280,7 +280,7 @@ RSpec.describe Fractor::ShutdownHandler do
       end
 
       let(:worker) do
-        instance_double("Fractor::WrappedRactor", closed?: true)
+        instance_double(Fractor::WrappedRactor, closed?: true)
       end
 
       let(:handler) do
@@ -289,7 +289,7 @@ RSpec.describe Fractor::ShutdownHandler do
           nil,
           thread,
           nil,
-          debug: false
+          debug: false,
         )
       end
 
@@ -309,7 +309,7 @@ RSpec.describe Fractor::ShutdownHandler do
           wakeup_ractor,
           thread,
           nil,
-          debug: false
+          debug: false,
         )
       end
 
@@ -320,7 +320,7 @@ RSpec.describe Fractor::ShutdownHandler do
 
     context "when workers are still open" do
       let(:worker) do
-        instance_double("Fractor::WrappedRactor", closed?: false)
+        instance_double(Fractor::WrappedRactor, closed?: false)
       end
 
       let(:handler) do
@@ -329,7 +329,7 @@ RSpec.describe Fractor::ShutdownHandler do
           wakeup_ractor,
           timer_thread,
           nil,
-          debug: false
+          debug: false,
         )
       end
 
@@ -341,7 +341,7 @@ RSpec.describe Fractor::ShutdownHandler do
 
   describe "#status_summary" do
     let(:worker) do
-      instance_double("Fractor::WrappedRactor", name: "worker-1", closed?: true)
+      instance_double(Fractor::WrappedRactor, name: "worker-1", closed?: true)
     end
 
     let(:handler) do
@@ -350,7 +350,7 @@ RSpec.describe Fractor::ShutdownHandler do
         wakeup_ractor,
         timer_thread,
         performance_monitor,
-        debug: false
+        debug: false,
       )
     end
 
@@ -359,7 +359,7 @@ RSpec.describe Fractor::ShutdownHandler do
 
       expect(summary).to be_a(Hash)
       expect(summary.keys).to include(:performance_monitor, :timer_thread, :wakeup_ractor,
-                                       :workers_count, :workers_closed)
+                                      :workers_count, :workers_closed)
     end
 
     it "reports workers_count correctly" do
@@ -374,7 +374,7 @@ RSpec.describe Fractor::ShutdownHandler do
 
     context "with performance monitor" do
       let(:pm) do
-        instance_double("Fractor::PerformanceMonitor", monitoring?: true)
+        instance_double(Fractor::PerformanceMonitor, monitoring?: true)
       end
 
       let(:handler) do
@@ -383,7 +383,7 @@ RSpec.describe Fractor::ShutdownHandler do
           wakeup_ractor,
           timer_thread,
           pm,
-          debug: false
+          debug: false,
         )
       end
 
@@ -402,7 +402,7 @@ RSpec.describe Fractor::ShutdownHandler do
           ractor,
           timer_thread,
           performance_monitor,
-          debug: false
+          debug: false,
         )
       end
 

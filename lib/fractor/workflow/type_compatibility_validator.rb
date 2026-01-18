@@ -99,17 +99,17 @@ module Fractor
             next unless producer_job
 
             # Check if both have type declarations
-            if producer_job.output_type && consumer_job.input_type
-              # Check if types are compatible
-              unless types_compatible?(producer_job.output_type, consumer_job.input_type)
-                issues << {
-                  producer: producer_job.name,
-                  consumer: consumer_job.name,
-                  producer_type: producer_job.output_type,
-                  consumer_type: consumer_job.input_type,
-                  suggestion: suggest_type_fix(producer_job.output_type, consumer_job.input_type)
-                }
-              end
+            # Check if types are compatible
+            if producer_job.output_type && consumer_job.input_type && !types_compatible?(producer_job.output_type,
+                                                                                         consumer_job.input_type)
+              issues << {
+                producer: producer_job.name,
+                consumer: consumer_job.name,
+                producer_type: producer_job.output_type,
+                consumer_type: consumer_job.input_type,
+                suggestion: suggest_type_fix(producer_job.output_type,
+                                             consumer_job.input_type),
+              }
             end
           end
         end

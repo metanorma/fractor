@@ -87,8 +87,8 @@ trace: false, dead_letter_queue: nil)
       #       ctx.add_error("API key is required")
       #     end
       #   end
-      def validate_before_execution(name = nil, &block)
-        @pre_execution_context.add_validation_hook(name, &block)
+      def validate_before_execution(name = nil, &)
+        @pre_execution_context.add_validation_hook(name, &)
       end
 
       private
@@ -244,7 +244,8 @@ trace: false, dead_letter_queue: nil)
         retry_config = job.retry_config
 
         # Create retry orchestrator with the job's retry configuration
-        orchestrator = RetryOrchestrator.new(retry_config, debug: ENV["FRACTOR_DEBUG"] == "1")
+        orchestrator = RetryOrchestrator.new(retry_config,
+                                             debug: ENV["FRACTOR_DEBUG"] == "1")
 
         # Execute with retry logic
         orchestrator.execute_with_retry(job) do |j|
@@ -520,9 +521,10 @@ trace: false, dead_letter_queue: nil)
         # Get or create circuit breaker orchestrator for this job
         orchestrator = @circuit_breakers.get_or_create_orchestrator(
           breaker_key,
-          **job.circuit_breaker_config.slice(:threshold, :timeout, :half_open_calls),
+          **job.circuit_breaker_config.slice(:threshold, :timeout,
+                                             :half_open_calls),
           job_name: job.name,
-          debug: ENV["FRACTOR_DEBUG"] == "1"
+          debug: ENV["FRACTOR_DEBUG"] == "1",
         )
 
         # Log circuit state before execution

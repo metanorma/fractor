@@ -21,18 +21,24 @@ RSpec.describe Fractor::SupervisorLogger do
   describe "#debug" do
     it "logs when debug is enabled (without custom logger)" do
       debug_logger = described_class.new(logger: nil, debug: true)
-      expect { debug_logger.debug("test message") }.to output(/test message/).to_stdout
+      expect do
+        debug_logger.debug("test message")
+      end.to output(/test message/).to_stdout
     end
 
     it "does not log when debug is disabled" do
-      expect { logger.debug("test message") }.not_to output(/test message/).to_stdout
+      expect do
+        logger.debug("test message")
+      end.not_to output(/test message/).to_stdout
     end
   end
 
   describe "#info" do
     it "logs info messages (without custom logger)" do
       info_logger = described_class.new(logger: nil)
-      expect { info_logger.info("info message") }.to output(/info message/).to_stdout
+      expect do
+        info_logger.info("info message")
+      end.to output(/info message/).to_stdout
     end
 
     it "uses logger when available" do
@@ -86,13 +92,19 @@ RSpec.describe Fractor::SupervisorLogger do
 
     describe "#log_worker_status" do
       it "logs worker status summary" do
-        expect { debug_logger.log_worker_status(total: 10, idle: 5, busy: 5) }.not_to raise_error
+        expect do
+          debug_logger.log_worker_status(total: 10, idle: 5,
+                                         busy: 5)
+        end.not_to raise_error
       end
     end
 
     describe "#log_processing_status" do
       it "logs processing status" do
-        expect { debug_logger.log_processing_status(processed: 5, total: 10, queue_size: 5) }.not_to raise_error
+        expect do
+          debug_logger.log_processing_status(processed: 5, total: 10,
+                                             queue_size: 5)
+        end.not_to raise_error
       end
     end
 
@@ -106,7 +118,9 @@ RSpec.describe Fractor::SupervisorLogger do
       it "logs error" do
         # Note: $stderr output may not be captured by RSpec's to_stderr matcher
         # Just verify it doesn't raise an error
-        expect { debug_logger.log_error_received(error_result) }.not_to raise_error
+        expect do
+          debug_logger.log_error_received(error_result)
+        end.not_to raise_error
       end
     end
   end

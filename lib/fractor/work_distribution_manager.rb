@@ -136,7 +136,7 @@ module Fractor
     def status_summary
       {
         idle: @idle_workers.size,
-        busy: @workers.size - @idle_workers.size
+        busy: @workers.size - @idle_workers.size,
       }
     end
   end

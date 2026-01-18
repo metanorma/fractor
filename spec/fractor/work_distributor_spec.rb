@@ -5,7 +5,9 @@ require "spec_helper"
 RSpec.describe Fractor::WorkDistributor do
   let(:work_queue) { Fractor::WorkQueue.new }
   let(:worker_manager) { instance_double(Fractor::WorkerManager) }
-  let(:distributor) { described_class.new(work_queue, worker_manager, debug: false) }
+  let(:distributor) do
+    described_class.new(work_queue, worker_manager, debug: false)
+  end
 
   before do
     # Create test work class
@@ -21,7 +23,10 @@ RSpec.describe Fractor::WorkDistributor do
   end
 
   after do
-    Object.send(:remove_const, :TestWorkForDistributor) if defined?(TestWorkForDistributor)
+    if defined?(TestWorkForDistributor)
+      Object.send(:remove_const,
+                  :TestWorkForDistributor)
+    end
   end
 
   describe "#initialize" do

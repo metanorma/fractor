@@ -40,7 +40,7 @@ module Fractor
       if @logger
         @logger.warn("[Fractor] #{message}")
       else
-        warn "[WARN] #{message}"
+        Kernel.warn "[WARN] #{message}"
       end
     end
 
@@ -49,7 +49,7 @@ module Fractor
       if @logger
         @logger.error("[Fractor] #{message}")
       else
-        $stderr.puts "[ERROR] #{message}"
+        Kernel.warn "[ERROR] #{message}"
       end
     end
 

@@ -272,12 +272,12 @@ module Fractor
     end
 
     def validate_retries!
-      if @default_max_retries && @default_max_retries < 0
+      if @default_max_retries&.negative?
         raise ConfigurationError,
               "default_max_retries must be non-negative, got: #{@default_max_retries}"
       end
 
-      if @default_retry_delay && @default_retry_delay < 0
+      if @default_retry_delay&.negative?
         raise ConfigurationError,
               "default_retry_delay must be non-negative, got: #{@default_retry_delay}"
       end

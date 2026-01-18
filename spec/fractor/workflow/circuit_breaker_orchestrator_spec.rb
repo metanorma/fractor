@@ -3,7 +3,9 @@
 require "spec_helper"
 
 RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
-  let(:orchestrator) { described_class.new(threshold: 3, timeout: 60, debug: false) }
+  let(:orchestrator) do
+    described_class.new(threshold: 3, timeout: 60, debug: false)
+  end
   let(:job) { double("Job", name: "test_job") }
 
   describe "#initialize" do
@@ -35,7 +37,7 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
   describe "#execute_with_breaker" do
     context "when circuit is closed" do
       it "executes the job and returns result" do
-        result = orchestrator.execute_with_breaker(job) { |j| "success" }
+        result = orchestrator.execute_with_breaker(job) { |_j| "success" }
 
         expect(result).to eq("success")
         expect(orchestrator.instance_variable_get(:@execution_count)).to eq(1)
@@ -44,7 +46,9 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
 
       it "tracks failures" do
         begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
+          orchestrator.execute_with_breaker(job) do |_j|
+            raise StandardError, "failed"
+          end
         rescue StandardError
           # Expected
         end
@@ -57,11 +61,11 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
         threshold = orchestrator.breaker.threshold
 
         threshold.times do
-          begin
-            orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-          rescue StandardError
-            # Expected
+          orchestrator.execute_with_breaker(job) do |_j|
+            raise StandardError, "failed"
           end
+        rescue StandardError
+          # Expected
         end
 
         expect(orchestrator.open?).to be true
@@ -72,32 +76,32 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
       it "blocks execution and raises CircuitOpenError" do
         # Open the circuit by exceeding threshold
         3.times do
-          begin
-            orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-          rescue StandardError
-            # Expected
+          orchestrator.execute_with_breaker(job) do |_j|
+            raise StandardError, "failed"
           end
+        rescue StandardError
+          # Expected
         end
 
         expect(orchestrator.open?).to be true
 
-        expect {
-          orchestrator.execute_with_breaker(job) { |j| "success" }
-        }.to raise_error(Fractor::Workflow::CircuitOpenError)
+        expect do
+          orchestrator.execute_with_breaker(job) { |_j| "success" }
+        end.to raise_error(Fractor::Workflow::CircuitOpenError)
       end
 
       it "increments blocked count" do
         # Open the circuit
         3.times do
-          begin
-            orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-          rescue StandardError
-            # Expected
+          orchestrator.execute_with_breaker(job) do |_j|
+            raise StandardError, "failed"
           end
+        rescue StandardError
+          # Expected
         end
 
         begin
-          orchestrator.execute_with_breaker(job) { |j| "success" }
+          orchestrator.execute_with_breaker(job) { |_j| "success" }
         rescue Fractor::Workflow::CircuitOpenError
           # Expected
         end
@@ -110,16 +114,17 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
       it "allows limited test calls" do
         # Open the circuit
         3.times do
-          begin
-            orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-          rescue StandardError
-            # Expected
+          orchestrator.execute_with_breaker(job) do |_j|
+            raise StandardError, "failed"
           end
+        rescue StandardError
+          # Expected
         end
 
         # Wait for timeout to transition to half-open
         orchestrator.breaker.instance_variable_get(:@mutex).synchronize do
-          orchestrator.breaker.instance_variable_set(:@last_failure_time, Time.now - 61)
+          orchestrator.breaker.instance_variable_set(:@last_failure_time,
+                                                     Time.now - 61)
         end
 
         # Check state transition
@@ -127,7 +132,7 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
         expect(orchestrator.half_open?).to be true
 
         # Should allow execution in half-open state
-        result = orchestrator.execute_with_breaker(job) { |j| "success" }
+        result = orchestrator.execute_with_breaker(job) { |_j| "success" }
         expect(result).to eq("success")
       end
     end
@@ -140,11 +145,11 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
 
     it "returns true after threshold failures" do
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       expect(orchestrator.open?).to be true
@@ -158,11 +163,11 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
 
     it "returns false after circuit opens" do
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       expect(orchestrator.closed?).to be false
@@ -177,16 +182,17 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
     it "returns true after timeout when open" do
       # Open the circuit
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       # Simulate timeout elapsed
       orchestrator.breaker.instance_variable_get(:@mutex).synchronize do
-        orchestrator.breaker.instance_variable_set(:@last_failure_time, Time.now - 61)
+        orchestrator.breaker.instance_variable_set(:@last_failure_time,
+                                                   Time.now - 61)
       end
       orchestrator.breaker.send(:check_state)
 
@@ -201,11 +207,11 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
 
     it "returns :open after threshold failures" do
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       expect(orchestrator.state).to eq(:open)
@@ -219,11 +225,11 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
 
     it "counts failures" do
       2.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       expect(orchestrator.failure_count).to eq(2)
@@ -238,7 +244,9 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
     it "returns time of last failure" do
       before_time = Time.now
       begin
-        orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
+        end
       rescue StandardError
         # Expected
       end
@@ -251,11 +259,11 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
     it "resets circuit breaker to closed state" do
       # Open the circuit
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       orchestrator.reset!
@@ -265,7 +273,7 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
     end
 
     it "resets orchestrator counters" do
-      orchestrator.execute_with_breaker(job) { |j| "success" }
+      orchestrator.execute_with_breaker(job) { |_j| "success" }
       orchestrator.reset!
 
       expect(orchestrator.instance_variable_get(:@execution_count)).to eq(0)
@@ -276,7 +284,7 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
 
   describe "#stats" do
     it "returns combined stats from breaker and orchestrator" do
-      orchestrator.execute_with_breaker(job) { |j| "success" }
+      orchestrator.execute_with_breaker(job) { |_j| "success" }
 
       stats = orchestrator.stats
 
@@ -295,11 +303,11 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
 
     it "returns description for open state" do
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       description = orchestrator.state_description
@@ -310,16 +318,17 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
     it "returns description for half-open state" do
       # Open the circuit
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       # Transition to half-open
       orchestrator.breaker.instance_variable_get(:@mutex).synchronize do
-        orchestrator.breaker.instance_variable_set(:@last_failure_time, Time.now - 61)
+        orchestrator.breaker.instance_variable_set(:@last_failure_time,
+                                                   Time.now - 61)
       end
       orchestrator.breaker.send(:check_state)
 
@@ -333,22 +342,22 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
     it "executes job regardless of circuit state" do
       # Open the circuit
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       expect(orchestrator.open?).to be true
 
       # Bypass should still work
-      result = orchestrator.execute_bypassing_breaker(job) { |j| "bypassed" }
+      result = orchestrator.execute_bypassing_breaker(job) { |_j| "bypassed" }
       expect(result).to eq("bypassed")
     end
 
     it "increments success count on success" do
-      orchestrator.execute_bypassing_breaker(job) { |j| "success" }
+      orchestrator.execute_bypassing_breaker(job) { |_j| "success" }
 
       expect(orchestrator.instance_variable_get(:@success_count)).to eq(1)
     end
@@ -368,11 +377,11 @@ RSpec.describe Fractor::Workflow::CircuitBreakerOrchestrator do
     it "manually closes the circuit" do
       # Open the circuit
       3.times do
-        begin
-          orchestrator.execute_with_breaker(job) { |j| raise StandardError, "failed" }
-        rescue StandardError
-          # Expected
+        orchestrator.execute_with_breaker(job) do |_j|
+          raise StandardError, "failed"
         end
+      rescue StandardError
+        # Expected
       end
 
       expect(orchestrator.open?).to be true

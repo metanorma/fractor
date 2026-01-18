@@ -1,0 +1,381 @@
+= Fan-Out Workflow
+
+== Purpose
+
+Demonstrates parallel processing patterns with fan-out (one-to-many) and fan-in (many-to-one) job execution using Fractor's workflow system.
+
+== Focus
+
+This example focuses on demonstrating:
+
+* Fan-out pattern: one job feeding multiple parallel jobs
+* Fan-in pattern: multiple jobs aggregating into one job
+* Parallel job execution with shared dependencies
+* Multiple input aggregation using `inputs_from_multiple`
+* Input mapping syntax for aggregating multiple job outputs
+* Workflow execution order with parallelizable jobs
+
+== Architecture
+
+.Fan-Out and Fan-In Pattern
+[source]
+----
+[Workflow Input]
+      │
+      │ TextInput { text: "Hello Fractor!" }
+      ▼
+┌─────────────────┐
+│   Split Job     │ ◄─── Entry Point (start_with)
+│  TextSplitter   │
+└─────────────────┘
+      │
+      │ TextInput { text: "Hello Fractor!" }
+      ├──────────────┬──────────────┐
+      │              │              │
+      ▼              ▼              ▼
+┌──────────┐  ┌──────────┐  ┌──────────┐
+│Uppercase │  │Lowercase │  │ Reverse  │ ◄─── Fan-Out
+│  Worker  │  │  Worker  │  │  Worker  │      (parallel)
+└──────────┘  └──────────┘  └──────────┘
+      │              │              │
+      │              │              │
+      ▼              ▼              ▼
+ProcessedText   ProcessedText   ProcessedText
+{ result:       { result:       { result:
+"HELLO..."  }   "hello..."  }   "!rotcarF..." }
+      │              │              │
+      └──────────────┴──────────────┘
+                     │
+                     ▼
+              ┌─────────────────┐
+              │  Combine Job    │ ◄─── Fan-In
+              │ ResultCombiner  │      (aggregation)
+              └─────────────────┘
+                     │
+                     │ CombinedResult {
+                     │   uppercase: "HELLO FRACTOR!",
+                     │   lowercase: "hello fractor!",
+                     │   reversed: "!rotcarF olleH"
+                     │ }
+                     ▼
+              [Workflow Output] ◄─── Exit Point (end_with)
+----
+
+.Workflow Execution Timeline
+[source]
+----
+Time    Job Execution
+────────────────────────────────────────────────────────────
+  0     [split] ───────────► Complete
+        │
+  1     ├─► [uppercase] ──► Complete
+        │
+  2     ├─► [lowercase] ──► Complete
+        │
+  3     ├─► [reverse] ────► Complete
+        │
+  4     └─► [combine] ─────► Complete
+            (waits for uppercase, lowercase, reverse)
+
+Note: Jobs with same dependencies (uppercase, lowercase, reverse)
+      execute sequentially to avoid Ractor coordination complexity,
+      but are architecturally designed to be parallelizable.
+----
+
+== Key Components
+
+=== Data Models
+
+The workflow uses three data models:
+
+[source,ruby]
+----
+class TextInput
+  attr_accessor :text
+
+  def initialize(text: "")
+    @text = text
+  end
+end
+
+class ProcessedText
+  attr_accessor :result
+
+  def initialize(result: "")
+    @result = result
+  end
+end
+
+class CombinedResult
+  attr_accessor :uppercase, :lowercase, :reversed
+
+  def initialize(uppercase: "", lowercase: "", reversed: "")
+    @uppercase = uppercase
+    @lowercase = lowercase
+    @reversed = reversed
+  end
+end
+----
+
+=== Workers
+
+Fan-out workers process the same input independently:
+
+[source,ruby]
+----
+class UppercaseWorker < Fractor::Worker
+  input_type TextInput
+  output_type ProcessedText
+
+  def process(work)
+    input = work.input
+    result = input.text.upcase
+
+    output = ProcessedText.new(result: result)
+    Fractor::WorkResult.new(result: output, work: work)
+  end
+end
+----
+
+Fan-in worker aggregates multiple inputs:
+
+[source,ruby]
+----
+class ResultCombiner < Fractor::Worker
+  input_type CombinedResult  # <1>
+  output_type CombinedResult
+
+  def process(work)
+    input = work.input
+    # Input already contains all aggregated results
+    puts "Uppercase: #{input.uppercase}"
+    puts "Lowercase: #{input.lowercase}"
+    puts "Reversed: #{input.reversed}"
+
+    Fractor::WorkResult.new(result: input, work: work)
+  end
+end
+----
+<1> Input type contains all aggregated fields
+
+=== Workflow Definition
+
+The workflow defines fan-out and fan-in patterns:
+
+[source,ruby]
+----
+class FanOutWorkflow < Fractor::Workflow
+  workflow "fan_out_example" do
+    input_type TextInput
+    output_type CombinedResult
+
+    start_with "split"      # <1>
+    end_with "combine"      # <2>
+
+    # Entry point
+    job "split" do
+      runs_with TextSplitter
+      inputs_from_workflow
+    end
+
+    # Fan-out: three jobs with same dependency
+    job "uppercase" do
+      runs_with UppercaseWorker
+      needs "split"          # <3>
+      inputs_from_job "split"
+    end
+
+    job "lowercase" do
+      runs_with LowercaseWorker
+      needs "split"          # <3>
+      inputs_from_job "split"
+    end
+
+    job "reverse" do
+      runs_with ReverseWorker
+      needs "split"          # <3>
+      inputs_from_job "split"
+    end
+
+    # Fan-in: aggregate multiple inputs
+    job "combine" do
+      runs_with ResultCombiner
+      needs "uppercase", "lowercase", "reverse"  # <4>
+      inputs_from_multiple(                      # <5>
+        "uppercase" => { uppercase: :result },   # <6>
+        "lowercase" => { lowercase: :result },
+        "reverse" => { reversed: :result }
+      )
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+----
+<1> Workflow starts with the split job
+<2> Workflow ends with the combine job
+<3> All three jobs depend on split (enables parallel execution)
+<4> Combine job depends on all three processing jobs
+<5> Aggregate inputs from multiple jobs
+<6> Map source attribute to target attribute
+
+== Key Features
+
+=== Fan-Out Pattern
+
+Multiple jobs share the same dependency and receive the same input:
+
+[source,ruby]
+----
+job "split" do
+  runs_with TextSplitter
+  inputs_from_workflow
+end
+
+# These three jobs all depend on "split"
+# They can potentially execute in parallel
+job "uppercase" do
+  needs "split"
+  inputs_from_job "split"  # Same input
+end
+
+job "lowercase" do
+  needs "split"
+  inputs_from_job "split"  # Same input
+end
+
+job "reverse" do
+  needs "split"
+  inputs_from_job "split"  # Same input
+end
+----
+
+=== Fan-In Pattern with inputs_from_multiple
+
+The `inputs_from_multiple` method aggregates outputs from multiple jobs:
+
+[source,ruby]
+----
+job "combine" do
+  needs "uppercase", "lowercase", "reverse"
+  inputs_from_multiple(
+    "uppercase" => { uppercase: :result },  # <1>
+    "lowercase" => { lowercase: :result },  # <2>
+    "reverse" => { reversed: :result }      # <3>
+  )
+end
+----
+<1> Maps `uppercase` job's `result` attribute to `uppercase` attribute
+<2> Maps `lowercase` job's `result` attribute to `lowercase` attribute
+<3> Maps `reverse` job's `result` attribute to `reversed` attribute
+
+The mapping syntax is:
+
+[source]
+----
+"source_job_name" => { target_attribute: :source_attribute }
+----
+
+This creates a `CombinedResult` object with:
+
+[source,ruby]
+----
+CombinedResult.new(
+  uppercase: uppercase_job_output.result,
+  lowercase: lowercase_job_output.result,
+  reversed: reverse_job_output.result
+)
+----
+
+== Usage
+
+Run the example from the project root:
+
+[source,shell]
+----
+ruby examples/workflow/fan_out/fan_out_workflow.rb
+----
+
+== Expected Output
+
+[example]
+====
+[source]
+----
+============================================================
+Fan-Out Workflow Example
+============================================================
+
+Input: Hello Fractor!
+
+[TextSplitter] Processing: Hello Fractor!
+[UppercaseWorker] Result: HELLO FRACTOR!
+[LowercaseWorker] Result: hello fractor!
+[ReverseWorker] Result: !rotcarF olleH
+[ResultCombiner] Combining results:
+  Uppercase: HELLO FRACTOR!
+  Lowercase: hello fractor!
+  Reversed: !rotcarF olleH
+
+============================================================
+Workflow Results:
+------------------------------------------------------------
+Status: SUCCESS
+Execution Time: 0.002s
+Completed Jobs: split, uppercase, lowercase, reverse, combine
+
+Final Output:
+  Uppercase: HELLO FRACTOR!
+  Lowercase: hello fractor!
+  Reversed: !rotcarF olleH
+============================================================
+----
+====
+
+== Learning Points
+
+=== Parallel Execution
+
+* Jobs with the same dependencies can execute in parallel
+* Current implementation executes sequentially to avoid Ractor coordination complexity
+* Architecture supports parallel execution for future optimization
+
+=== Fan-Out Design
+
+* One job produces output consumed by multiple downstream jobs
+* All downstream jobs receive the same input
+* Enables independent parallel processing of the same data
+
+=== Fan-In Aggregation
+
+* `inputs_from_multiple` collects outputs from multiple jobs
+* Mapping syntax: `"job" => { target_attr: :source_attr }`
+* Creates a single aggregated input object for the consuming job
+
+=== Dependency Management
+
+* Workflow automatically determines execution order
+* Jobs wait for all dependencies before executing
+* Topological sort ensures correct execution sequence
+
+=== Input Mapping
+
+* `inputs_from_workflow`: Direct workflow input
+* `inputs_from_job "name"`: Single job's output
+* `inputs_from_multiple(...)`: Multiple jobs' outputs aggregated
+
+== Performance Considerations
+
+* Current implementation executes fan-out jobs sequentially
+* This avoids Ractor threading complexity and coordination overhead
+* For CPU-intensive tasks, sequential execution may be preferred
+* For I/O-bound tasks, parallel execution would provide better performance
+* Future optimization: implement true parallel execution for independent jobs
+
+== Next Steps
+
+After understanding fan-out patterns, explore:
+
+* link:../simple_linear/README.adoc[Simple Linear Workflow] - Sequential processing basics
+* link:../conditional/README.adoc[Conditional Workflow] - Runtime conditional execution
+* link:../README.adoc[Workflow Overview] - Complete workflow system documentation

@@ -1,43 +1,845 @@
-= Scatter Gather Example
+= Scatter-Gather Example
+:toc: macro
+:toc-title: Table of Contents
+:toclevels: 3
 
-== Overview
+toc::[]
 
-This example demonstrates the Scatter-Gather pattern with Fractor. In this pattern, work is scattered (distributed) across multiple workers for parallel processing, and then the results are gathered and combined.
+== Purpose
 
-== Key Concepts
+The Scatter-Gather example demonstrates parallel query execution across multiple heterogeneous data sources with intelligent result merging. It showcases how to distribute a single query to multiple backends simultaneously, collect responses, and aggregate them into a unified result set. This is a fundamental pattern for federated search, parallel database queries, and multi-source data aggregation systems.
 
-* *Scatter*: A primary task is broken down into multiple subtasks
-* *Parallel Processing*: Each subtask is processed concurrently by different workers
-* *Gather*: Results from all subtasks are collected and aggregated
-* *Final Processing*: The aggregated results are combined to form the final output
+== Focus
 
-== Example Explanation
+This example demonstrates:
 
-This example processes a large dataset by:
+* **Parallel query distribution** to multiple data sources
+* **Heterogeneous source handling** (database, API, cache, filesystem)
+* **Concurrent execution** with independent source timing
+* **Result aggregation** with source-weighted ranking
+* **Source-specific optimization** strategies
+* **Unified result merging** from diverse formats
 
-1. Breaking it down into smaller chunks (scatter)
-2. Processing each chunk in parallel using Fractor workers
-3. Collecting the processed chunks (gather)
-4. Combining the results for the final output
+== Architecture
 
-== Features Demonstrated
+=== Scatter-Gather Flow Overview
 
-* Effective workload distribution
-* Parallel processing for improved performance
-* Result aggregation from multiple workers
-* Error handling in a distributed computation context
-
-== Running the Example
-
-[source,sh]
+[source]
 ----
-ruby examples/scatter_gather/scatter_gather.rb
+┌────────────────────────────────────────────────────────┐
+│            User Query: "ruby concurrency"              │
+└────────────────────────────────────────────────────────┘
+                          │
+                          │ Scatter phase
+                          │ Create work items for all sources
+                          ▼
+          ┌───────────────────────────────────┐
+          │   MultiSourceSearch Controller    │
+          │   Creates 4 SearchWork items      │
+          └───────────────────────────────────┘
+                          │
+      ┌───────────────────┼───────────────────┬───────────┐
+      │                   │                   │           │
+      ▼                   ▼                   ▼           ▼
+┌──────────┐        ┌──────────┐      ┌──────────┐ ┌──────────┐
+│ Worker 1 │        │ Worker 2 │      │ Worker 3 │ │ Worker 4 │
+│Database  │        │   API    │      │  Cache   │ │Filesystem│
+│Query     │        │  Query   │      │  Lookup  │ │ Search   │
+└──────────┘        └──────────┘      └──────────┘ └──────────┘
+      │                   │                   │           │
+      │ ~150ms            │ ~250ms            │ ~20ms     │ ~120ms
+      │                   │                   │           │
+      ▼                   ▼                   ▼           ▼
+┌──────────┐        ┌──────────┐      ┌──────────┐ ┌──────────┐
+│ 7 hits   │        │ 5 hits   │      │ 3 hits   │ │ 9 hits   │
+│DB Results│        │API Res.  │      │Cache Res.│ │File Res. │
+└──────────┘        └──────────┘      └──────────┘ └──────────┘
+      │                   │                   │           │
+      └───────────────────┴───────────────────┴───────────┘
+                          │
+                          │ Gather phase
+                          │ Collect all results
+                          ▼
+          ┌───────────────────────────────────┐
+          │      Result Aggregation           │
+          │  - Group by source                │
+          │  - Apply source weights           │
+          │  - Rank by weighted relevance     │
+          └───────────────────────────────────┘
+                          │
+                          ▼
+          ┌───────────────────────────────────┐
+          │  Unified Result Set (24 hits)     │
+          │  Sorted by weighted relevance     │
+          └───────────────────────────────────┘
 ----
+
+=== Parallel Execution Timeline
+
+[source]
+----
+Time →
+┌──────────────────────────────────────────────────────┐
+│ Cache    : ████                                      │ ~20ms (fastest)
+│ Filesystem: ████████████                             │ ~120ms
+│ Database  : ███████████████                          │ ~150ms
+│ API       : █████████████████████████                │ ~250ms (slowest)
+└──────────────────────────────────────────────────────┘
+             ▲                          ▲
+             │                          │
+          Fastest                    Slowest
+         completes                  completes
+
+Total Time: ~250ms (limited by slowest source)
+
+Sequential execution would take: 20 + 120 + 150 + 250 = 540ms
+Parallel speedup: 540ms / 250ms = 2.16x faster
+----
+
+=== Source Weighting and Ranking
+
+[source]
+----
+┌─────────────────────────────────────────────────────┐
+│              Raw Results from Sources               │
+├─────────────────────────────────────────────────────┤
+│ Cache:      [0.9, 0.7, 0.6]        weight: 1.2     │
+│ Database:   [0.8, 0.7, 0.5, ...]   weight: 1.0     │
+│ API:        [0.9, 0.6, 0.4, ...]   weight: 0.8     │
+│ Filesystem: [0.8, 0.7, 0.6, ...]   weight: 0.9     │
+└─────────────────────────────────────────────────────┘
+                          │
+                          │ Apply weights
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│            Weighted Relevance Scores                │
+├─────────────────────────────────────────────────────┤
+│ Cache[0]:   0.9 × 1.2 = 1.08  (highest)            │
+│ Cache[1]:   0.7 × 1.2 = 0.84                       │
+│ API[0]:     0.9 × 0.8 = 0.72                       │
+│ Database[0]:0.8 × 1.0 = 0.80                       │
+│ Filesystem[0]: 0.8 × 0.9 = 0.72                    │
+│ ...                                                 │
+└─────────────────────────────────────────────────────┘
+                          │
+                          │ Sort descending
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│              Final Ranked Results                   │
+├─────────────────────────────────────────────────────┤
+│ 1. Cache[0]:      1.08                             │
+│ 2. Cache[1]:      0.84                             │
+│ 3. Database[0]:   0.80                             │
+│ 4. API[0]:        0.72                             │
+│ 5. Filesystem[0]: 0.72                             │
+│ ...                                                 │
+└─────────────────────────────────────────────────────┘
+----
+
+== Key Components
+
+=== SearchWork: Source-Specific Work Unit
+
+The `SearchWork` class carries query and source information:
+
+[source,ruby]
+----
+class SearchWork < Fractor::Work
+  def initialize(query, source = :default, query_params = {})
+    super({
+      query: query,           # <1>
+      source: source,         # <2>
+      query_params: query_params # <3>
+    })
+  end
+
+  def source
+    input[:source]
+  end
+end
+----
+<1> The search query string
+<2> Target data source (`:database`, `:api`, `:cache`, `:filesystem`)
+<3> Source-specific query parameters
+
+Purpose:
+
+* **Source routing**: Direct work to appropriate handler
+* **Parameter customization**: Each source has specific options
+* **Parallel execution**: All sources queried simultaneously
+
+=== SearchWorker: Polymorphic Source Handler
+
+The `SearchWorker` routes to source-specific search logic:
+
+[source,ruby]
+----
+class SearchWorker < Fractor::Worker
+  def process(work)
+    setup_source(work.source) # <1>
+
+    result = case work.source  # <2>
+             when :database then search_database(work)
+             when :api then search_api(work)
+             when :cache then search_cache(work)
+             when :filesystem then search_filesystem(work)
+             else
+               return Fractor::WorkResult.new(
+                 error: ArgumentError.new("Unknown source: #{work.source}"),
+                 work: work
+               )
+             end
+
+    Fractor::WorkResult.new(
+      result: {
+        source: work.source,     # <3>
+        query: work.query,
+        hits: result[:hits],     # <4>
+        metadata: result[:metadata], # <5>
+        timing: result[:timing]  # <6>
+      },
+      work: work
+    )
+  end
+
+  private
+
+  def search_database(work)
+    sleep(rand(0.05..0.2))  # Simulate query time
+
+    record_count = rand(3..10)
+    hits = Array.new(record_count) do |i|
+      {
+        id: "db-#{i + 1}",
+        title: "Database Result #{i + 1} for '#{work.query}'",
+        content: "This is database content for #{work.query}",
+        relevance: rand(0.1..1.0).round(2)  # <7>
+      }
+    end
+
+    {
+      hits: hits,
+      metadata: {
+        source_type: "PostgreSQL Database",
+        total_available: record_count + rand(10..50)
+      },
+      timing: rand(0.01..0.3).round(3)
+    }
+  end
+
+  def search_cache(work)
+    sleep(rand(0.01..0.1))  # Fast cache lookup
+
+    cache_hit = [true, true, false].sample  # <8>
+
+    if cache_hit
+      # Return cached results
+      { hits: [...], metadata: { cache_hit: true } }
+    else
+      # Cache miss
+      { hits: [], metadata: { cache_hit: false } }
+    end
+  end
+end
+----
+<1> Initialize connection to data source
+<2> Route to appropriate search method
+<3> Preserve source identifier for merging
+<4> Search results with relevance scores
+<5> Source-specific metadata
+<6> Execution timing for performance analysis
+<7> Intrinsic relevance score (0.0-1.0)
+<8> Simulate cache hit/miss scenario
+
+Design benefits:
+
+* **Unified interface**: All sources handled by one worker type
+* **Source isolation**: Each source has independent logic
+* **Timing capture**: Enables performance profiling
+* **Flexible results**: Source-specific metadata preserved
+
+=== MultiSourceSearch: Scatter-Gather Orchestrator
+
+The `MultiSourceSearch` coordinates the entire process:
+
+[source,ruby]
+----
+class MultiSourceSearch
+  def search(query, sources = nil)
+    sources ||= [  # <1>
+      { source: :database, params: { max_results: 50 } },
+      { source: :api, params: { format: "json" } },
+      { source: :cache, params: { max_age: 3600 } },
+      { source: :filesystem, params: { extensions: %w[txt md] } }
+    ]
+
+    start_time = Time.now
+
+    # Scatter: Create work items
+    search_work_items = sources.map do |source|
+      SearchWork.new(query, source[:source], source[:params])  # <2>
+    end
+
+    @supervisor.add_work_items(search_work_items)
+    @supervisor.run  # <3>
+
+    end_time = Time.now
+    total_time = end_time - start_time
+
+    # Gather: Merge results
+    @merged_results = merge_results(@supervisor.results, total_time)  # <4>
+  end
+
+  private
+
+  def merge_results(results_aggregator, total_time)
+    results_by_source = {}
+    total_hits = 0
+
+    # Group by source
+    results_aggregator.results.each do |result|
+      source = result.result[:source]
+      results_by_source[source] = result.result  # <5>
+      total_hits += result.result[:hits].size
+    end
+
+    # Apply source weights
+    all_hits = []
+    results_by_source.each do |source, result|
+      source_weight = case source  # <6>
+                      when :database then 1.0
+                      when :api then 0.8
+                      when :cache then 1.2   # Prioritize cache
+                      when :filesystem then 0.9
+                      end
+
+      result[:hits].each do |hit|
+        all_hits << {
+          id: hit[:id],
+          title: hit[:title],
+          source: source,
+          original_relevance: hit[:relevance],
+          weighted_relevance: hit[:relevance] * source_weight  # <7>
+        }
+      end
+    end
+
+    # Rank by weighted relevance
+    ranked_hits = all_hits.sort_by { |hit| -hit[:weighted_relevance] }  # <8>
+
+    {
+      query: query,
+      total_hits: total_hits,
+      execution_time: total_time,
+      sources: results_by_source.keys,
+      ranked_results: ranked_hits,  # <9>
+      source_details: results_by_source
+    }
+  end
+end
+----
+<1> Define all data sources to query
+<2> Create parallel work items (scatter)
+<3> Execute all queries concurrently
+<4> Aggregate and rank results (gather)
+<5> Group results by originating source
+<6> Define source-specific trust weights
+<7> Calculate weighted relevance score
+<8> Sort by weighted relevance (descending)
+<9> Return unified, ranked result set
+
+Orchestration features:
+
+* **Parallel dispatch**: All sources queried at once
+* **Wait-for-all**: Collects all results before merging
+* **Source weighting**: Prioritizes trusted sources
+* **Unified ranking**: Single sorted result list
+
+== Usage
+
+.Basic usage
+[example]
+====
+[source,bash]
+----
+# Run with default query
+ruby scatter_gather.rb
+
+# Search with custom query
+ruby scatter_gather.rb "ruby concurrency patterns"
+
+# Use more workers
+ruby scatter_gather.rb "database optimization" 8
+----
+====
+
+.Programmatic usage
+[example]
+====
+[source,ruby]
+----
+require_relative "scatter_gather"
+
+# Create multi-source search
+search = ScatterGather::MultiSourceSearch.new(4)
+
+# Execute parallel search
+results = search.search("machine learning")
+
+# Access results
+puts "Total hits: #{results[:total_hits]}"
+puts "Execution time: #{results[:execution_time]}s"
+
+# Display top results
+results[:ranked_results].take(10).each do |hit|
+  puts "#{hit[:title]} (#{hit[:source]}, score: #{hit[:weighted_relevance]})"
+end
+----
+====
 
 == Expected Output
 
-The example will show:
-* The input data being broken into chunks
-* Workers processing the chunks in parallel
-* Results being gathered from workers
-* The final aggregated results
+[source,text]
+----
+Starting Scatter-Gather Search Example
+======================================
+This example demonstrates searching multiple data sources concurrently:
+1. Database - Simulates SQL database searches
+2. API - Simulates external REST API calls
+3. Cache - Simulates in-memory cache lookups
+4. Filesystem - Simulates searching through files
+
+Search Results Summary:
+----------------------
+Query: ruby concurrency patterns
+Total hits: 24
+Total execution time: 0.253 seconds
+Sources searched: database, api, cache, filesystem
+
+Top 5 Results (by relevance):
+1. Cached Result 1 for 'ruby concurrency patterns' (Source: cache, Relevance: 1.08)
+   This is cached content for ruby concurrency patterns...
+
+2. Cached Result 2 for 'ruby concurrency patterns' (Source: cache, Relevance: 0.96)
+   This is cached content for ruby concurrency patterns...
+
+3. Database Result 1 for 'ruby concurrency patterns' (Source: database, Relevance: 0.85)
+   This is database content for ruby concurrency patterns...
+
+4. File Result 1 for 'ruby concurrency patterns' (Source: filesystem, Relevance: 0.81)
+   This is file content matching ruby concurrency patterns...
+
+5. API Result 1 for 'ruby concurrency patterns' (Source: api, Relevance: 0.72)
+   This is API content for ruby concurrency patterns...
+
+Source Details:
+- Database (7 results, 0.152 sec)
+  Metadata: {:source_type=>"PostgreSQL Database", :total_available=>53}
+- Api (5 results, 0.245 sec)
+  Metadata: {:source_type=>"External REST API", :provider=>"Google"}
+- Cache (3 results, 0.018 sec)
+  Metadata: {:source_type=>"In-memory Cache", :cache_hit=>true}
+- Filesystem (9 results, 0.128 sec)
+  Metadata: {:source_type=>"File System", :files_scanned=>342}
+----
+
+== Learning Points
+
+=== 1. Scatter-Gather Pattern
+
+The pattern has two distinct phases:
+
+**Scatter phase**:
+[source,ruby]
+----
+# Distribute work to all sources
+sources.each do |source|
+  supervisor.add_work_item(SearchWork.new(query, source))
+end
+supervisor.run  # All execute in parallel
+----
+
+**Gather phase**:
+[source,ruby]
+----
+# Collect and merge results
+all_results = supervisor.results.results
+merged = aggregate_results(all_results)
+----
+
+**Key characteristics**:
+
+* **Fork-join parallelism**: All work starts together, results combined at end
+* **Independent execution**: Sources don't communicate with each other
+* **Synchronization point**: Gather waits for all sources to complete
+* **Result aggregation**: Combine heterogeneous formats into unified view
+
+=== 2. Source-Weighted Ranking
+
+Different sources have different trust levels:
+
+[source,ruby]
+----
+source_weights = {
+  cache: 1.2,      # Most trusted (already validated)
+  database: 1.0,   # Baseline trust
+  filesystem: 0.9, # Slightly lower trust
+  api: 0.8         # External, less trusted
+}
+
+weighted_score = intrinsic_relevance × source_weight
+----
+
+**Rationale**:
+
+* **Cache**: Previously validated results, highest trust
+* **Database**: Internal, controlled data, baseline
+* **API**: External data, may be stale or inaccurate
+* **Filesystem**: Unstructured, harder to validate
+
+=== 3. Performance Analysis
+
+**Total time = max(source_times)**:
+
+[source]
+----
+Source times: [150ms, 250ms, 20ms, 120ms]
+Total time:   250ms (limited by slowest)
+
+Speedup = Σ(source_times) / max(source_times)
+        = (150 + 250 + 20 + 120) / 250
+        = 540 / 250
+        = 2.16x
+
+Parallel efficiency = Speedup / num_sources
+                    = 2.16 / 4
+                    = 54%
+----
+
+**Efficiency factors**:
+
+* **Load imbalance**: Slow sources dominate total time
+* **Overhead**: Ractor creation, synchronization
+* **I/O bound**: Network/disk latency, not CPU
+
+=== 4. Cache Miss Handling
+
+The cache may not have results:
+
+[source,ruby]
+----
+def search_cache(work)
+  if cache_hit?
+    return cached_results
+  else
+    return { hits: [], metadata: { cache_hit: false } }
+  end
+end
+
+# In merge_results
+if source_result[:hits].empty?
+  # Don't penalize total score for cache miss
+  # Other sources provide results
+end
+----
+
+**Strategy**:
+
+* Cache misses return empty results, not errors
+* Merge phase handles varying result counts
+* Total result count not affected by misses
+
+=== 5. Heterogeneous Result Formats
+
+Different sources return different structures:
+
+[source,ruby]
+----
+# Database results
+{
+  id: "db-123",
+  title: "...",
+  content: "...",
+  relevance: 0.85
+}
+
+# API results
+{
+  id: "api-456",
+  title: "...",
+  content: "...",
+  relevance: 0.72,
+  provider: "Google"  # Extra field
+}
+
+# Filesystem results
+{
+  id: "file-789",
+  title: "...",
+  path: "/path/to/file",  # Different structure
+  content: "...",
+  relevance: 0.91
+}
+----
+
+**Normalization**:
+
+* Extract common fields (id, title, content, relevance)
+* Preserve source-specific metadata separately
+* Unified ranking uses normalized fields
+
+=== 6. Error Handling
+
+Individual source failures don't stop other sources:
+
+[source,ruby]
+----
+def process(work)
+  begin
+    result = search_source(work.source, work.query)
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue StandardError => e
+    # Return error for this source, others continue
+    Fractor::WorkResult.new(
+      error: "#{work.source} failed: #{e.message}",
+      work: work
+    )
+  end
+end
+
+# In merge_results
+results.select { |r| r.success? }.each do |result|
+  # Only process successful results
+  merge_into_final_set(result)
+end
+----
+
+== Use Cases and Patterns
+
+=== Federated Search
+
+Search across multiple databases:
+
+[source,ruby]
+----
+sources = [
+  { source: :postgres, params: { schema: "public" } },
+  { source: :elasticsearch, params: { index: "documents" } },
+  { source: :redis, params: { pattern: "*" } },
+  { source: :mongodb, params: { collection: "items" } }
+]
+
+search.search("user query", sources)
+----
+
+=== Multi-Cloud Query
+
+Query services across cloud providers:
+
+[source,ruby]
+----
+sources = [
+  { source: :aws_s3, params: { bucket: "data" } },
+  { source: :gcp_storage, params: { bucket: "archive" } },
+  { source: :azure_blob, params: { container: "files" } }
+]
+
+search.search("document.pdf", sources)
+----
+
+=== Aggregated Pricing
+
+Compare prices from multiple vendors:
+
+[source,ruby]
+----
+def search_vendor(work)
+  prices = fetch_prices(work.query, work.source)
+
+  {
+    hits: prices.map { |p| { price: p, vendor: work.source } },
+    metadata: { currency: "USD", last_updated: Time.now }
+  }
+end
+
+# Merge sorts by price instead of relevance
+def merge_results(results)
+  all_prices = results.flat_map { |r| r[:hits] }
+  all_prices.sort_by { |p| p[:price] }  # Lowest first
+end
+----
+
+=== Monitoring Dashboard
+
+Query multiple monitoring sources:
+
+[source,ruby]
+----
+sources = [
+  { source: :prometheus, params: { metric: "cpu_usage" } },
+  { source: :cloudwatch, params: { namespace: "AWS/EC2" } },
+  { source: :datadog, params: { query: "avg:system.cpu.usage" } },
+  { source: :newrelic, params: { metric: "CPU/User Time" } }
+]
+
+# Aggregate metrics
+metrics = search.search("cpu_usage", sources)
+average_cpu = metrics[:ranked_results].map { |m| m[:value] }.sum / metrics[:total_hits]
+----
+
+== Advanced Patterns
+
+=== Timeout Handling
+
+Set per-source timeouts:
+
+[source,ruby]
+----
+def process(work)
+  Timeout.timeout(work.query_params[:timeout] || 5) do
+    search_source(work.source, work.query)
+  end
+rescue Timeout::Error
+  Fractor::WorkResult.new(
+    result: { hits: [], metadata: { timeout: true } },
+    work: work
+  )
+end
+----
+
+=== Fallback Sources
+
+Use backup sources if primary fails:
+
+[source,ruby]
+----
+def search(query)
+  primary_sources = [:cache, :database]
+  fallback_sources = [:api, :filesystem]
+
+  # Try primary sources first
+  results = scatter_gather(query, primary_sources)
+
+  # If insufficient results, try fallbacks
+  if results[:total_hits] < MIN_RESULTS
+    fallback_results = scatter_gather(query, fallback_sources)
+    results = merge(results, fallback_results)
+  end
+
+  results
+end
+----
+
+=== Progressive Results
+
+Return fast results immediately, slower later:
+
+[source,ruby]
+----
+def search_progressive(query)
+  fast_sources = [:cache]
+  slow_sources = [:database, :api, :filesystem]
+
+  # Return cache results immediately
+  fast_results = scatter_gather(query, fast_sources)
+  yield fast_results if block_given?
+
+  # Add slow results as they arrive
+  slow_results = scatter_gather(query, slow_sources)
+  yield merge(fast_results, slow_results) if block_given?
+end
+----
+
+=== Result Deduplication
+
+Remove duplicate results across sources:
+
+[source,ruby]
+----
+def merge_results(results)
+  all_hits = results.flat_map { |r| r[:hits] }
+
+  # Deduplicate by content similarity
+  unique_hits = []
+  all_hits.each do |hit|
+    unless unique_hits.any? { |h| similar?(h, hit) }
+      unique_hits << hit
+    end
+  end
+
+  unique_hits.sort_by { |h| -h[:weighted_relevance] }
+end
+
+def similar?(hit1, hit2)
+  # Simple deduplication by title similarity
+  hit1[:title].downcase == hit2[:title].downcase
+end
+----
+
+== Performance Tuning
+
+=== Worker Pool Sizing
+
+Match workers to data sources:
+
+[source,ruby]
+----
+# Option 1: One worker per source
+worker_count = sources.size
+
+# Option 2: More workers than sources (for queueing)
+worker_count = sources.size * 2
+
+# Option 3: Match to available cores
+worker_count = [sources.size, Etc.nprocessors].min
+----
+
+=== Source Prioritization
+
+Query fast sources first:
+
+[source,ruby]
+----
+sources_by_speed = [
+  { source: :cache, expected_time: 0.02 },
+  { source: :database, expected_time: 0.15 },
+  { source: :filesystem, expected_time: 0.12 },
+  { source: :api, expected_time: 0.25 }
+].sort_by { |s| s[:expected_time] }
+
+# Start fast sources first for early results
+sources_by_speed.each do |source|
+  supervisor.add_work_item(SearchWork.new(query, source[:source]))
+end
+----
+
+=== Connection Pooling
+
+Reuse connections across searches:
+
+[source,ruby]
+----
+class SearchWorker < Fractor::Worker
+  def initialize
+    super
+    @connections = {
+      database: connect_to_database,
+      api: initialize_api_client
+    }
+  end
+
+  def process(work)
+    conn = @connections[work.source]
+    search_with_connection(conn, work.query)
+  end
+end
+----
+
+== Next Steps
+
+After understanding scatter-gather, explore:
+
+* **link:../producer_subscriber/README.adoc[Producer-Subscriber]**: Hierarchical work decomposition
+* **link:../pipeline_processing/README.adoc[Pipeline Processing]**: Sequential transformations
+* **link:../hierarchical_hasher/README.adoc[Hierarchical Hasher]**: Map-reduce patterns
+* **link:../workflow/README.adoc[Workflow System]**: Complex orchestration with dependencies

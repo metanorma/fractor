@@ -5,88 +5,931 @@
 
 toc::[]
 
-== Overview
+== Purpose
 
-The Producer-Subscriber example demonstrates how to use the Fractor framework to implement a multi-stage document processing system. This example showcases how initial work can generate additional sub-work items, creating a hierarchical processing pattern.
+The Producer-Subscriber example demonstrates hierarchical work decomposition in Fractor, where initial work items generate additional sub-work items dynamically. This showcases how to build multi-phase processing systems where early-stage workers produce work for later-stage workers, creating a tree-like processing structure. This is essential for document processing, recursive data structures, and divide-and-conquer algorithms.
 
-This example is particularly useful for:
+== Focus
 
-* Implementing producer-consumer patterns in parallel systems
-* Managing dependencies between work items
-* Building hierarchical result structures from parallel processing
+This example demonstrates:
 
-== Implementation Details
+* **Dynamic work generation** from processing results
+* **Two-phase processing** with producer and subscriber stages
+* **Hierarchical result structures** from parent-child relationships
+* **Work item referencing** using object IDs
+* **Multi-level decomposition** patterns
+* **Result tree assembly** from distributed processing
 
-The example consists of the following key components:
+== Architecture
 
-=== InitialWork
+=== Two-Phase Processing Overview
 
-A subclass of `Fractor::Work` that represents a document to be processed. Each `InitialWork` instance contains:
+[source]
+----
+Phase 1: Producer Phase (Initial Work Processing)
+┌─────────────────────────────────────────────────────────┐
+│  Documents: ["Annual Report", "Tech Docs", "Research"] │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          │ Create InitialWork items
+                          ▼
+          ┌───────────────────────────────────┐
+          │   Supervisor 1 (Phase 1)          │
+          │   Worker Pool: MultiWorker × 4    │
+          └───────────────────────────────────┘
+                          │
+              ┌───────────┼───────────┐
+              │           │           │
+              ▼           ▼           ▼
+        ┌─────────┐ ┌─────────┐ ┌─────────┐
+        │ Worker1 │ │ Worker2 │ │ Worker3 │
+        │Process  │ │Process  │ │Process  │
+        │ Doc 1   │ │ Doc 2   │ │ Doc 3   │
+        └─────────┘ └─────────┘ └─────────┘
+              │           │           │
+              ▼           ▼           ▼
+        ┌─────────┐ ┌─────────┐ ┌─────────┐
+        │Result 1 │ │Result 2 │ │Result 3 │
+        │+ IDs for│ │+ IDs for│ │+ IDs for│
+        │sub-works│ │sub-works│ │sub-works│
+        └─────────┘ └─────────┘ └─────────┘
+                          │
+                          │ Analyze results
+                          │ Generate sub-work descriptors
+                          ▼
+          ┌───────────────────────────────────┐
+          │  Sub-work items created:          │
+          │  Doc1-0, Doc1-1, Doc1-2           │
+          │  Doc2-0, Doc2-1, Doc2-2           │
+          │  Doc3-0, Doc3-1, Doc3-2           │
+          │  (each linked to parent via ID)   │
+          └───────────────────────────────────┘
 
-* The document data
-* A depth level (always 0 for initial work)
+Phase 2: Subscriber Phase (Sub-Work Processing)
+┌─────────────────────────────────────────────────────────┐
+│  Sub-works with parent references                       │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          │ Create SubWork items
+                          ▼
+          ┌───────────────────────────────────┐
+          │   Supervisor 2 (Phase 2)          │
+          │   Worker Pool: MultiWorker × 4    │
+          └───────────────────────────────────┘
+                          │
+              ┌───────────┼───────────┬────────────┐
+              │           │           │            │
+              ▼           ▼           ▼            ▼
+        ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+        │Worker1  │ │Worker2  │ │Worker3  │ │Worker4  │
+        │Doc1-0   │ │Doc1-1   │ │Doc2-0   │ │Doc3-0   │
+        └─────────┘ └─────────┘ └─────────┘ └─────────┘
+              │           │           │            │
+              ▼           ▼           ▼            ▼
+          All sub-work results with parent_id preserved
+                          │
+                          │ Build hierarchical tree
+                          ▼
+          ┌───────────────────────────────────┐
+          │  Final Hierarchical Result Tree   │
+          │                                   │
+          │  Root: Annual Report              │
+          │    ├─ Child 1: Doc1-0             │
+          │    ├─ Child 2: Doc1-1             │
+          │    └─ Child 3: Doc1-2             │
+          │  Root: Tech Docs                  │
+          │    ├─ Child 1: Doc2-0             │
+          │    ...                            │
+          └───────────────────────────────────┘
+----
 
-=== SubWork
+=== Work Decomposition Pattern
 
-A subclass of `Fractor::Work` that represents a section of a document. Each `SubWork` instance contains:
+[source]
+----
+Initial Document
+       │
+       │ Phase 1: Producer generates sub-work descriptors
+       │
+       ▼
+┌──────────────┐
+│ Document A   │ ──┐
+└──────────────┘   │ Generates 3 sections
+                   │ (stored as descriptors with parent ID)
+                   │
+   ┌───────────────┼───────────────┐
+   │               │               │
+   ▼               ▼               ▼
+┌────────┐    ┌────────┐    ┌────────┐
+│ A-0    │    │ A-1    │    │ A-2    │
+│parent: │    │parent: │    │parent: │
+│Doc A ID│    │Doc A ID│    │Doc A ID│
+└────────┘    └────────┘    └────────┘
+   │               │               │
+   │ Phase 2: Subscribers process sections
+   │
+   ▼               ▼               ▼
+Processed     Processed     Processed
+Section 0     Section 1     Section 2
+   │               │               │
+   │               │               │
+   └───────────────┴───────────────┘
+                   │
+                   │ Tree assembly
+                   ▼
+           Final Result Tree
+----
 
-* The section data
-* A reference to its parent work via `parent_id`
-* A depth level (typically depth + 1 from its parent)
+=== Object Linking Mechanism
 
-=== MultiWorker
+[source]
+----
+┌─────────────────────────────────────────────────────┐
+│  Phase 1 Execution                                  │
+│                                                     │
+│  work1 = InitialWork.new("Doc A")                  │
+│  work1.object_id => 12345                          │
+│                                                     │
+│  Process work1 → result1                           │
+│  result1 stores: work1.object_id (12345)           │
+│                                                     │
+│  Generate descriptors:                             │
+│    { data: "Doc A-0", parent_id: 12345, depth: 1 } │
+│    { data: "Doc A-1", parent_id: 12345, depth: 1 } │
+│    { data: "Doc A-2", parent_id: 12345, depth: 1 } │
+└─────────────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────┐
+│  Phase 2 Execution                                  │
+│                                                     │
+│  subwork1 = SubWork.new("Doc A-0", 12345, 1)       │
+│  subwork2 = SubWork.new("Doc A-1", 12345, 1)       │
+│  subwork3 = SubWork.new("Doc A-2", 12345, 1)       │
+│                                                     │
+│  Process each → results with parent_id: 12345      │
+└─────────────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────┐
+│  Tree Assembly                                      │
+│                                                     │
+│  result_tree[12345] = {                            │
+│    data: "Processed: Doc A",                       │
+│    children: [                                      │
+│      "Sub-processed: Doc A-0 (depth: 1)",         │
+│      "Sub-processed: Doc A-1 (depth: 1)",         │
+│      "Sub-processed: Doc A-2 (depth: 1)"          │
+│    ]                                                │
+│  }                                                  │
+└─────────────────────────────────────────────────────┘
+----
 
-A versatile worker that can process both `InitialWork` and `SubWork` instances:
+== Key Components
 
-* For `InitialWork`: Processes the document and identifies sections
-* For `SubWork`: Processes individual sections
+=== InitialWork: Producer Work Unit
 
-=== DocumentProcessor
-
-The main orchestration class that:
-
-1. Creates a supervisor for initial document processing
-2. Analyzes results to identify additional work (sections)
-3. Creates a second supervisor for processing sections
-4. Builds a hierarchical result tree from both stages
-
-== Usage
+The `InitialWork` class represents initial documents:
 
 [source,ruby]
 ----
-# Example document list
+class InitialWork < Fractor::Work
+  def initialize(data, depth = 0)
+    super({
+      data: data,   # <1>
+      depth: depth  # <2>
+    })
+  end
+
+  def data
+    input[:data]
+  end
+
+  def depth
+    input[:depth]
+  end
+end
+----
+<1> The document data to be processed
+<2> Depth level (0 for initial work, increases with decomposition)
+
+Purpose:
+
+* **Root-level work**: Represents top-level items to decompose
+* **Depth tracking**: Enables multi-level hierarchies
+* **Identity preservation**: Object ID used to link children
+
+=== SubWork: Generated Work Unit
+
+The `SubWork` class represents decomposed sections:
+
+[source,ruby]
+----
+class SubWork < Fractor::Work
+  def initialize(data, parent_id = nil, depth = 0)
+    super({
+      data: data,           # <1>
+      parent_id: parent_id, # <2>
+      depth: depth          # <3>
+    })
+  end
+
+  def parent_id
+    input[:parent_id]
+  end
+end
+----
+<1> The section data derived from parent
+<2> Reference to parent work via `object_id`
+<3> Depth level (parent depth + 1)
+
+Purpose:
+
+* **Parent linkage**: Maintains relationship to source document
+* **Hierarchical positioning**: Tracks decomposition level
+* **Result assembly**: Enables tree reconstruction
+
+=== MultiWorker: Polymorphic Processor
+
+The `MultiWorker` handles both work types:
+
+[source,ruby]
+----
+class MultiWorker < Fractor::Worker
+  def process(work)
+    if work.is_a?(InitialWork)  # <1>
+      process_initial_work(work)
+    elsif work.is_a?(SubWork)   # <2>
+      process_sub_work(work)
+    else
+      Fractor::WorkResult.new(
+        error: "Unknown work type: #{work.class}",
+        work: work
+      )
+    end
+  end
+
+  private
+
+  def process_initial_work(work)
+    sleep(rand(0.01..0.05))
+    processed_data = "Processed: #{work}"
+
+    Fractor::WorkResult.new(
+      result: {
+        processed_data: processed_data,
+        sub_works: []  # <3>
+      },
+      work: work
+    )
+  end
+
+  def process_sub_work(work)
+    sleep(rand(0.01..0.03))
+    processed_data = "Sub-processed: #{work.data} (depth: #{work.depth})"
+
+    Fractor::WorkResult.new(
+      result: {
+        processed_data: processed_data,
+        parent_id: work.parent_id  # <4>
+      },
+      work: work
+    )
+  end
+end
+----
+<1> Route to initial work processing
+<2> Route to sub-work processing
+<3> Placeholder for sub-work metadata (populated later)
+<4> Preserve parent reference for tree assembly
+
+Design benefits:
+
+* **Single worker type**: Handles all processing stages
+* **Type-based routing**: Clean separation of logic
+* **Flexible processing**: Different logic per work type
+* **Metadata preservation**: Maintains hierarchical links
+
+=== DocumentProcessor: Two-Phase Orchestrator
+
+The `DocumentProcessor` manages the complete workflow:
+
+[source,ruby]
+----
+class DocumentProcessor
+  def process
+    # Phase 1: Process initial documents
+    supervisor = Fractor::Supervisor.new(
+      worker_pools: [
+        { worker_class: MultiWorker, num_workers: @worker_count }
+      ]
+    )
+
+    initial_work_items = documents.map { |doc| InitialWork.new(doc, 0) } # <1>
+    supervisor.add_work_items(initial_work_items)
+    supervisor.run  # <2>
+
+    # Generate sub-work descriptors
+    sub_works = create_sub_works(supervisor.results)  # <3>
+
+    # Phase 2: Process generated sub-works
+    if !sub_works.empty?
+      sub_supervisor = Fractor::Supervisor.new(  # <4>
+        worker_pools: [
+          { worker_class: MultiWorker, num_workers: @worker_count }
+        ]
+      )
+
+      sub_work_items = sub_works.map do |sw|
+        SubWork.new(sw[:data], sw[:parent_id], sw[:depth])  # <5>
+      end
+
+      sub_supervisor.add_work_items(sub_work_items)
+      sub_supervisor.run  # <6>
+
+      # Assemble hierarchical tree
+      build_result_tree(supervisor.results, sub_supervisor.results)  # <7>
+    end
+
+    format_tree  # <8>
+  end
+
+  private
+
+  def create_sub_works(results_aggregator)
+    sub_works = []
+
+    results_aggregator.results.each do |result|
+      work = result.work
+
+      next unless work.depth < 2  # <9>
+
+      3.times do |i|  # <10>
+        sub_data = "#{work.data}-#{i}"
+        sub_works << {
+          data: sub_data,
+          parent_id: work.object_id,  # <11>
+          depth: work.depth + 1
+        }
+      end
+    end
+
+    sub_works
+  end
+
+  def build_result_tree(initial_results, sub_results)
+    # Build base tree from initial results
+    initial_results.results.each do |result|
+      @result_tree[result.work.object_id] = {  # <12>
+        data: result.result[:processed_data],
+        children: []
+      }
+    end
+
+    # Add sub-results to their parents
+    sub_results.results.each do |result|
+      parent_id = result.result[:parent_id]
+      @result_tree[parent_id][:children] << result.result[:processed_data]  # <13>
+    end
+  end
+end
+----
+<1> Create initial work items (depth 0)
+<2> Execute Phase 1 processing
+<3> Analyze results and generate sub-work descriptors
+<4> Create new supervisor for Phase 2
+<5> Convert descriptors to SubWork objects
+<6> Execute Phase 2 processing
+<7> Assemble results into hierarchical tree
+<8> Format tree for display
+<9> Depth limit prevents infinite recursion
+<10> Generate 3 sub-items per parent (configurable)
+<11> Link to parent using object_id
+<12> Create tree nodes indexed by object_id
+<13> Attach children to their parent nodes
+
+Orchestration features:
+
+* **Sequential phases**: Phase 2 starts after Phase 1 completes
+* **Dynamic work creation**: Sub-works generated from results
+* **Independent supervisors**: Clean separation of concerns
+* **Tree assembly**: Reconstructs hierarchy from flat results
+
+== Usage
+
+.Basic usage
+[example]
+====
+[source,bash]
+----
+# Run the producer-subscriber example
+ruby producer_subscriber.rb
+----
+====
+
+.Programmatic usage
+[example]
+====
+[source,ruby]
+----
+require_relative "producer_subscriber"
+
+# Define documents to process
 documents = [
   "Annual Report 2025",
   "Technical Documentation",
   "Research Paper"
 ]
 
-# Process documents with 4 workers
-processor = ProducerSubscriber::DocumentProcessor.new(documents, 4)
+# Create processor with 8 workers
+processor = ProducerSubscriber::DocumentProcessor.new(documents, 8)
+
+# Execute two-phase processing
 result = processor.process
 
-# Print the hierarchical results
+# Display hierarchical results
 puts result
 ----
+====
 
-== How It Works
+== Expected Output
 
-1. Initial documents are added to the processing queue
-2. Each document is processed in parallel by workers
-3. For each document, multiple sub-sections are identified (3 per document)
-4. These sub-sections are then processed in a second phase
-5. Results from both phases are combined into a hierarchical tree structure
-6. The final output presents documents with their processed sections
+[source,text]
+----
+Starting producer-subscriber example: Document Processing System
+This example simulates a document processing system where:
+1. Initial documents are broken down into sections
+2. Sections are further broken down into paragraphs
+3. Paragraphs are processed individually
+4. Results are assembled into a hierarchical structure
 
-== Multi-stage Processing Pattern
+Using 4 workers to process 3 documents
 
-This example demonstrates a powerful pattern for parallel processing:
+Processing Results:
+===================
+Root: Processed: InitialWork: data=Annual Report 2025, depth=0
+  ├─ Child 1: Sub-processed: Annual Report 2025-0 (depth: 1)
+  ├─ Child 2: Sub-processed: Annual Report 2025-1 (depth: 1)
+  └─ Child 3: Sub-processed: Annual Report 2025-2 (depth: 1)
 
-1. *First Stage Processing*: Process high-level items and identify additional work
-2. *Work Generation*: Create new work items based on first-stage results
-3. *Second Stage Processing*: Process the generated work items
-4. *Result Aggregation*: Combine results from both stages into a cohesive structure
+Root: Processed: InitialWork: data=Technical Documentation, depth=0
+  ├─ Child 1: Sub-processed: Technical Documentation-0 (depth: 1)
+  ├─ Child 2: Sub-processed: Technical Documentation-1 (depth: 1)
+  └─ Child 3: Sub-processed: Technical Documentation-2 (depth: 1)
 
-== Object Identity and References
+Root: Processed: InitialWork: data=Research Paper, depth=0
+  ├─ Child 1: Sub-processed: Research Paper-0 (depth: 1)
+  ├─ Child 2: Sub-processed: Research Paper-1 (depth: 1)
+  └─ Child 3: Sub-processed: Research Paper-2 (depth: 1)
 
-Note that this example uses `object_id` to maintain references between parent and child work items. This approach allows building a hierarchical result structure when processing is complete.
+Processing completed in 0.123456 seconds
+----
+
+== Learning Points
+
+=== 1. Producer-Subscriber Pattern
+
+Phase 1 produces work for Phase 2:
+
+[source,ruby]
+----
+# Phase 1: Producers
+initial_results.each do |result|
+  # Generate sub-work descriptors
+  3.times do |i|
+    sub_works << { data: "#{result.data}-#{i}", parent_id: result.work.object_id }
+  end
+end
+
+# Phase 2: Subscribers
+sub_works.each do |descriptor|
+  process(SubWork.new(descriptor[:data], descriptor[:parent_id]))
+end
+----
+
+**Key insight**: Producers don't directly invoke subscribers; they generate work descriptors that are queued and processed independently.
+
+=== 2. Object ID for Parent Linking
+
+Using `object_id` creates stable references:
+
+[source,ruby]
+----
+# Capture parent ID during Phase 1
+parent_work = InitialWork.new("Document")
+parent_id = parent_work.object_id  # e.g., 12345
+
+# Use in Phase 2
+child_work = SubWork.new("Section", parent_id)
+
+# Reassemble in tree
+result_tree[parent_id][:children] << child_result
+----
+
+**Why object_id works**:
+
+* **Unique**: Each object has a unique identifier
+* **Stable**: ID doesn't change during object lifetime
+* **Simple**: No need for custom ID generation
+* **Fast**: Hash lookup is O(1)
+
+**Caveat**: Object IDs are only valid during the program's execution. For persistent storage, use custom IDs.
+
+=== 3. Two-Phase vs. Callback Approach
+
+**Two-Phase** (this example):
+[source,ruby]
+----
+# Phase 1
+phase1_results = run_phase1()
+
+# Analyze and generate Phase 2 work
+phase2_work = analyze(phase1_results)
+
+# Phase 2
+phase2_results = run_phase2(phase2_work)
+----
+
+**Callback Approach** (like pipeline_processing):
+[source,ruby]
+----
+supervisor.on_new_result do |result|
+  # Immediately generate and queue sub-work
+  sub_works.each { |sw| supervisor.add_work_item(sw) }
+end
+----
+
+**Choose two-phase when**:
+
+* You need to analyze all Phase 1 results before generating Phase 2 work
+* Phase 2 work depends on aggregated Phase 1 results
+* You want clear separation between phases
+
+**Choose callback when**:
+
+* Work can be generated immediately per result
+* No cross-result dependencies
+* Continuous streaming processing
+
+=== 4. Depth Limiting
+
+Prevent infinite recursion with depth checks:
+
+[source,ruby]
+----
+def create_sub_works(results)
+  results.each do |result|
+    next unless result.work.depth < MAX_DEPTH  # Depth limit
+
+    # Generate sub-works
+    generate_children(result.work)
+  end
+end
+----
+
+**Without depth limiting**:
+[source]
+----
+Doc → Sections → Paragraphs → Sentences → Words → Characters → ...
+(infinite recursion)
+----
+
+**With depth limiting (depth < 2)**:
+[source]
+----
+Level 0: Documents
+Level 1: Sections (generated)
+Level 2: Stop (depth limit reached)
+----
+
+=== 5. Hierarchical Result Assembly
+
+Build trees from flat results:
+
+[source,ruby]
+----
+# Step 1: Create parent nodes
+parents.each do |parent|
+  tree[parent.id] = { data: parent.data, children: [] }
+end
+
+# Step 2: Attach children to parents
+children.each do |child|
+  tree[child.parent_id][:children] << child.data
+end
+
+# Result: Hierarchical structure
+{
+  doc1_id: { data: "Doc 1", children: ["Section 1", "Section 2"] },
+  doc2_id: { data: "Doc 2", children: ["Section 3", "Section 4"] }
+}
+----
+
+=== 6. Performance Characteristics
+
+**Phase 1**:
+[source]
+----
+Documents: N
+Workers: W
+Time: N/W (if evenly distributed)
+----
+
+**Phase 2**:
+[source]
+----
+Sub-works: N × K (K = children per document)
+Workers: W
+Time: (N × K)/W
+----
+
+**Total Time**:
+[source]
+----
+T_total = N/W + (N × K)/W
+        = N(1 + K)/W
+
+Example: 3 docs, 3 children each, 4 workers
+T_total = 3(1 + 3)/4 = 12/4 = 3 time units
+----
+
+== Use Cases and Patterns
+
+=== Document Processing
+
+Process documents into sections and paragraphs:
+
+[source,ruby]
+----
+# Phase 1: Extract sections
+def process_initial_work(document)
+  sections = extract_sections(document)
+  sections.each do |section|
+    sub_works << { data: section, parent_id: document.object_id }
+  end
+end
+
+# Phase 2: Process sections
+def process_sub_work(section)
+  process_section_content(section)
+end
+----
+
+=== Web Crawling
+
+Crawl pages and follow links:
+
+[source,ruby]
+----
+# Phase 1: Fetch page and extract links
+def process_initial_work(url)
+  page = fetch_page(url)
+  links = extract_links(page)
+  links.each do |link|
+    sub_works << { data: link, parent_id: url.object_id, depth: url.depth + 1 }
+  end
+end
+
+# Phase 2: Crawl linked pages
+def process_sub_work(link)
+  if link.depth < MAX_DEPTH
+    # Create more work (recursive crawling)
+  end
+end
+----
+
+=== Directory Tree Processing
+
+Process directories and their contents:
+
+[source,ruby]
+----
+# Phase 1: List directory contents
+def process_initial_work(directory)
+  entries = Dir.entries(directory)
+  entries.each do |entry|
+    sub_works << {
+      data: File.join(directory, entry),
+      parent_id: directory.object_id,
+      depth: directory.depth + 1
+    }
+  end
+end
+
+# Phase 2: Process files/subdirectories
+def process_sub_work(path)
+  if File.directory?(path) && path.depth < MAX_DEPTH
+    # Generate more work for subdirectories
+  else
+    # Process file
+  end
+end
+----
+
+=== API Data Fetching
+
+Fetch collections and related resources:
+
+[source,ruby]
+----
+# Phase 1: Fetch collection
+def process_initial_work(collection_url)
+  collection = api_get(collection_url)
+  collection[:items].each do |item|
+    sub_works << {
+      data: item[:detail_url],
+      parent_id: collection_url.object_id
+    }
+  end
+end
+
+# Phase 2: Fetch individual items
+def process_sub_work(item_url)
+  fetch_item_details(item_url)
+end
+----
+
+== Advanced Patterns
+
+=== Multi-Level Decomposition
+
+Extend to more than two levels:
+
+[source,ruby]
+----
+def process
+  current_work = [@initial_work]
+  depth = 0
+
+  while !current_work.empty? && depth < MAX_DEPTH
+    supervisor = create_supervisor
+    supervisor.add_work_items(current_work)
+    supervisor.run
+
+    # Generate next level
+    current_work = create_sub_works(supervisor.results, depth + 1)
+    depth += 1
+
+    store_results(supervisor.results, depth)
+  end
+
+  build_multi_level_tree
+end
+----
+
+=== Conditional Decomposition
+
+Generate sub-work based on content:
+
+[source,ruby]
+----
+def create_sub_works(results)
+  sub_works = []
+
+  results.each do |result|
+    # Only decompose large documents
+    if result.data.size > THRESHOLD
+      # Split into smaller chunks
+      chunks = split_into_chunks(result.data)
+      chunks.each do |chunk|
+        sub_works << { data: chunk, parent_id: result.work.object_id }
+      end
+    end
+  end
+
+  sub_works
+end
+----
+
+=== Fan-Out with Varying Children
+
+Different items produce different numbers of sub-items:
+
+[source,ruby]
+----
+def create_sub_works(results)
+  sub_works = []
+
+  results.each do |result|
+    # Number of children depends on content
+    num_children = calculate_optimal_split(result.data)
+
+    num_children.times do |i|
+      sub_works << {
+        data: extract_chunk(result.data, i, num_children),
+        parent_id: result.work.object_id
+      }
+    end
+  end
+
+  sub_works
+end
+----
+
+=== Result Aggregation with Statistics
+
+Collect statistics during tree assembly:
+
+[source,ruby]
+----
+def build_result_tree_with_stats(initial_results, sub_results)
+  stats = { total_nodes: 0, max_depth: 0, avg_children: 0 }
+
+  initial_results.results.each do |result|
+    node = {
+      data: result.result[:processed_data],
+      children: [],
+      stats: { processing_time: result.processing_time }
+    }
+
+    @result_tree[result.work.object_id] = node
+    stats[:total_nodes] += 1
+  end
+
+  sub_results.results.each do |result|
+    parent_id = result.result[:parent_id]
+    @result_tree[parent_id][:children] << result
+    stats[:total_nodes] += 1
+  end
+
+  stats[:avg_children] = sub_results.size.to_f / initial_results.size
+  stats[:max_depth] = calculate_max_depth(@result_tree)
+
+  stats
+end
+----
+
+== Performance Tuning
+
+=== Worker Allocation
+
+Distribute workers across phases:
+
+[source,ruby]
+----
+# Option 1: Same workers for both phases
+phase1_workers = 8
+phase2_workers = 8
+
+# Option 2: More workers for phase with more work
+phase1_workers = 4
+phase2_workers = 12  # 3 sub-items per initial item
+
+# Option 3: Adaptive based on work ratio
+work_ratio = sub_works.size / initial_works.size
+phase2_workers = [phase1_workers * work_ratio, MAX_WORKERS].min
+----
+
+=== Memory Management
+
+Handle large result sets:
+
+[source,ruby]
+----
+# Stream results instead of storing all in memory
+def process_streaming
+  phase1_supervisor.on_result do |result|
+    # Process result immediately
+    process_result(result)
+
+    # Generate sub-works
+    create_and_queue_sub_works(result)
+
+    # Don't store in memory
+    result = nil
+  end
+
+  phase1_supervisor.run
+  phase2_supervisor.run
+end
+----
+
+=== Batch Sub-Work Generation
+
+Generate sub-works in batches:
+
+[source,ruby]
+----
+def create_sub_works_batched(results, batch_size = 100)
+  results.each_slice(batch_size) do |batch|
+    batch_sub_works = []
+
+    batch.each do |result|
+      # Generate sub-works for this batch
+      batch_sub_works.concat(generate_sub_works(result))
+    end
+
+    # Process batch
+    yield batch_sub_works if block_given?
+  end
+end
+----
+
+== Next Steps
+
+After understanding producer-subscriber, explore:
+
+* **link:../scatter_gather/README.adoc[Scatter-Gather]**: Dynamic work distribution and collection
+* **link:../pipeline_processing/README.adoc[Pipeline Processing]**: Sequential stage transformations
+* **link:../hierarchical_hasher/README.adoc[Hierarchical Hasher]**: Map-reduce with hierarchies
+* **link:../workflow/README.adoc[Workflow System]**: Complex orchestration patterns

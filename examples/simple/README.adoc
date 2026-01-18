@@ -1,0 +1,347 @@
+= Simple Example - Getting Started with Fractor
+
+== Purpose
+
+Provides the most basic introduction to Fractor, demonstrating fundamental concepts with minimal complexity to help new users get started quickly.
+
+== Focus
+
+This example focuses on the essential building blocks:
+
+* Creating custom `Work` classes to encapsulate work items
+* Creating custom `Worker` classes to process work
+* Setting up a `Supervisor` to manage parallel processing
+* Adding work items and running the supervisor
+* Processing results and handling errors
+* Auto-detection of available processors
+
+== Architecture
+
+.Basic Fractor Architecture
+[source]
+----
+Main Program
+    │
+    ├─→ Create Work Items (MyWork)
+    │       │
+    │       └─→ MyWork { value: 1 }
+    │           MyWork { value: 2 }
+    │           ...
+    │           MyWork { value: 10 }
+    │
+    ├─→ Create Supervisor
+    │       │
+    │       └─→ Worker Pool Configuration
+    │               │
+    │               └─→ MyWorker (auto-detect CPU count)
+    │
+    ├─→ Add Work Items
+    │       │
+    │       └─→ supervisor.add_work_items(work_items)
+    │
+    ├─→ Run Supervisor
+    │       │
+    │       └─→ Parallel Processing
+    │               │
+    │               ├─→ Ractor 1 (MyWorker) ─→ Process work
+    │               ├─→ Ractor 2 (MyWorker) ─→ Process work
+    │               ├─→ Ractor 3 (MyWorker) ─→ Process work
+    │               └─→ Ractor N (MyWorker) ─→ Process work
+    │                       │
+    │                       └─→ Results Aggregator
+    │                               │
+    │                               ├─→ Successful Results
+    │                               └─→ Error Results
+    │
+    └─→ Display Results
+            │
+            ├─→ supervisor.results (all results)
+            └─→ supervisor.results.errors (failed items)
+----
+
+.Data Flow
+[source]
+----
+Work Items                Worker Processing              Results
+──────────────────────────────────────────────────────────────────
+
+MyWork(1)  ─┐
+MyWork(2)  ─┤
+MyWork(3)  ─┤
+MyWork(4)  ─┼─→ Work Queue ─→ Ractor Pool ─→ WorkResult(2)
+MyWork(5)  ─┤    (Supervisor)   (Workers)     WorkResult(4)
+MyWork(6)  ─┤                                  WorkResult(6)
+MyWork(7)  ─┤                                  WorkResult(8)
+MyWork(8)  ─┤                                  ...
+MyWork(9)  ─┤                                  WorkError(5)
+MyWork(10) ─┘                                  WorkResult(20)
+----
+
+== Key Components
+
+=== Work Class
+
+The `Work` class encapsulates input data for processing:
+
+[source,ruby]
+----
+class MyWork < Fractor::Work
+  def initialize(value)
+    super({ value: value })  # <1>
+  end
+
+  def value
+    input[:value]  # <2>
+  end
+
+  def to_s
+    "MyWork: #{value}"  # <3>
+  end
+end
+----
+<1> Store data in input hash using `super`
+<2> Access stored data via `input` hash
+<3> Provide string representation for debugging
+
+Key points:
+
+* Inherit from `Fractor::Work`
+* Store all data in the `input` hash
+* Provide accessor methods for convenience
+* Include `to_s` method for debugging
+
+=== Worker Class
+
+The `Worker` class processes work items:
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def process(work)  # <1>
+    # Check work type
+    if work.is_a?(MyWork)
+      # Handle known error case
+      if work.value == 5
+        error = StandardError.new('Cannot process value 5')
+        return Fractor::WorkResult.new(error: error, work: work)  # <2>
+      end
+
+      # Process successfully
+      calculated = work.value * 2
+      Fractor::WorkResult.new(result: calculated, work: work)  # <3>
+
+    else
+      # Handle unexpected work type
+      error = TypeError.new("Unsupported work type: #{work.class}")
+      Fractor::WorkResult.new(error: error, work: work)
+    end
+  end
+end
+----
+<1> Implement `process(work)` method - called by Ractor
+<2> Return `WorkResult` with error for failures
+<3> Return `WorkResult` with result for success
+
+Key points:
+
+* Inherit from `Fractor::Worker`
+* Implement `process(work)` method
+* Return `Fractor::WorkResult` objects
+* Handle errors gracefully (return error results, don't raise)
+* Support multiple work types if needed
+
+=== Supervisor Setup
+
+The `Supervisor` manages worker Ractors and distributes work:
+
+[source,ruby]
+----
+# Create supervisor with worker pool
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }  # <1>
+  ]
+)
+
+# Create and add work items
+work_items = (1..10).map { |i| MyWork.new(i) }  # <2>
+supervisor.add_work_items(work_items)  # <3>
+
+# Run the supervisor
+supervisor.run  # <4>
+
+# Access results
+supervisor.results  # <5>
+supervisor.results.errors  # <6>
+----
+<1> Define worker pool (auto-detects CPU count)
+<2> Create array of work items
+<3> Add work items to supervisor
+<4> Start processing (blocks until complete)
+<5> Access all results (successful and failed)
+<6> Access only failed results
+
+Key points:
+
+* Worker pools default to auto-detected CPU count
+* Can specify `num_workers` explicitly if needed
+* `run` blocks until all work is complete
+* Results are aggregated in `supervisor.results`
+
+== Usage
+
+Run the example from the project root:
+
+[source,shell]
+----
+ruby examples/simple/sample.rb
+
+# With debug output
+FRACTOR_DEBUG=1 ruby examples/simple/sample.rb
+----
+
+== Expected Output
+
+[example]
+====
+[source]
+----
+Processing complete.
+Final Aggregated Results:
+#<Fractor::ResultAggregator:0x... @results=[
+  #<Fractor::WorkResult @result=2, @work=#<MyWork: 1>>,
+  #<Fractor::WorkResult @result=4, @work=#<MyWork: 2>>,
+  #<Fractor::WorkResult @result=6, @work=#<MyWork: 3>>,
+  #<Fractor::WorkResult @result=8, @work=#<MyWork: 4>>,
+  #<Fractor::WorkResult @result=12, @work=#<MyWork: 6>>,
+  #<Fractor::WorkResult @result=14, @work=#<MyWork: 7>>,
+  #<Fractor::WorkResult @result=16, @work=#<MyWork: 8>>,
+  #<Fractor::WorkResult @result=18, @work=#<MyWork: 9>>,
+  #<Fractor::WorkResult @result=20, @work=#<MyWork: 10>>
+], @errors=[...]>
+
+Failed Work Items (1):
+Work: MyWork: 5
+Error: StandardError: Cannot process value 5
+----
+====
+
+== Learning Points
+
+=== Parallel Processing
+
+* Fractor automatically distributes work across multiple Ractors
+* Number of Ractors defaults to available CPU cores
+* Work is processed in parallel, improving throughput
+* Order of completion is non-deterministic
+
+=== Work Encapsulation
+
+* Each work item is a separate object with its input data
+* Work items are isolated from each other
+* Workers process one work item at a time
+* Work items can be of different types (polymorphic)
+
+=== Error Handling
+
+* Errors don't stop the entire processing
+* Failed work items are tracked separately
+* Workers return error results, not exceptions
+* System continues processing remaining work
+
+=== Auto-Detection
+
+* When `num_workers` is not specified, Fractor auto-detects CPU count
+* Uses `Etc.nprocessors` to determine available cores
+* Optimal for CPU-bound tasks
+* Can be overridden if needed:
++
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 4 }
+  ]
+)
+----
+
+=== Result Aggregation
+
+* All results are collected in `supervisor.results`
+* Successful results accessible via `results.results`
+* Failed results accessible via `results.errors`
+* Each result contains both the output and original work item
+
+== Common Patterns
+
+=== Multiple Work Types
+
+Process different types of work with the same worker:
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def process(work)
+    if work.is_a?(MyWork)
+      # Process MyWork
+      Fractor::WorkResult.new(result: work.value * 2, work: work)
+    elsif work.is_a?(OtherWork)
+      # Process OtherWork differently
+      Fractor::WorkResult.new(result: "Processed: #{work.value}", work: work)
+    else
+      # Handle unknown types
+      error = TypeError.new("Unsupported work type: #{work.class}")
+      Fractor::WorkResult.new(error: error, work: work)
+    end
+  end
+end
+----
+
+=== Conditional Processing
+
+Make decisions based on work item data:
+
+[source,ruby]
+----
+def process(work)
+  if work.value < 0
+    error = ArgumentError.new('Value must be positive')
+    return Fractor::WorkResult.new(error: error, work: work)
+  end
+
+  if work.value > 100
+    # Heavy processing for large values
+    result = complex_calculation(work.value)
+  else
+    # Simple processing for small values
+    result = work.value * 2
+  end
+
+  Fractor::WorkResult.new(result: result, work: work)
+end
+----
+
+=== Debugging
+
+Use `ENV['FRACTOR_DEBUG']` to enable debug output:
+
+[source,ruby]
+----
+def process(work)
+  puts "Working on '#{work.inspect}'" if ENV['FRACTOR_DEBUG']
+
+  # Processing logic...
+
+  Fractor::WorkResult.new(result: result, work: work)
+end
+----
+
+== Next Steps
+
+After understanding the basics, explore more advanced examples:
+
+* link:../auto_detection/README.adoc[Auto Detection] - CPU auto-detection in detail
+* link:../multi_work_type/README.adoc[Multi Work Type] - Handling multiple work types
+* link:../specialized_workers/README.adoc[Specialized Workers] - Worker pools for different tasks
+* link:../pipeline_processing/README.adoc[Pipeline Processing] - Sequential processing stages
+* link:../workflow/README.adoc[Workflow System] - GitHub Actions-style workflows

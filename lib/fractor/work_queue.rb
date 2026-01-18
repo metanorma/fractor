@@ -16,6 +16,13 @@ module Fractor
     # @param work_item [Fractor::Work] The work item to add
     # @return [void]
     def <<(work_item)
+      enqueue(work_item)
+    end
+
+    # Add a work item to the queue (standardized API)
+    # @param work_item [Fractor::Work] The work item to add
+    # @return [void]
+    def enqueue(work_item)
       unless work_item.is_a?(Fractor::Work)
         raise ArgumentError,
               "#{work_item.class} must be an instance of Fractor::Work"
@@ -28,6 +35,13 @@ module Fractor
     # @param max_items [Integer] Maximum number of items to retrieve
     # @return [Array<Fractor::Work>] Array of work items (may be empty)
     def pop_batch(max_items = 10)
+      dequeue_batch(max_items)
+    end
+
+    # Retrieve multiple work items from the queue in a single operation (standardized API)
+    # @param max_items [Integer] Maximum number of items to retrieve
+    # @return [Array<Fractor::Work>] Array of work items (may be empty)
+    def dequeue_batch(max_items = 10)
       items = []
       max_items.times do
         break if @queue.empty?
@@ -40,6 +54,12 @@ module Fractor
         end
       end
       items
+    end
+
+    # Retrieve a single work item from the queue (blocking if empty)
+    # @return [Fractor::Work, nil] A work item or nil if queue is closed
+    def dequeue
+      @queue.pop
     end
 
     # Check if the queue is empty

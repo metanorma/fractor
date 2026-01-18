@@ -1,0 +1,627 @@
+= API Data Aggregator Example
+:toc:
+:toclevels: 3
+
+High-performance API data aggregator that fetches data from multiple API endpoints in parallel using Fractor::Workflow with circuit breaker pattern for resilience.
+
+== Purpose
+
+This example demonstrates:
+
+* Parallel API fetching using Fractor::Workflow
+* Circuit breaker pattern for fault tolerance
+* Retry logic with exponential backoff
+* Rate limiting to respect API constraints
+* Data aggregation and enrichment from multiple sources
+* Error recovery and graceful degradation
+
+== Features
+
+=== Circuit Breaker Pattern
+
+The aggregator implements a circuit breaker to prevent cascading failures:
+
+* **Closed State**: Normal operation, requests pass through
+* **Open State**: After 3 failures, circuit opens and fails fast
+* **Half-Open State**: After timeout, allows limited requests to test recovery
+
+.Circuit breaker state transitions
+[source]
+----
+    ┌─────────┐
+    │ Closed  │ ◄──── Success ────┐
+    │ (Normal)│                   │
+    └────┬────┘                   │
+         │                        │
+    Failure ×3               Half-Open
+         │                   Succeeds ×2
+         ▼                        │
+    ┌─────────┐                   │
+    │  Open   │                   │
+    │(Failing)│                   │
+    └────┬────┘                   │
+         │                        │
+      Timeout                     │
+         │                        │
+         ▼                        │
+    ┌──────────┐                  │
+    │Half-Open │──────────────────┘
+    │ (Testing)│
+    └──────────┘
+         │
+    Failure
+         │
+         ▼
+    Back to Open
+----
+
+=== Retry with Exponential Backoff
+
+Failed requests are automatically retried with increasing delays:
+
+* Attempt 1: Immediate
+* Attempt 2: Wait 0.5 seconds
+* Attempt 3: Wait 1.0 second
+* Attempt 4: Wait 2.0 seconds (max attempts: 3)
+
+=== Rate Limiting
+
+Each endpoint respects configurable rate limits:
+
+* Default: 0.1 second delay between requests
+* Prevents overwhelming API servers
+* Maintains good citizenship with external services
+
+=== Data Enrichment
+
+The aggregator combines data from multiple endpoints:
+
+* Fetches users, products, orders, analytics
+* Enriches orders with user and product details
+* Calculates derived metrics (total prices, etc.)
+
+== Architecture
+
+=== Component Diagram
+
+[source]
+----
+┌────────────────────────────────────────┐
+│       APIAggregator (Main)             │
+│  - Manages endpoints                   │
+│  - Orchestrates workflow               │
+│  - Aggregates results                  │
+└────────────────────────────────────────┘
+                  │
+                  │ uses
+                  ▼
+┌────────────────────────────────────────┐
+│      Fractor::Workflow                 │
+│  - Circuit breaker                     │
+│  - Retry logic                         │
+│  - Parallel execution                  │
+└────────────────────────────────────────┘
+                  │
+          ┌───────┼───────┐
+          ▼       ▼       ▼
+     ┌────────┬────────┬────────┐
+     │ Users  │Products│ Orders │
+     │  API   │  API   │  API   │
+     └────────┴────────┴────────┘
+                  │
+                  │ returns
+                  ▼
+┌────────────────────────────────────────┐
+│      Aggregated Data                   │
+│  - Combined results                    │
+│  - Enriched information                │
+│  - Summary statistics                  │
+└────────────────────────────────────────┘
+                  │
+                  │ formatted by
+                  ▼
+┌────────────────────────────────────────┐
+│      AggregationReport                 │
+│  - Human-readable report               │
+│  - Statistics and summaries            │
+└────────────────────────────────────────┘
+----
+
+=== Class Structure
+
+[source]
+----
+APIEndpoint
+├── name: String
+├── url: String
+├── timeout: Integer
+└── rate_limit_delay: Float
+
+APIAggregator
+├── endpoints: Array<APIEndpoint>
+├── results: Hash
+├── errors: Hash
+├── add_endpoint(endpoint)
+├── fetch_all(options)
+└── aggregate_data(results)
+
+MockAPIResponses (Module)
+├── USERS_API: Array
+├── PRODUCTS_API: Array
+├── ORDERS_API: Array
+├── ANALYTICS_API: Hash
+└── get_response(endpoint_name, options)
+
+AggregationReport
+└── generate(data, output_file)
+----
+
+== Usage
+
+=== Basic Usage
+
+Run the aggregator with default settings:
+
+[source,bash]
+----
+ruby api_aggregator.rb
+----
+
+Output:
+
+[source]
+----
+=== API Data Aggregator with Circuit Breaker ===
+
+Fetching data from 4 API endpoints...
+Circuit breaker enabled with 3 failures threshold
+Retry enabled with exponential backoff (max 3 attempts)
+
+[users] Fetching from https://api.example.com/users...
+[products] Fetching from https://api.example.com/products...
+[orders] Fetching from https://api.example.com/orders...
+[analytics] Fetching from https://api.example.com/analytics...
+[users] ✓ Success (3 items)
+[products] ✓ Success (3 items)
+[orders] ✓ Success (3 items)
+[analytics] ✓ Success (N/A items)
+
+=== Aggregation Complete ===
+Successful fetches: 4
+Failed fetches: 0
+Total API requests: 4
+----
+
+=== Simulate API Errors
+
+Test circuit breaker behavior:
+
+[source,bash]
+----
+ruby api_aggregator.rb --simulate-errors
+----
+
+This triggers API errors to demonstrate:
+
+* Automatic retry with backoff
+* Circuit breaker opening after threshold
+* Fast-fail behavior when circuit is open
+* Recovery when circuit enters half-open state
+
+=== Simulate Slow Responses
+
+Test timeout handling:
+
+[source,bash]
+----
+ruby api_aggregator.rb --simulate-slow
+----
+
+=== Save Report to File
+
+Generate and save aggregation report:
+
+[source,bash]
+----
+ruby api_aggregator.rb -o reports/aggregation.txt
+----
+
+=== Command-Line Options
+
+[source,bash]
+----
+Usage: api_aggregator.rb [options]
+
+Options:
+    --simulate-errors            Simulate API errors to test circuit breaker
+    --simulate-slow              Simulate slow API responses
+-o, --output FILE                Output report file
+-h, --help                       Show this message
+----
+
+== Examples
+
+=== Example 1: Successful Aggregation
+
+[source,bash]
+----
+$ ruby api_aggregator.rb
+
+================================================================================
+API AGGREGATION REPORT
+================================================================================
+
+SUMMARY
+--------------------------------------------------------------------------------
+Total Users: 3
+Total Products: 3
+Total Orders: 3
+Endpoints Successful: 4
+Endpoints Failed: 0
+Timestamp: 2024-10-25T13:00:00+08:00
+
+USERS (3)
+--------------------------------------------------------------------------------
+  1. Alice Johnson <alice@example.com> [admin]
+  2. Bob Smith <bob@example.com> [user]
+  3. Carol Williams <carol@example.com> [user]
+
+PRODUCTS (3)
+--------------------------------------------------------------------------------
+  1. Laptop - $999.99 (Stock: 15)
+  2. Mouse - $29.99 (Stock: 50)
+  3. Keyboard - $79.99 (Stock: 30)
+
+ENRICHED ORDERS (3)
+--------------------------------------------------------------------------------
+  Order #1001:
+    User: Alice Johnson <alice@example.com>
+    Product: Laptop
+    Quantity: 1 × $999.99 = $999.99
+    Status: shipped
+
+  Order #1002:
+    User: Bob Smith <bob@example.com>
+    Product: Mouse
+    Quantity: 2 × $29.99 = $59.98
+    Status: pending
+
+  Order #1003:
+    User: Carol Williams <carol@example.com>
+    Product: Keyboard
+    Quantity: 1 × $79.99 = $79.99
+    Status: delivered
+
+ANALYTICS
+--------------------------------------------------------------------------------
+  Total users: 3
+  Total products: 3
+  Total orders: 3
+  Revenue: 1139.97
+  Timestamp: 2024-10-25T13:00:00+08:00
+
+================================================================================
+----
+
+=== Example 2: Error Recovery with Circuit Breaker
+
+[source,bash]
+----
+$ ruby api_aggregator.rb --simulate-errors
+
+Fetching data from 4 API endpoints...
+Circuit breaker enabled with 3 failures threshold
+Retry enabled with exponential backoff (max 3 attempts)
+
+[users] Fetching from https://api.example.com/users...
+[users] ✗ Error: Simulated API error
+[users] Retrying (attempt 2/3) after 0.5s...
+[users] ✗ Error: Simulated API error
+[users] Retrying (attempt 3/3) after 1.0s...
+[users] ✗ Error: Simulated API error
+[users] All retry attempts exhausted
+
+Circuit breaker OPEN for workflow after 3 failures
+[products] Fast-failing due to open circuit
+[orders] Fast-failing due to open circuit
+[analytics] Fast-failing due to open circuit
+
+=== Aggregation Complete ===
+Successful fetches: 0
+Failed fetches: 4
+Total API requests: 3
+
+SUMMARY
+--------------------------------------------------------------------------------
+Endpoints Successful: 0
+Endpoints Failed: 4
+----
+
+=== Example 3: Partial Success
+
+When some endpoints succeed and others fail:
+
+[source]
+----
+=== Aggregation Complete ===
+Successful fetches: 2
+Failed fetches: 2
+Total API requests: 8
+
+SUMMARY
+--------------------------------------------------------------------------------
+Total Users: 3
+Total Products: 3
+Total Orders: 0
+Endpoints Successful: 2
+Endpoints Failed: 2
+----
+
+The aggregator gracefully handles partial failures and returns available data.
+
+== Implementation Details
+
+=== Workflow Configuration
+
+The aggregator uses [`Fractor::Workflow`](../../lib/fractor/workflow.rb:1) with:
+
+[source,ruby]
+----
+workflow = Fractor::Workflow.new(name: "API Aggregation Workflow")
+
+# Configure circuit breaker
+workflow.configure_circuit_breaker(
+  failure_threshold: 3,      # Open after 3 failures
+  timeout: 10,               # Retest after 10 seconds
+  half_open_attempts: 2      # Need 2 successes to close
+)
+
+# Add tasks with retry
+workflow.task(:users) do |context|
+  fetch_endpoint(users_endpoint, context)
+end.retry_on(
+  StandardError,
+  max_attempts: 3,
+  backoff: :exponential,
+  base_delay: 0.5
+)
+----
+
+=== Mock API Responses
+
+For demonstration, the example uses mock data instead of real HTTP calls:
+
+[source,ruby]
+----
+module MockAPIResponses
+  USERS_API = [
+    { id: 1, name: "Alice Johnson", ... },
+    # ...
+  ]
+
+  def self.get_response(endpoint_name, simulate_error: false, simulate_slow: false)
+    sleep(2) if simulate_slow
+    raise "Simulated API error" if simulate_error
+
+    { status: "success", data: USERS_API, timestamp: Time.now.iso8601 }
+  end
+end
+----
+
+In production, replace with actual HTTP calls using `Net::HTTP` or `HTTP.rb`.
+
+=== Data Enrichment Logic
+
+Orders are enriched by joining with users and products:
+
+[source,ruby]
+----
+def enrich_orders(orders, users, products)
+  orders.map do |order|
+    user = users.find { |u| u[:id] == order[:user_id] }
+    product = products.find { |p| p[:id] == order[:product_id] }
+
+    order.merge(
+      user_name: user&.dig(:name),
+      user_email: user&.dig(:email),
+      product_name: product&.dig(:name),
+      product_price: product&.dig(:price),
+      total_price: (product&.dig(:price) || 0) * order[:quantity]
+    )
+  end
+end
+----
+
+== Circuit Breaker States
+
+=== Closed State (Normal Operation)
+
+* All requests proceed normally
+* Failures are counted
+* If failures reach threshold (3), circuit opens
+
+=== Open State (Failing Fast)
+
+* All requests fail immediately without trying
+* No actual API calls are made
+* After timeout period (10s), transitions to half-open
+
+=== Half-Open State (Testing Recovery)
+
+* Limited number of requests allowed through (2)
+* If requests succeed, circuit closes
+* If requests fail, circuit reopens
+
+== Error Handling
+
+=== Retry Strategy
+
+Each failed request is retried up to 3 times:
+
+1. **First retry**: Wait 0.5 seconds
+2. **Second retry**: Wait 1.0 second (2× base delay)
+3. **Third retry**: Wait 2.0 seconds (4× base delay)
+
+After 3 failures, the request is marked as failed.
+
+=== Graceful Degradation
+
+When some endpoints fail:
+
+* Continue with available data
+* Report partial results
+* Include error information in summary
+* Don't block entire aggregation
+
+=== Error Types
+
+* `StandardError`: Network errors, timeouts, API errors
+* `CircuitBreakerError`: When circuit is open
+* All errors are caught and reported in the errors hash
+
+== Performance Considerations
+
+=== Parallel Execution
+
+All API endpoints are fetched in parallel using Fractor's workflow execution:
+
+* Endpoints: 4
+* Max parallelism: 4 (limited by worker count)
+* Sequential time: ~0.4s (4 × 0.1s rate limit)
+* Parallel time: ~0.1s (max of all delays)
+
+=== Rate Limiting
+
+Each endpoint has configurable rate limiting:
+
+* Prevents overwhelming API servers
+* Respects API provider guidelines
+* Can be adjusted per endpoint
+
+=== Memory Usage
+
+The aggregator is memory-efficient:
+
+* Streams results as they arrive
+* No large intermediate buffers
+* Garbage collection friendly
+
+== Testing
+
+Run the test suite:
+
+[source,bash]
+----
+bundle exec rspec spec/examples/api_aggregator_spec.rb
+----
+
+The test suite covers:
+
+* APIEndpoint configuration
+* Mock API responses
+* Workflow execution
+* Circuit breaker behavior
+* Retry logic
+* Data aggregation
+* Error handling
+* Report generation
+
+== Best Practices
+
+=== Production Deployment
+
+For production use:
+
+1. **Replace mock responses** with real HTTP client
+2. **Add authentication** (API keys, OAuth tokens)
+3. **Configure timeouts** based on SLA requirements
+4. **Adjust circuit breaker** thresholds for your use case
+5. **Add monitoring** and alerting for failures
+6. **Use connection pools** for efficiency
+7. **Implement caching** for frequently accessed data
+
+=== Configuration Guidelines
+
+* **Circuit Breaker Threshold**: Set based on acceptable failure rate (typically 3-5)
+* **Retry Attempts**: Balance responsiveness vs. resilience (typically 2-3)
+* **Timeouts**: Set based on P99 latency + buffer (typically 5-10s)
+* **Rate Limits**: Respect API provider guidelines (check documentation)
+
+=== Error Monitoring
+
+Monitor these metrics:
+
+* Circuit breaker state changes
+* Retry attempt counts
+* Failed endpoint calls
+* Response time percentiles
+* Success/failure rates per endpoint
+
+== Troubleshooting
+
+=== Circuit Breaker Always Open
+
+* Check failure threshold is appropriate
+* Verify API endpoints are reachable
+* Check for network connectivity issues
+* Review timeout settings
+
+=== Slow Performance
+
+* Verify rate limit delays aren't excessive
+* Check for slow API endpoints
+* Consider reducing timeout values
+* Review retry backoff configuration
+
+=== Partial Data
+
+* Check which endpoints are failing
+* Review error messages in errors hash
+* Verify API credentials/permissions
+* Test endpoints individually
+
+== Extending the Aggregator
+
+=== Adding New Endpoints
+
+[source,ruby]
+----
+aggregator.add_endpoint(APIEndpoint.new(
+  name: "inventory",
+  url: "https://api.example.com/inventory",
+  timeout: 5,
+  rate_limit_delay: 0.2
+))
+----
+
+=== Custom Enrichment Logic
+
+[source,ruby]
+----
+def custom_enrichment(results)
+  # Your custom data transformation
+  results[:custom_field] = calculate_something(results)
+  results
+end
+----
+
+=== Alternative Retry Strategies
+
+[source,ruby]
+----
+workflow.task(:endpoint) do
+  # Task logic
+end.retry_on(
+  NetworkError,
+  max_attempts: 5,
+  backoff: :linear,     # or :constant
+  base_delay: 1.0
+)
+----
+
+== See Also
+
+* link:../../README.adoc[Fractor Main Documentation]
+* link:../../docs/workflows.adoc[Workflow Guide]
+* link:../log_analyzer/README.adoc[Log Analyzer Example]
+* link:../web_scraper/README.adoc[Web Scraper Example]

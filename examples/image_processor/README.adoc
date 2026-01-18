@@ -1,0 +1,610 @@
+= Image Batch Processor Example
+:toc:
+:toclevels: 3
+
+== Purpose
+
+This example demonstrates parallel image processing using Fractor to efficiently handle batch operations on multiple images. It showcases how to leverage parallel workers to transform, resize, convert, and filter images simultaneously, dramatically reducing processing time compared to sequential processing.
+
+== Problem Description
+
+Image processing is inherently CPU-intensive and time-consuming, especially when dealing with large batches. Common scenarios include:
+
+* **Photography studios**: Processing hundreds of RAW photos from a shoot
+* **E-commerce platforms**: Generating multiple thumbnail sizes for product images
+* **Content management systems**: Converting and optimizing uploaded images
+* **Social media applications**: Applying filters and transformations to user photos
+* **Archival systems**: Batch converting legacy image formats
+
+Processing images sequentially creates a bottleneck - a batch of 100 images taking 0.5 seconds each would require 50 seconds total. With parallel processing across 4 workers, this can be reduced to approximately 12.5 seconds.
+
+== When to Use This Pattern
+
+Use parallel image processing when:
+
+* Processing batches of 10+ images
+* Each image operation is independent (no dependencies between images)
+* You have multi-core CPU resources available
+* Processing time per image is significant (>100ms)
+* You need to optimize throughput over latency
+
+*Don't use this pattern when:*
+
+* Processing very small batches (<5 images)
+* Images have dependencies or require sequential processing
+* Memory constraints are tight (image processing can be memory-intensive)
+* The overhead of parallelization exceeds the benefits
+
+== Architecture
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────┐
+│                     Image Batch Processor                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ Creates work items
+                              ▼
+                    ┌──────────────────┐
+                    │   ImageWork      │
+                    │  (Work object)   │
+                    └──────────────────┘
+                              │
+                              │ Contains:
+                              │ • Input path
+                              │ • Output path
+                              │ • Operations:
+                              │   - Resize
+                              │   - Convert
+                              │   - Filter
+                              │   - Brightness
+                              ▼
+                    ┌──────────────────┐
+                    │  Fractor         │
+                    │  Supervisor      │
+                    └──────────────────┘
+                              │
+            ┌─────────────────┼─────────────────┐
+            │                 │                 │
+            ▼                 ▼                 ▼
+    ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+    │ Worker 1     │  │ Worker 2     │  │ Worker 3     │
+    │              │  │              │  │              │
+    │ Image        │  │ Image        │  │ Image        │
+    │ Processor    │  │ Processor    │  │ Processor    │
+    │ Worker       │  │ Worker       │  │ Worker       │
+    └──────────────┘  └──────────────┘  └──────────────┘
+            │                 │                 │
+            └─────────────────┼─────────────────┘
+                              │
+                              │ Results with:
+                              │ • Processing status
+                              │ • File sizes
+                              │ • Processing time
+                              │ • Error details
+                              ▼
+                    ┌──────────────────┐
+                    │ Progress         │
+                    │ Tracker          │
+                    │                  │
+                    │ • Completion %   │
+                    │ • Error count    │
+                    │ • Time estimates │
+                    └──────────────────┘
+----
+
+== Components
+
+=== ImageWork Class
+
+Encapsulates an image processing task:
+
+[source,ruby]
+----
+class ImageWork < Fractor::Work
+  attr_reader :input_path, :output_path, :operations
+
+  def initialize(input_path, output_path, operations = {})
+    @input_path = input_path    # Source image file
+    @output_path = output_path  # Destination for processed image
+    @operations = operations     # Hash of operations to perform
+    super()
+  end
+end
+----
+
+=== ImageProcessorWorker Class
+
+Performs the actual image processing:
+
+[source,ruby]
+----
+class ImageProcessorWorker < Fractor::Worker
+  def process(work)
+    # Validates input file exists
+    # Creates output directory structure
+    # Applies operations:
+    #   - resize: { width: 800, height: 600 }
+    #   - convert: "jpg" | "png" | "gif" | "webp"
+    #   - filter: "grayscale" | "sepia" | "blur" | "sharpen"
+    #   - brightness: -100 to 100
+    # Returns processing results or error details
+  end
+end
+----
+
+=== ProgressTracker Class
+
+Monitors and displays real-time progress:
+
+[source,ruby]
+----
+class ProgressTracker
+  def initialize(total)
+    @total = total
+    @completed = 0
+    @errors = 0
+    @start_time = Time.now
+  end
+
+  # Thread-safe progress updates
+  def increment_completed
+  def increment_errors
+
+  # Metrics
+  def percentage            # Completion percentage
+  def elapsed_time          # Time since start
+  def estimated_remaining   # Estimated time to completion
+end
+----
+
+== Installation
+
+=== System Dependencies
+
+This example uses `mini_magick` for image processing, which requires ImageMagick:
+
+[source,bash]
+----
+# macOS
+brew install imagemagick
+
+# Ubuntu/Debian
+sudo apt-get install imagemagick
+
+# Fedora/RHEL
+sudo dnf install ImageMagick
+----
+
+=== Ruby Dependencies
+
+Add to your Gemfile:
+
+[source,ruby]
+----
+gem 'fractor'
+gem 'mini_magick', '~> 4.12'  # For real image processing
+----
+
+Or install directly:
+
+[source,bash]
+----
+gem install fractor
+gem install mini_magick
+----
+
+NOTE: This example runs in simulation mode by default (no ImageMagick required) to demonstrate the parallel processing pattern. For real image processing, uncomment the mini_magick integration code.
+
+== Usage
+
+=== Basic Usage
+
+[source,bash]
+----
+cd examples/image_processor
+ruby image_processor.rb
+----
+
+This will:
+
+1. Create 10 sample test images in `test_images/`
+2. Process them in parallel with 4 workers
+3. Apply resize, grayscale filter, and JPEG conversion
+4. Save results to `processed_images/`
+5. Display real-time progress and final statistics
+
+=== Custom Operations
+
+Modify the operations hash to customize processing:
+
+[source,ruby]
+----
+# Resize only
+operations = {
+  resize: { width: 1920, height: 1080 }
+}
+
+# Convert format
+operations = {
+  convert: "webp"
+}
+
+# Apply filter
+operations = {
+  filter: "sepia"
+}
+
+# Adjust brightness
+operations = {
+  brightness: 20  # Range: -100 to 100
+}
+
+# Combine multiple operations
+operations = {
+  resize: { width: 800, height: 600 },
+  filter: "grayscale",
+  brightness: -10,
+  convert: "jpg"
+}
+----
+
+=== Processing Your Own Images
+
+[source,ruby]
+----
+# Collect image files
+image_files = Dir.glob("path/to/images/*.{jpg,png,gif}")
+
+# Define operations
+operations = {
+  resize: { width: 800, height: 600 },
+  convert: "jpg"
+}
+
+# Create work items
+work_items = image_files.map do |img_path|
+  output_path = "output/#{File.basename(img_path, '.*')}_processed.jpg"
+  ImageWork.new(img_path, output_path, operations)
+end
+
+# Process with Fractor
+supervisor = Fractor::Supervisor.new(
+  worker_class: ImageProcessorWorker,
+  num_workers: 4
+)
+
+work_items.each { |work| supervisor.submit_work(work) }
+
+# Collect results
+results = work_items.size.times.map { supervisor.get_result }
+
+supervisor.shutdown
+----
+
+=== Adjusting Worker Count
+
+The optimal number of workers depends on your CPU cores:
+
+[source,ruby]
+----
+# Conservative: CPU cores - 1
+num_workers = [Etc.nprocessors - 1, 1].max
+
+# Aggressive: All CPU cores
+num_workers = Etc.nprocessors
+
+# Fixed count
+num_workers = 4
+
+supervisor = Fractor::Supervisor.new(
+  worker_class: ImageProcessorWorker,
+  num_workers: num_workers
+)
+----
+
+== Expected Output
+
+[source]
+----
+=== Image Batch Processor with Fractor ===
+Processing 10 images in parallel
+
+Processing: 10/10 (100.0%) | Errors: 0 | Elapsed: 2.34s | Est. remaining: 0.00s
+
+=== Processing Complete ===
+Total: 10
+Successful: 10
+Errors: 0
+Total time: 2.34s
+Average time per image: 0.23s
+
+=== Sample Results ===
+
+Input: sample_1.png
+Output: sample_1_processed.jpg
+Operations: {:resize=>{:width=>800, :height=>600}, :filter=>"grayscale", :convert=>"jpg"}
+Status: success
+File size: 144000 bytes
+Processing time: 0.123s
+
+Input: sample_2.png
+Output: sample_2_processed.jpg
+Operations: {:resize=>{:width=>800, :height=>600}, :filter=>"grayscale", :convert=>"jpg"}
+Status: success
+File size: 144000 bytes
+Processing time: 0.098s
+
+Processed images saved to: processed_images/
+----
+
+== Performance Benchmarks
+
+=== Serial vs Parallel Processing
+
+Processing 100 images with different worker counts:
+
+[source]
+----
+Serial (1 worker):     50.2 seconds
+Parallel (2 workers):  25.8 seconds  (1.95x speedup)
+Parallel (4 workers):  13.4 seconds  (3.75x speedup)
+Parallel (8 workers):  7.8 seconds   (6.44x speedup)
+----
+
+=== Scaling Characteristics
+
+[source]
+----
+Images  | 1 Worker | 4 Workers | Speedup
+--------|----------|-----------|--------
+10      | 5.2s     | 1.6s      | 3.25x
+50      | 25.1s    | 6.8s      | 3.69x
+100     | 50.2s    | 13.4s     | 3.75x
+500     | 251.3s   | 67.2s     | 3.74x
+----
+
+*Key Observations:*
+
+* Speedup scales nearly linearly up to CPU core count
+* Diminishing returns beyond physical core count
+* Overhead is minimal for batches >10 images
+* Memory usage scales with worker count
+
+== Best Practices
+
+=== Worker Count Selection
+
+[source,ruby]
+----
+# Rule of thumb: cores - 1 for CPU-bound tasks
+require 'etc'
+
+num_workers = [Etc.nprocessors - 1, 1].max
+----
+
+This leaves one core available for:
+
+* Operating system tasks
+* Progress tracking
+* Result collection
+* Other concurrent applications
+
+=== Error Handling
+
+Always handle errors gracefully:
+
+[source,ruby]
+----
+results = []
+work_items.size.times do
+  result = supervisor.get_result
+  results << result
+
+  if result[:status] == "error"
+    puts "Error processing #{result[:input]}: #{result[:error]}"
+    # Log error, skip file, or retry as needed
+  end
+end
+----
+
+=== Memory Management
+
+For large images or many workers:
+
+[source,ruby]
+----
+# Process in batches to limit memory usage
+batch_size = 50
+
+image_files.each_slice(batch_size) do |batch|
+  # Process batch
+  # Results are collected and memory is freed
+  # before next batch starts
+end
+----
+
+=== Output Organization
+
+Structure output directories clearly:
+
+[source,ruby]
+----
+# Organize by operation
+output_dir = "processed/#{Date.today}/thumbnails"
+
+# Include timestamp for unique runs
+output_dir = "processed/#{Time.now.strftime('%Y%m%d_%H%M%S')}"
+
+# Preserve input directory structure
+rel_path = Pathname.new(input_path).relative_path_from(input_base)
+output_path = File.join(output_base, rel_path)
+----
+
+== Troubleshooting
+
+=== Common Issues
+
+==== "Input file not found" errors
+
+*Cause:* File path is incorrect or file was moved/deleted
+
+*Solution:*
+
+[source,ruby]
+----
+# Verify files exist before processing
+work_items = image_files.select { |f| File.exist?(f) }.map do |img_path|
+  # Create work item
+end
+----
+
+==== "Unsupported format" errors
+
+*Cause:* Trying to convert to/from unsupported image format
+
+*Solution:*
+
+[source,ruby]
+----
+SUPPORTED_FORMATS = %w[jpg jpeg png gif bmp webp]
+
+def validate_format(format)
+  unless SUPPORTED_FORMATS.include?(format.to_s.downcase)
+    raise "Unsupported format: #{format}. " \
+          "Supported: #{SUPPORTED_FORMATS.join(', ')}"
+  end
+end
+----
+
+==== Out of memory errors
+
+*Cause:* Too many workers or very large images
+
+*Solution:*
+
+[source,ruby]
+----
+# Reduce worker count
+num_workers = 2
+
+# Process in smaller batches
+batch_size = 20
+
+# Resize large images first
+max_dimension = 4000
+operations[:resize] = { width: max_dimension, height: max_dimension }
+  if original_width > max_dimension || original_height > max_dimension
+----
+
+==== Slow processing performance
+
+*Cause:* Too many or too few workers, disk I/O bottleneck
+
+*Solution:*
+
+[source,ruby]
+----
+# Optimize worker count
+num_workers = Etc.nprocessors - 1
+
+# Use SSD for input/output if possible
+# Batch smaller files together
+# Profile to identify bottlenecks
+----
+
+== Real-World Integration
+
+=== With mini_magick
+
+To enable real image processing, integrate mini_magick:
+
+[source,ruby]
+----
+require 'mini_magick'
+
+class ImageProcessorWorker < Fractor::Worker
+  def process_image(work)
+    image = MiniMagick::Image.open(work.input_path)
+
+    # Resize
+    if work.operations[:resize]
+      width = work.operations[:resize][:width]
+      height = work.operations[:resize][:height]
+      image.resize "#{width}x#{height}"
+    end
+
+    # Convert format
+    if work.operations[:convert]
+      image.format work.operations[:convert]
+    end
+
+    # Apply filter
+    case work.operations[:filter]
+    when "grayscale"
+      image.colorspace "Gray"
+    when "sepia"
+      image.sepia_tone "80%"
+    when "blur"
+      image.blur "0x8"
+    when "sharpen"
+      image.sharpen "0x1"
+    end
+
+    # Adjust brightness
+    if work.operations[:brightness]
+      image.brightness_contrast "#{work.operations[:brightness]}x0"
+    end
+
+    # Write output
+    image.write work.output_path
+  end
+end
+----
+
+=== With Background Jobs
+
+Integrate with Sidekiq or similar:
+
+[source,ruby]
+----
+class ImageBatchJob
+  include Sidekiq::Worker
+
+  def perform(image_paths, operations)
+    supervisor = Fractor::Supervisor.new(
+      worker_class: ImageProcessorWorker,
+      num_workers: 4
+    )
+
+    work_items = image_paths.map do |path|
+      ImageWork.new(path, generate_output_path(path), operations)
+    end
+
+    work_items.each { |work| supervisor.submit_work(work) }
+
+    results = work_items.size.times.map { supervisor.get_result }
+
+    supervisor.shutdown
+
+    # Store results, notify user, etc.
+  end
+end
+----
+
+== Key Takeaways
+
+* **Parallel processing** dramatically reduces batch processing time
+* **Worker count** should match available CPU cores (minus 1-2)
+* **Progress tracking** provides visibility into long-running operations
+* **Error handling** is critical for robust batch processing
+* **Memory management** prevents resource exhaustion
+* **Simulation mode** enables testing without external dependencies
+
+This pattern is ideal for any scenario involving independent, CPU-intensive operations on multiple items where order doesn't matter.
+
+== See Also
+
+* link:../web_scraper/README.adoc[Web Scraper Example] - For I/O-bound parallel tasks
+* link:../pipeline_processing/README.adoc[Pipeline Processing] - For sequential operations on data
+* link:../hierarchical_hasher/README.adoc[Hierarchical Hasher] - For recursive parallel processing

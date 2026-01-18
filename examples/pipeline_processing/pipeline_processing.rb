@@ -57,8 +57,8 @@ module PipelineProcessing
 
       # Update metadata with processing information
       updated_metadata = work.metadata.merge(
-        "#{work.stage}_completed" => true,
-        "#{work.stage}_time" => Time.now.to_s,
+        "#{work.stage}_completed".to_sym => true,
+        "#{work.stage}_time".to_sym => Time.now.to_s,
       )
 
       # Return the result with next stage information

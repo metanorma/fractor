@@ -1,0 +1,360 @@
+= Circuit Breaker Workflow Example
+
+This example demonstrates the circuit breaker pattern for fault tolerance in Fractor workflows. Circuit breakers prevent cascading failures by failing fast when a service is unavailable.
+
+== Overview
+
+The circuit breaker pattern protects your workflows from repeated failures by:
+
+* *Detecting failures*: Tracking failure rates for external services
+* *Preventing cascading failures*: Failing fast when a service is down
+* *Automatic recovery*: Testing service availability and recovering automatically
+* *Graceful degradation*: Using fallback strategies when primary services fail
+
+== Circuit Breaker States
+
+A circuit breaker has three states:
+
+[cols="1,3"]
+|===
+|State |Behavior
+
+|*Closed*
+|Normal operation - requests pass through to the service
+
+|*Open*
+|Failure threshold exceeded - requests fail immediately without calling the service
+
+|*Half-Open*
+|Testing phase - limited requests allowed to check if service recovered
+|===
+
+== State Transitions
+
+[source]
+----
+              success
+    Closed ◄─────────── Half-Open
+      │                    ▲
+      │                    │
+      │ threshold          │ timeout
+      │ exceeded           │ elapsed
+      │                    │
+      ▼                    │
+     Open ─────────────────┘
+
+Closed → Open:      After threshold failures
+Open → Half-Open:   After timeout period
+Half-Open → Closed: After successful test calls
+Half-Open → Open:   On any failure during testing
+----
+
+== Basic Circuit Breaker
+
+=== Configuration
+
+[source,ruby]
+----
+job "fetch_from_api" do
+  runs_with UnreliableApiWorker
+  inputs_from_workflow
+
+  circuit_breaker threshold: 3,         # <1>
+                  timeout: 60,          # <2>
+                  half_open_calls: 2    # <3>
+
+  fallback_to "fetch_from_cache"        # <4>
+
+  outputs_to_workflow
+  terminates_workflow
+end
+----
+<1> Circuit opens after 3 consecutive failures
+<2> Stay open for 60 seconds before testing recovery
+<3> Allow 2 test calls in half-open state
+<4> Use cache when circuit is open
+
+=== How It Works
+
+. *Normal Operation (Closed)*
+** All requests pass through to the API
+** Successful calls reset the failure count
+** Failed calls increment the failure count
+
+. *Circuit Opens*
+** After 3 failures, circuit opens
+** All subsequent requests fail immediately
+** No calls made to the failing service
+
+. *Recovery Testing (Half-Open)*
+** After 60 seconds, circuit enters half-open state
+** Allows 2 test calls to check service recovery
+** If both succeed → circuit closes (back to normal)
+** If any fails → circuit reopens
+
+. *Fallback Activation*
+** When circuit is open, fallback job executes
+** Provides degraded service using cached data
+** Maintains availability despite service failure
+
+== Shared Circuit Breaker
+
+Multiple jobs can share a circuit breaker using `shared_key`:
+
+[source,ruby]
+----
+job "fetch_user_data" do
+  runs_with ApiWorker
+  inputs_from_workflow
+
+  circuit_breaker threshold: 5,
+                  timeout: 60,
+                  half_open_calls: 3,
+                  shared_key: "external_api"  # <1>
+end
+
+job "fetch_profile_data" do
+  runs_with ApiWorker
+  inputs_from_workflow
+
+  circuit_breaker threshold: 5,
+                  timeout: 60,
+                  half_open_calls: 3,
+                  shared_key: "external_api"  # <1>
+end
+----
+<1> Same `shared_key` means both jobs share the same circuit breaker instance
+
+=== Shared Circuit Breaker Benefits
+
+* *Coordinated protection*: Failures from any job contribute to the shared threshold
+* *System-wide defense*: When one job triggers the circuit, all jobs using the same key are protected
+* *Resource conservation*: Prevents multiple jobs from hammering a failing service
+* *Faster detection*: Aggregate failures across jobs trigger protection sooner
+
+== Running the Example
+
+[source,shell]
+----
+ruby examples/workflow/circuit_breaker/circuit_breaker_workflow.rb
+----
+
+Expected output:
+
+[source]
+----
+============================================================
+Circuit Breaker Example - Basic Protection
+============================================================
+
+1️⃣  Successful API call:
+✅ Result: Data from users/123 (source: primary)
+
+2️⃣  Triggering circuit breaker (3 failures):
+❌ API call failed: API service unavailable
+   Attempt: 1
+   Attempt 1: Circuit breaker protecting...
+❌ API call failed: API service unavailable
+   Attempt: 1
+   Attempt 2: Circuit breaker protecting...
+❌ API call failed: API service unavailable
+   Attempt: 1
+   Attempt 3: Circuit breaker protecting...
+
+3️⃣  Circuit open - using fallback:
+✅ Result: Cached data for users/456 (source: cache)
+   Note: Got cached data because circuit is open
+
+============================================================
+----
+
+== Configuration Options
+
+[cols="1,1,3"]
+|===
+|Option |Default |Description
+
+|`threshold`
+|5
+|Number of consecutive failures before opening circuit
+
+|`timeout`
+|60
+|Seconds to wait in open state before testing recovery
+
+|`half_open_calls`
+|3
+|Number of successful test calls needed to close circuit
+
+|`shared_key`
+|`nil`
+|Optional key for sharing circuit breaker across jobs. If not provided, each job gets its own circuit breaker
+|===
+
+== Use Cases
+
+=== External API Calls
+
+Protect against unreliable external services:
+
+[source,ruby]
+----
+job "call_payment_gateway" do
+  runs_with PaymentGatewayWorker
+
+  circuit_breaker threshold: 5,
+                  timeout: 120
+
+  fallback_to "queue_for_retry"
+end
+----
+
+=== Database Operations
+
+Prevent connection pool exhaustion:
+
+[source,ruby]
+----
+job "query_database" do
+  runs_with DatabaseWorker
+
+  circuit_breaker threshold: 10,
+                  timeout: 60,
+                  shared_key: "database_pool"
+
+  fallback_to "use_read_replica"
+end
+----
+
+=== Microservice Communication
+
+Protect service mesh communication:
+
+[source,ruby]
+----
+job "call_user_service" do
+  runs_with UserServiceWorker
+
+  circuit_breaker threshold: 3,
+                  timeout: 30,
+                  shared_key: "user_service"
+
+  fallback_to "use_cached_users"
+end
+----
+
+== Best Practices
+
+=== Choose Appropriate Thresholds
+
+* *Low threshold (2-3)*: For critical services where fast failure is important
+* *Medium threshold (5-10)*: For services with occasional transient failures
+* *High threshold (10+)*: For services where you want to allow more retries
+
+=== Set Reasonable Timeouts
+
+* *Short timeout (15-30s)*: For services that recover quickly
+* *Medium timeout (60s)*: Standard timeout for most services
+* *Long timeout (120s+)*: For services with slow recovery processes
+
+=== Combine with Retry Logic
+
+Circuit breakers work well with retry logic:
+
+[source,ruby]
+----
+job "resilient_api_call" do
+  runs_with ApiWorker
+
+  # Retry transient failures
+  retry_on_error max_attempts: 3,
+                 backoff: :exponential
+
+  # Protect against sustained failures
+  circuit_breaker threshold: 5,
+                  timeout: 60
+
+  # Final fallback
+  fallback_to "use_cache"
+end
+----
+
+=== Monitor Circuit Breaker State
+
+Track circuit breaker metrics:
+
+* Number of times circuit opened
+* Time spent in each state
+* Failure rates before/after protection
+* Fallback activation frequency
+
+=== Use Shared Circuit Breakers Wisely
+
+Share circuit breakers for:
+
+* Jobs calling the same external service
+* Jobs that should fail together
+* Jobs sharing the same resource pool
+
+Use separate circuit breakers for:
+
+* Independent services
+* Services with different SLAs
+* Jobs with different criticality levels
+
+== Integration with Other Features
+
+=== With Retry Logic
+
+[source,ruby]
+----
+job "api_call" do
+  runs_with ApiWorker
+
+  # First: Retry transient failures
+  retry_on_error max_attempts: 3,
+                 backoff: :exponential,
+                 initial_delay: 1
+
+  # Second: Circuit breaker for sustained failures
+  circuit_breaker threshold: 10,
+                  timeout: 60
+
+  # Final: Fallback when circuit opens
+  fallback_to "cached_data"
+end
+----
+
+=== With Error Handlers
+
+[source,ruby]
+----
+job "monitored_api_call" do
+  runs_with ApiWorker
+
+  circuit_breaker threshold: 5,
+                  timeout: 60
+
+  # Log circuit breaker events
+  on_error do |error, context|
+    if error.is_a?(Fractor::Workflow::CircuitOpenError)
+      Metrics.increment("circuit_breaker.open")
+      AlertService.notify("Circuit breaker opened for #{context.job_id}")
+    end
+  end
+
+  fallback_to "cached_data"
+end
+----
+
+== Related Examples
+
+* link:../retry/README.adoc[Retry Workflow] - Automatic retry with backoff strategies
+* link:../conditional/README.adoc[Conditional Workflow] - Conditional job execution
+* link:../fan_out/README.adoc[Fan-Out Workflow] - Parallel job execution
+
+== Learn More
+
+* link:../../../docs/workflows.adoc[Workflow Documentation]
+* link:../../../docs/getting-started.adoc[Getting Started Guide]
+* link:../README.adoc[All Workflow Examples]

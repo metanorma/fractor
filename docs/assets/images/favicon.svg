@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Simplified icon for favicon -->
+  <rect width="48" height="48" fill="white"/>
+
+  <!-- Define gradients -->
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#CC342D;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E74C3C;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#E67E22;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F39C12;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#C0392B;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E74C3C;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Simplified parallel paths -->
+  <path d="M 8 12 L 16 12 L 18 14 L 28 14 L 30 12 L 40 12"
+        stroke="url(#g1)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <circle cx="8" cy="12" r="2" fill="#CC342D"/>
+  <circle cx="40" cy="12" r="2" fill="#E74C3C"/>
+
+  <path d="M 8 24 L 15 24 L 17 22 L 29 22 L 31 24 L 40 24"
+        stroke="url(#g2)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <circle cx="8" cy="24" r="2" fill="#E67E22"/>
+  <circle cx="40" cy="24" r="2" fill="#F39C12"/>
+
+  <path d="M 8 36 L 16 36 L 18 34 L 28 34 L 30 36 L 40 36"
+        stroke="url(#g3)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <circle cx="8" cy="36" r="2" fill="#C0392B"/>
+  <circle cx="40" cy="36" r="2" fill="#E74C3C"/>
+
+  <!-- Connection points -->
+  <line x1="24" y1="14" x2="24" y2="22" stroke="#CC342D" stroke-width="1.5" opacity="0.5"/>
+  <line x1="24" y1="24" x2="24" y2="34" stroke="#E67E22" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Arrows -->
+  <polygon points="38,11 40,12 38,13" fill="#E74C3C"/>
+  <polygon points="38,23 40,24 38,25" fill="#F39C12"/>
+  <polygon points="38,35 40,36 38,37" fill="#E74C3C"/>
+</svg>

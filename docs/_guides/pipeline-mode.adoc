@@ -1,0 +1,731 @@
+---
+layout: default
+title: Pipeline mode (batch processing)
+parent: Guides
+nav_order: 1
+---
+= Pipeline mode (batch processing)
+
+== General
+
+Pipeline mode is designed for processing a defined set of work items with a clear beginning and end.
+
+Characteristics:
+
+* Processes a predetermined batch of work items
+* Stops automatically when all work is completed
+* Results are collected and accessed after processing completes
+* Ideal for one-time computations or periodic batch jobs
+
+Common use cases:
+
+* Processing a file or dataset
+* Batch data transformations
+* One-time parallel computations
+* Scheduled batch jobs
+* Hierarchical or multi-stage processing
+
+== Quick start
+
+=== General
+
+This quick start guide shows the minimum steps needed to get parallel batch processing working with Fractor.
+
+=== Step 1: Create a minimal Work class
+
+The Work class represents a unit of work to be processed by a Worker. It encapsulates the input data needed for processing.
+
+[source,ruby]
+----
+require 'fractor'
+
+class MyWork < Fractor::Work
+  # Store all properties in the input hash
+  def initialize(value)
+    super({ value: value })
+  end
+
+  # Accessor method for the stored value
+  def value
+    input[:value]
+  end
+
+  def to_s
+    "MyWork: #{value}"
+  end
+end
+----
+
+A Work is instantiated with the input data it will process this way:
+
+[source,ruby]
+----
+work_item = MyWork.new(42)
+puts work_item.to_s  # Output: MyWork: 42
+----
+
+=== Step 2: Create a minimal Worker class
+
+The Worker class defines the processing logic for work items. Each Worker instance runs within its own Ractor and processes Work objects sent to it.
+
+It must implement the `process(work)` method, which takes a Work object as input and returns a `Fractor::WorkResult` object.
+
+The `process` method should handle both successful processing and error conditions.
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def process(work)
+    # Your processing logic here
+    result = work.input * 2
+
+    # Return a success result
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    # Return an error result if something goes wrong
+    Fractor::WorkResult.new(error: e.message, work: work)
+  end
+end
+----
+
+The `process` method can perform any computation you need. In this example, it multiplies the input by 2. If an error occurs, it catches the exception and returns an error result.
+
+=== Step 3: Set up and run the Supervisor
+
+The Supervisor class orchestrates the entire framework, managing worker Ractors, distributing work, and collecting results.
+
+[source,ruby]
+----
+# Create the supervisor with auto-detected number of workers
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }  # Number of workers auto-detected
+  ]
+)
+
+# Add work items (instances of Work subclasses)
+supervisor.add_work_items([
+  MyWork.new(1),
+  MyWork.new(2),
+  MyWork.new(3),
+  MyWork.new(4),
+  MyWork.new(5)
+])
+
+# Run the processing
+supervisor.run
+
+# Access results after completion
+puts "Results: #{supervisor.results.results.map(&:result)}"
+puts "Errors: #{supervisor.results.errors.size}"
+----
+
+That's it! With these three simple steps, you have a working parallel processing system using Fractor in pipeline mode.
+
+== Pipeline mode components
+
+=== General
+
+This section describes the components and their detailed usage specifically for pipeline mode (batch processing). For continuous mode, see the link:continuous-mode.adoc[Continuous Mode] documentation.
+
+Pipeline mode uses only the core components without any additional primitives.
+
+=== Work class
+
+==== Purpose and responsibilities
+
+The `Fractor::Work` class represents a unit of work to be processed by a Worker. Its primary responsibility is to encapsulate the input data needed for processing.
+
+==== Implementation requirements
+
+At minimum, your Work subclass should:
+
+. Inherit from `Fractor::Work`
+. Pass the input data to the superclass constructor
+
+[source,ruby]
+----
+class MyWork < Fractor::Work
+  def initialize(input)
+    super(input) # This stores input in @input
+    # Add any additional initialization if needed
+  end
+end
+----
+
+==== Advanced usage
+
+You can extend your Work class to include additional data or methods:
+
+[source,ruby]
+----
+class ComplexWork < Fractor::Work
+  attr_reader :options
+
+  def initialize(input, options = {})
+    super(input)
+    @options = options
+  end
+
+  def high_priority?
+    @options[:priority] == :high
+  end
+
+  def to_s
+    "ComplexWork: #{@input} (#{@options[:priority]} priority)"
+  end
+end
+----
+
+[TIP]
+====
+* Keep Work objects lightweight and serializable since they will be passed between Ractors
+* Implement a meaningful `to_s` method for better debugging
+* Consider adding validation in the initializer to catch issues early
+* Use module namespacing to avoid class name collisions in larger applications
+====
+
+===== Module namespacing best practices
+
+When building larger applications or libraries with Fractor, wrap your Work and Worker classes in modules to avoid naming collisions:
+
+[source,ruby]
+----
+module ImageProcessor
+  class ImageWork < Fractor::Work
+    def initialize(image_path, options = {})
+      super({ path: image_path, options: options })
+    end
+
+    def path
+      input[:path]
+    end
+  end
+
+  class ImageProcessorWorker < Fractor::Worker
+    def initialize(name: nil)
+      # Worker initialization
+    end
+
+    def process(work)
+      # Process the image
+      result = process_image(work.path)
+      Fractor::WorkResult.new(result: result, work: work)
+    end
+  end
+end
+
+# Usage
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ImageProcessor::ImageProcessorWorker }
+  ]
+)
+
+supervisor.add_work_items([
+  ImageProcessor::ImageWork.new("photo.jpg", { resize: "800x600" })
+])
+----
+
+=== Worker class
+
+==== Purpose and responsibilities
+
+The `Fractor::Worker` class defines the processing logic for work items. Each Worker instance runs within its own Ractor and processes Work objects sent to it.
+
+==== Implementation requirements
+
+Your Worker subclass must:
+
+. Inherit from `Fractor::Worker`
+. Implement the `process(work)` method
+. Return a `Fractor::WorkResult` object from the `process` method
+. Handle both successful processing and error conditions
+
+[TIP]
+====
+Workers are instantiated inside Ractors by the framework. The `initialize` method receives an optional `name:` parameter. You can use this for debugging or worker identification:
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def initialize(name: nil)  # Accept optional name parameter
+    @worker_name = name
+  end
+
+  def process(work)
+    puts "Worker #{@worker_name} processing #{work.input}" if @worker_name
+    result = work.input * 2
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+end
+----
+====
+
+A complete Worker example with error handling:
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def initialize(name: nil)  # Accept optional name parameter
+    @debug = name ? true : false
+  end
+
+  def process(work)
+    if work.input < 0
+      return Fractor::WorkResult.new(
+        error: "Cannot process negative numbers",
+        work: work
+      )
+    end
+
+    # Normal processing...
+    result = work.input * 2
+
+    # Return a WorkResult
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+end
+----
+
+==== Error handling
+
+The Worker class should handle two types of errors.
+
+===== Handled errors
+
+These are expected error conditions that your code explicitly checks for.
+
+[source,ruby]
+----
+def process(work)
+  if work.input < 0
+    return Fractor::WorkResult.new(
+      error: "Cannot process negative numbers",
+      work: work
+    )
+  end
+
+  # Normal processing...
+  Fractor::WorkResult.new(result: calculated_value, work: work)
+end
+----
+
+===== Unexpected errors caught by rescue
+
+These are unexpected exceptions that may occur during processing. You should catch these and convert them into error results.
+
+[source,ruby]
+----
+def process(work)
+  # Processing that might raise exceptions
+  result = complex_calculation(work.input)
+
+  Fractor::WorkResult.new(result: result, work: work)
+rescue StandardError => e
+  # Catch and convert any unexpected exceptions to error results
+  Fractor::WorkResult.new(
+    error: "An unexpected error occurred: #{e.message}",
+    work: work
+  )
+end
+----
+
+[TIP]
+====
+* Keep the `process` method focused on a single responsibility
+* Use meaningful error messages that help diagnose issues
+* Consider adding logging within the `process` method for debugging
+* Ensure all paths return a valid `WorkResult` object
+====
+
+=== Supervisor class for pipeline mode
+
+==== Purpose and responsibilities
+
+The `Fractor::Supervisor` class orchestrates the entire framework, managing worker Ractors, distributing work, and collecting results.
+
+==== Configuration options
+
+When creating a Supervisor for pipeline mode, configure worker pools:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    # Pool 1 - for general data processing
+    { worker_class: MyWorker, num_workers: 4 },
+
+    # Pool 2 - for specialized image processing
+    { worker_class: ImageWorker, num_workers: 2 }
+  ]
+  # Note: continuous_mode defaults to false for pipeline mode
+)
+----
+
+==== Worker auto-detection
+
+Fractor automatically detects the number of available processors on your system and uses that value when `num_workers` is not specified. This provides optimal resource utilization across different deployment environments without requiring manual configuration.
+
+[source,ruby]
+----
+# Auto-detect number of workers (recommended for most cases)
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }  # Will use number of available processors
+  ]
+)
+
+# Explicitly set number of workers (useful for specific requirements)
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 4 }  # Always use exactly 4 workers
+  ]
+)
+
+# Mix auto-detection and explicit configuration
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: FastWorker },                    # Auto-detected
+    { worker_class: HeavyWorker, num_workers: 2 }    # Explicitly 2 workers
+  ]
+)
+----
+
+The auto-detection uses Ruby's `Etc.nprocessors` which returns the number of available processors. If detection fails for any reason, it falls back to 2 workers.
+
+[TIP]
+====
+* Use auto-detection for portable code that adapts to different environments
+* Explicitly set `num_workers` when you need precise control over resource usage
+* Consider system load and other factors when choosing explicit values
+====
+
+==== Adding work
+
+You can add work items individually or in batches:
+
+[source,ruby]
+----
+# Add a single item
+supervisor.add_work_item(MyWork.new(42))
+
+# Add multiple items
+supervisor.add_work_items([
+  MyWork.new(1),
+  MyWork.new(2),
+  MyWork.new(3),
+  MyWork.new(4),
+  MyWork.new(5)
+])
+
+# Add items of different work types
+supervisor.add_work_items([
+  TextWork.new("Process this text"),
+  ImageWork.new({ width: 800, height: 600 })
+])
+----
+
+The Supervisor can handle any Work object that inherits from Fractor::Work. Workers must check the type of Work they receive and process it accordingly.
+
+==== Running and monitoring
+
+To start processing:
+
+[source,ruby]
+----
+# Start processing and block until complete
+supervisor.run
+----
+
+The Supervisor automatically handles:
+
+* Starting the worker Ractors
+* Distributing work items to available workers
+* Collecting results and errors
+* Graceful shutdown on completion or interruption (Ctrl+C)
+
+=== ResultAggregator for pipeline mode
+
+==== Purpose and responsibilities
+
+The `Fractor::ResultAggregator` collects and organizes all results from the workers, separating successful results from errors.
+
+In pipeline mode, results are collected throughout processing and accessed after the supervisor finishes running.
+
+==== Accessing results
+
+After processing completes:
+
+[source,ruby]
+----
+# Get the ResultAggregator
+aggregator = supervisor.results
+
+# Check counts
+puts "Processed #{aggregator.results.size} items successfully"
+puts "Encountered #{aggregator.errors.size} errors"
+
+# Access successful results
+aggregator.results.each do |result|
+  puts "Work item #{result.work.input} produced #{result.result}"
+end
+
+# Access errors
+aggregator.errors.each do |error_result|
+  puts "Work item #{error_result.work.input} failed: #{error_result.error}"
+end
+----
+
+To access successful results:
+
+[source,ruby]
+----
+# Get all successful results
+successful_results = supervisor.results.results
+
+# Extract just the result values
+result_values = successful_results.map(&:result)
+----
+
+To access errors:
+
+[source,ruby]
+----
+# Get all error results
+error_results = supervisor.results.errors
+
+# Extract error messages
+error_messages = error_results.map(&:error)
+
+# Get the work items that failed
+failed_work_items = error_results.map(&:work)
+----
+
+[TIP]
+====
+* Check both successful results and errors after processing completes
+* Consider implementing custom reporting based on the aggregated results
+====
+
+== Pipeline mode patterns
+
+=== Custom work distribution
+
+For more complex scenarios, you might want to prioritize certain work items:
+
+[source,ruby]
+----
+# Create Work objects for high priority items
+high_priority_works = high_priority_items.map { |item| MyWork.new(item) }
+
+# Add high-priority items first
+supervisor.add_work_items(high_priority_works)
+
+# Run with just enough workers for high-priority items
+supervisor.run
+
+# Create Work objects for lower priority items
+low_priority_works = low_priority_items.map { |item| MyWork.new(item) }
+
+# Add and process lower-priority items
+supervisor.add_work_items(low_priority_works)
+supervisor.run
+----
+
+=== Handling large datasets
+
+For very large datasets, consider processing in batches:
+
+[source,ruby]
+----
+large_dataset.each_slice(1000) do |batch|
+  # Convert batch items to Work objects
+  work_batch = batch.map { |item| MyWork.new(item) }
+
+  supervisor.add_work_items(work_batch)
+  supervisor.run
+
+  # Process this batch's results before continuing
+  process_batch_results(supervisor.results)
+end
+----
+
+=== Multi-work type processing
+
+The Multi-Work Type pattern demonstrates how a single supervisor and worker can handle multiple types of work items.
+
+[source,ruby]
+----
+class UniversalWorker < Fractor::Worker
+  def process(work)
+    case work
+    when TextWork
+      process_text(work)
+    when ImageWork
+      process_image(work)
+    else
+      Fractor::WorkResult.new(
+        error: "Unknown work type: #{work.class}",
+        work: work
+      )
+    end
+  end
+
+  private
+
+  def process_text(work)
+    result = work.text.upcase
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+
+  def process_image(work)
+    result = { width: work.width * 2, height: work.height * 2 }
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+end
+
+# Add different types of work
+supervisor.add_work_items([
+  TextWork.new("hello"),
+  ImageWork.new(width: 100, height: 100),
+  TextWork.new("world")
+])
+----
+
+=== Hierarchical work processing
+
+The Producer/Subscriber pattern showcases processing that generates sub-work:
+
+[source,ruby]
+----
+# First pass: Process documents
+supervisor.add_work_items(documents.map { |doc| DocumentWork.new(doc) })
+supervisor.run
+
+# Collect sections generated from documents
+sections = supervisor.results.results.flat_map do |result|
+  result.result[:sections]
+end
+
+# Second pass: Process sections
+supervisor.add_work_items(sections.map { |section| SectionWork.new(section) })
+supervisor.run
+----
+
+=== Pipeline stages
+
+The Pipeline Processing pattern implements multi-stage transformation:
+
+[source,ruby]
+----
+# Stage 1: Extract data
+supervisor1 = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: ExtractionWorker }]
+)
+supervisor1.add_work_items(raw_data.map { |d| ExtractionWork.new(d) })
+supervisor1.run
+extracted = supervisor1.results.results.map(&:result)
+
+# Stage 2: Transform data
+supervisor2 = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: TransformWorker }]
+)
+supervisor2.add_work_items(extracted.map { |e| TransformWork.new(e) })
+supervisor2.run
+transformed = supervisor2.results.results.map(&:result)
+
+# Stage 3: Load data
+supervisor3 = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: LoadWorker }]
+)
+supervisor3.add_work_items(transformed.map { |t| LoadWork.new(t) })
+supervisor3.run
+----
+
+== Pipeline mode examples
+
+=== Simple example
+
+The Simple Example (link:../examples/simple/[examples/simple/]) demonstrates the basic usage of the Fractor framework. It shows how to create a simple Work class, a Worker class, and a Supervisor to manage the processing of work items in parallel.
+
+Key features:
+
+* Basic Work and Worker class implementation
+* Simple Supervisor setup
+* Parallel processing of work items
+* Error handling and result aggregation
+* Auto-detection of available processors
+* Graceful shutdown on completion
+
+=== Auto-detection example
+
+The Auto-Detection Example (link:../examples/auto_detection/[examples/auto_detection/]) demonstrates Fractor's automatic worker detection feature. It shows how to use auto-detection, explicit configuration, and mixed approaches for controlling the number of workers.
+
+Key features:
+
+* Automatic detection of available processors
+* Comparison of auto-detection vs explicit configuration
+* Mixed configuration with multiple worker pools
+* Best practices for worker configuration
+* Portable code that adapts to different environments
+
+=== Hierarchical hasher
+
+The Hierarchical Hasher example (link:../examples/hierarchical_hasher/[examples/hierarchical_hasher/]) demonstrates how to use the Fractor framework to process a file in parallel by breaking it into chunks, hashing each chunk independently, and then combining the results into a final hash.
+
+Key features:
+
+* Parallel data chunking for large files
+* Independent processing of data segments
+* Aggregation of results to form a final output
+
+=== Multi-work type
+
+The Multi-Work Type example (link:../examples/multi_work_type/[examples/multi_work_type/]) demonstrates how a single Fractor supervisor and worker can handle multiple types of work items (e.g., `TextWork` and `ImageWork`).
+
+Key features:
+
+* Support for multiple `Fractor::Work` subclasses
+* Polymorphic worker processing based on work type
+* Unified workflow for diverse tasks
+
+=== Pipeline processing
+
+The Pipeline Processing example (link:../examples/pipeline_processing/[examples/pipeline_processing/]) implements a multi-stage processing pipeline where data flows sequentially through a series of transformations.
+
+Key features:
+
+* Sequential data flow through multiple processing stages
+* Concurrent execution of different pipeline stages
+* Data transformation at each step of the pipeline
+
+=== Producer/subscriber
+
+The Producer/Subscriber example (link:../examples/producer_subscriber/[examples/producer_subscriber/]) showcases a multi-stage document processing system where initial work generates additional sub-work items.
+
+Key features:
+
+* Implementation of producer-consumer patterns
+* Dynamic generation of sub-work based on initial processing
+* Construction of hierarchical result structures
+
+=== Scatter/gather
+
+The Scatter/Gather example (link:../examples/scatter_gather/[examples/scatter_gather/]) illustrates how a large task is broken down (scattered) into smaller, independent subtasks that are processed in parallel.
+
+Key features:
+
+* Distribution of a large task into smaller, parallelizable subtasks
+* Concurrent processing of subtasks
+* Aggregation of partial results into a final result
+
+=== Specialized workers
+
+The Specialized Workers example (link:../examples/specialized_workers/[examples/specialized_workers/]) demonstrates creating distinct worker types, each tailored to handle specific kinds of tasks.
+
+Key features:
+
+* Creation of worker classes for specific processing domains
+* Routing of work items to appropriately specialized workers
+* Optimization of resources and logic per task type

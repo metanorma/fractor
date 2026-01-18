@@ -1,0 +1,39 @@
+# Lychee link checker configuration
+
+# Cache results to avoid re-checking
+cache = true
+
+# Maximum number of concurrent requests
+max_concurrency = 10
+
+# Accept 200-299 status codes
+accept = [200, 201, 202, 203, 204, 205, 206, 207, 208, 226]
+
+# Timeout for requests (seconds)
+timeout = 30
+
+# Retry failed links
+max_retries = 3
+
+# User agent string
+user_agent = "Mozilla/5.0 (compatible; Lychee/0.x; +https://github.com/lycheeverse/lychee)"
+
+# Exclude path patterns (file/directory paths to skip)
+exclude_path = [
+  "vendor",
+  "node_modules",
+  ".jekyll-cache",
+  "_site"
+]
+
+# Check external links
+include_external = true
+
+# Follow redirects
+max_redirects = 10
+
+# Check fragments (anchors)
+check_fragments = true
+
+# Base URL for checking local links
+base_url = "https://metanorma.github.io/fractor"

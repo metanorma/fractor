@@ -1,0 +1,55 @@
+---
+layout: default
+title: Overview
+nav_order: 1
+---
+
+== Overview
+
+In-depth documentation on Fractor's features and capabilities.
+
+These guides provide comprehensive coverage of Fractor's core features,
+organized from foundational concepts to advanced capabilities.
+
+=== Available Guides
+
+==== Foundation
+
+* *link:core-concepts/[Core Concepts]* - Architecture and component interactions
+* *link:pipeline-mode/[Pipeline Mode]* - Batch processing patterns and best practices
+* *link:continuous-mode/[Continuous Mode]* - Long-running server applications
+
+==== Advanced Features
+
+* *link:workflows/[Workflows]* - Complex processing graphs with retry, circuit breakers, and more
+* *link:error-reporting/[Error Reporting]* - Error categorization, monitoring, and analytics
+* *link:signal-handling/[Signal Handling]* - Graceful shutdown and signal management
+
+==== Support
+
+* *link:cookbook/[Cookbook]* - Common patterns and recipes
+* *link:troubleshooting/[Troubleshooting]* - Diagnose and resolve common issues
+
+=== How to Use These Guides
+
+Each guide is structured to provide:
+
+. *Overview* - What the feature does and when to use it
+. *Core Concepts* - How it works internally
+. *Usage Patterns* - Common use cases with code examples
+. *Best Practices* - Production-ready recommendations
+. *Troubleshooting* - Common issues and solutions
+
+=== Prerequisites
+
+Before diving into these guides, you should:
+
+* Complete the link:../tutorials/[Tutorials] section
+* Have Fractor installed and working
+* Understand basic parallel processing concepts
+
+=== Related Resources
+
+* link:../tutorials/[Tutorials] - Step-by-step introductory guides
+* link:../reference/[Reference] - API documentation and advanced patterns
+* link:../reference/examples/[Examples] - Real-world use cases

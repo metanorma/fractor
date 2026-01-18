@@ -1,0 +1,48 @@
+---
+layout: default
+title: Overview
+nav_order: 1
+---
+
+== Overview
+
+Step-by-step guides to help you get started with Fractor.
+
+These tutorials are designed to be followed in order:
+
+. *link:installation/[Installation]* - Set up Fractor in your environment
+. *link:first-application/[Your First Application]* - Build a simple parallel processor
+. *link:getting-started/[Getting Started]* - Understand modes and patterns
+
+=== What You'll Learn
+
+By completing these tutorials, you'll:
+
+* Install and verify Fractor on your system
+* Understand the core components (Work, Worker, Supervisor)
+* Create your first parallel processing application
+* Learn when to use Pipeline vs Continuous mode
+* Handle errors gracefully
+* Access and use results
+
+=== Prerequisites
+
+* Ruby 3.0 or later
+* Basic Ruby programming knowledge
+* Understanding of parallel processing concepts (helpful but not required)
+
+=== Time Investment
+
+* *Installation*: 5-10 minutes
+* *Your First Application*: 20-30 minutes
+* *Getting Started*: 15-20 minutes
+
+*Total*: About 1 hour to complete all tutorials
+
+=== Next Steps
+
+After completing the tutorials, continue to:
+
+* link:../guides/[Guides] for in-depth feature documentation
+* link:../reference/[Reference] for API details and patterns
+* link:../reference/examples/[Examples] for real-world use cases

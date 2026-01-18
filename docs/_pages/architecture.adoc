@@ -1,0 +1,1302 @@
+---
+layout: default
+title: Architecture
+nav_order: 3
+---
+= Architecture guide
+
+== Overview
+
+This guide provides an in-depth exploration of Fractor's architecture, covering system components, concurrency model, workflow execution, queue management, and error handling strategies.
+
+.Architecture documentation structure
+[source]
+----
+Architecture Guide
+├── High-Level Architecture    (System components & responsibilities)
+├── Concurrency Architecture   (Ractor-based parallelism)
+├── Workflow Architecture      (Multi-step processing graphs)
+├── Queue Architecture         (Work distribution & priority)
+└── Error Handling Architecture (Error propagation & recovery)
+----
+
+== High-level architecture
+
+=== System components
+
+Fractor consists of four primary architectural layers:
+
+[source]
+----
+┌──────────────────────────────────────────────────────────────┐
+│                   APPLICATION LAYER                          │
+│                                                              │
+│  Business Logic    Workflows      Work Definitions          │
+│  - Domain code      - Job graphs   - Work subclasses        │
+│  - Processing       - Dependencies - Worker subclasses      │
+│  - Validation       - Type safety  - Results                │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                 ORCHESTRATION LAYER                          │
+│                                                              │
+│  Supervisor         WorkflowExecutor   ContinuousServer     │
+│  - Pool mgmt        - Job execution    - Long-running       │
+│  - Distribution     - Dep resolution   - Threading          │
+│  - Coordination     - State mgmt       - Callbacks          │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                  CONCURRENCY LAYER                           │
+│                                                              │
+│  WrappedRactor      WorkQueue         ResultAggregator      │
+│  - Ractor lifecycle - Thread-safe     - Result collection   │
+│  - Messaging        - Batch ops       - Error separation    │
+│  - Error handling   - Backpressure    - Callbacks           │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    RACTOR LAYER                              │
+│                                                              │
+│  Ractor 1    Ractor 2    Ractor 3    ...    Ractor N       │
+│  - Worker    - Worker    - Worker           - Worker        │
+│  - Isolated  - Isolated  - Isolated         - Isolated      │
+│  - Parallel  - Parallel  - Parallel         - Parallel      │
+└──────────────────────────────────────────────────────────────┘
+----
+
+=== Component responsibilities
+
+[cols="2,3,3"]
+|===
+|Layer |Component |Responsibility
+
+.4+|Application
+|Business Logic
+|Domain-specific processing and validation
+
+|Workflows
+|Define multi-step processing graphs with dependencies
+
+|Work Classes
+|Encapsulate input data for processing
+
+|Worker Classes
+|Implement processing logic for work items
+
+.3+|Orchestration
+|[`Supervisor`](../../lib/fractor/supervisor.rb)
+|Manage worker pools, distribute work, collect results
+
+|[`WorkflowExecutor`](../../lib/fractor/workflow/workflow_executor.rb)
+|Execute workflows, resolve dependencies, track state
+
+|[`ContinuousServer`](../../lib/fractor/continuous_server.rb)
+|Manage long-running services with threading and callbacks
+
+.3+|Concurrency
+|[`WrappedRactor`](../../lib/fractor/wrapped_ractor.rb)
+|Manage Ractor lifecycle, handle messaging
+
+|[`WorkQueue`](../../lib/fractor/work_queue.rb) / [`PriorityWorkQueue`](../../lib/fractor/priority_work_queue.rb)
+|Thread-safe work storage with priority support
+
+|[`ResultAggregator`](../../lib/fractor/result_aggregator.rb)
+|Collect and organize processing results
+
+|Ractor
+|Ruby Ractor
+|Provide true parallelism with memory isolation
+|===
+
+=== Layered architecture benefits
+
+The layered architecture provides several key benefits:
+
+. *Separation of concerns*: Each layer has clear, distinct responsibilities
+. *Testability*: Layers can be tested independently
+. *Flexibility*: Swap implementations without affecting other layers
+. *Maintainability*: Changes localized to relevant layers
+. *Extensibility*: Add features by extending appropriate layers
+
+=== Component lifecycle
+
+.Component lifecycle in pipeline mode
+[source]
+----
+Initialization Phase
+  │
+  ├──> Create Supervisor
+  │     └──> Configure worker pools
+  │           └──> Validate worker classes
+  │
+  ├──> Add work items
+  │     └──> Validate work objects
+  │           └──> Add to queue
+  │
+Execution Phase
+  │
+  ├──> Start workers
+  │     └──> Create WrappedRactors
+  │           └──> Spawn Ractors
+  │                 └──> Instantiate Workers
+  │
+  ├──> Distribution loop
+  │     └──> Ractor.select (wait for available worker)
+  │           └──> Send work to available Ractor
+  │                 └──> Worker.process(work)
+  │
+  ├──> Collection loop
+  │     └──> Receive WorkResult from Ractor
+  │           └──> Add to ResultAggregator
+  │                 └──> Callback execution (if any)
+  │
+Completion Phase
+  │
+  └──> All work processed
+        └──> Return results to caller
+              └──> Cleanup resources
+----
+
+.Component lifecycle in continuous mode
+[source]
+----
+Initialization Phase
+  │
+  ├──> Create Supervisor (continuous: true)
+  │     └──> Configure worker pools
+  │
+  ├──> Register work sources
+  │     └──> Callback functions
+  │
+  ├──> Create ContinuousServer (optional)
+  │     └──> Setup threading
+  │           └──> Results processing thread
+  │
+Execution Phase (Infinite Loop)
+  │
+  ├──> Poll work sources
+  │     └──> Execute callbacks
+  │           └──> Add new work to queue
+  │
+  ├──> Timer thread wakes supervisor
+  │     └──> Check for idle workers
+  │           └──> Distribute available work
+  │
+  ├──> Workers process continuously
+  │     └──> Return results
+  │           └── > Callbacks execute
+  │
+Shutdown Phase
+  │
+  ├──> Receive shutdown signal (SIGINT/SIGTERM)
+  │     └──> Set @running = false
+  │           └──> Complete in-progress work
+  │                 └──> Send :shutdown to workers
+  │
+  └──> Cleanup
+        └──> Close Ractors
+              └──> Close log files
+                    └──> Exit cleanly
+----
+
+=== Deployment topologies
+
+==== Single-process deployment
+
+Simplest deployment for moderate workloads:
+
+[source]
+----
+┌─────────────────────────────────┐
+│      Application Process        │
+│                                 │
+│  ┌───────────────────────────┐ │
+│  │      Supervisor           │ │
+│  │  ┌────────────────────┐   │ │
+│  │  │  Worker Pool (N)   │   │ │
+│  │  │  - Ractor 1        │   │ │
+│  │  │  - Ractor 2        │   │ │
+│  │  │  - Ractor N        │   │ │
+│  │  └────────────────────┘   │ │
+│  └───────────────────────────┘ │
+└─────────────────────────────────┘
+----
+
+Best for:
+
+* Development and testing
+* Small to medium workloads
+* Single machine deployments
+* Memory-constrained environments
+
+==== Multi-pool deployment
+
+Multiple worker pools for different work types:
+
+[source]
+----
+┌─────────────────────────────────────────────────────┐
+│           Application Process                       │
+│                                                     │
+│  ┌────────────────────────────────────────────┐    │
+│  │           Supervisor                       │    │
+│  │  ┌──────────────┐  ┌──────────────┐       │    │
+│  │  │ Pool 1       │  │ Pool 2       │       │    │
+│  │  │ CPUWorker    │  │ IOWorker     │       │    │
+│  │  │ (4 ractors)  │  │ (16 ractors) │       │    │
+│  │  └──────────────┘  └──────────────┘       │    │
+│  │          ┌──────────────┐                  │    │
+│  │          │ Pool 3       │                  │    │
+│  │          │ MixedWorker  │                  │    │
+│  │          │ (8 ractors)  │                  │    │
+│  │          └──────────────┘                  │    │
+│  └────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────┘
+----
+
+Best for:
+
+* Mixed CPU/IO workloads
+* Different performance characteristics
+* Resource optimization
+* Specialized processing requirements
+
+==== Distributed queue deployment
+
+Multiple processes consuming from shared queue:
+
+[source]
+----
+┌──────────────────────┐
+│  Work Producer       │
+│  (Web app, API)      │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│  External Queue      │
+│  (Redis, RabbitMQ)   │
+└──┬────────┬──────┬───┘
+   │        │      │
+   ▼        ▼      ▼
+┌────┐   ┌────┐ ┌────┐
+│App1│   │App2│ │AppN│
+│    │   │    │ │    │
+│Sup │   │Sup │ │Sup │
+│ └─┐│   │ └─┐│ │ └─┐│
+│ W │   │ W │ │ W │
+└────┘   └────┘ └────┘
+----
+
+Best for:
+
+* High-volume workloads
+* Horizontal scaling
+* Fault tolerance
+* Load balancing
+
+== Concurrency architecture
+
+=== Ractor-based parallelism
+
+Fractor leverages Ruby's Ractor feature for true parallelism:
+
+[source]
+----
+Traditional Ruby Threading (GIL-limited)
+┌──────────────────────────────────────────────┐
+│  Thread 1  Thread 2  Thread 3  Thread 4     │
+│     │         │         │         │          │
+│     └─────────┴─────────┴─────────┘          │
+│              GIL Bottleneck                  │
+│              (One at a time)                 │
+└──────────────────────────────────────────────┘
+
+Fractor with Ractors (No GIL)
+┌──────────────────────────────────────────────┐
+│ Ractor1   Ractor2   Ractor3   Ractor4       │
+│    ║         ║         ║         ║           │
+│    ║         ║         ║         ║           │
+│    ▼         ▼         ▼         ▼           │
+│  CPU 1     CPU 2     CPU 3     CPU 4        │
+│  (True parallelism on separate cores)       │
+└──────────────────────────────────────────────┘
+----
+
+Key advantages:
+
+* *True parallelism*: No GIL limitations
+* *CPU utilization*: All cores utilized simultaneously
+* *Predictable performance*: Linear scaling with cores
+* *Memory isolation*: No race conditions
+
+=== Message passing protocol
+
+Fractor uses structured message passing between components:
+
+.Message types and flow
+[source]
+----
+Supervisor ← → Ractor Communication
+
+Messages from Ractor to Supervisor:
+┌────────────┬──────────────────────────────────┐
+│ Type       │ Purpose                          │
+├────────────┼──────────────────────────────────┤
+│:initialize │ Ractor ready, request work       │
+│:result     │ Work completed successfully      │
+│:error      │ Work failed with error           │
+│:shutdown   │ Shutdown acknowledged            │
+└────────────┴──────────────────────────────────┘
+
+Messages from Supervisor to Ractor:
+┌────────────┬──────────────────────────────────┐
+│ Type       │ Purpose                          │
+├────────────┼──────────────────────────────────┤
+│Work object │ Work item to process             │
+│:shutdown   │ Graceful shutdown request        │
+└────────────┴──────────────────────────────────┘
+----
+
+.Complete message flow sequence
+[example]
+====
+[source]
+----
+Time  Supervisor                          Ractor
+ │                                           │
+ ├──── new Ractor(Worker) ───────────────────>│
+ │                                           │
+ │                                    [Initialize]
+ │                                           │
+ │<──── :initialize message ─────────────────┤
+ │     { type: :initialize,                 │
+ │       processor: "worker-1" }            │
+ │                                           │
+ ├──── Work object ──────────────────────────>│
+ │                                           │
+ │                                    [Processing]
+ │                                     work.process
+ │                                           │
+ │<──── :result message ──────────────────────┤
+ │     { type: :result,                     │
+ │       result: WorkResult,                │
+ │       processor: "worker-1" }            │
+ │                                           │
+[Collect result, send next work or mark idle]
+ │                                           │
+ ├──── Next Work ────────────────────────────>│
+ │                                           │
+ │                                   [Continue...]
+ │                                           │
+[On shutdown signal]                         │
+ │                                           │
+ ├──── :shutdown ────────────────────────────>│
+ │                                           │
+ │                                    [Cleanup]
+ │                                           │
+ │<──── :shutdown ────────────────────────────┤
+ │     { type: :shutdown,                   │
+ │       processor: "worker-1" }            │
+ │                                           │
+[Remove from active ractors]                 [Terminate]
+ │                                           │
+----
+====
+
+=== Backpressure mechanisms
+
+Fractor implements several backpressure mechanisms to prevent overload:
+
+==== Queue-based backpressure
+
+[source,ruby]
+----
+# Work queue fills up when workers are slower than producers
+queue = Fractor::WorkQueue.new
+
+# Producer blocks when queue reaches capacity (if configured)
+# Workers pull at their own pace
+supervisor.register_work_source do
+  # This callback controls production rate
+  if queue.size < MAX_QUEUE_SIZE
+    fetch_new_work
+  else
+    nil  # Skip this cycle, allow queue to drain
+  end
+end
+----
+
+==== Worker pool saturation
+
+[source]
+----
+All Workers Busy
+  │
+  ├──> New work added to queue
+  │     │
+  │     ├──> Queue grows
+  │     │     │
+  │     │     ├──> Producer detects high queue size
+  │     │     │     │
+  │     │     │     └──> Slow down production
+  │     │     │
+  │     │     └──> OR Add more workers (scale up)
+  │     │
+  │     └──> Workers complete tasks
+  │           │
+  │           └──> Queue drains
+  │                 │
+  │                 └──> Production resumes normal rate
+  │
+Workers Available
+----
+
+==== Priority-based flow control
+
+Using [`PriorityWorkQueue`](../../lib/fractor/priority_work_queue.rb):
+
+[source,ruby]
+----
+# Critical work processed first
+queue = Fractor::PriorityWorkQueue.new(
+  aging_enabled: true,  # Prevent starvation
+  aging_threshold: 60   # Boost priority after 60s
+)
+
+# Low-priority work waits but won't starve
+queue.push(PriorityWork.new(data, priority: :low))
+queue.push(PriorityWork.new(urgent, priority: :critical))
+
+# Critical work processed immediately
+# Low-priority work eventually gets priority boost
+----
+
+=== Thread safety design
+
+Fractor ensures thread safety through multiple mechanisms:
+
+. *Immutable work objects*
++
+[source,ruby]
+----
+class MyWork < Fractor::Work
+  def initialize(data)
+    # Freeze data to ensure immutability
+    super(data.freeze)
+  end
+end
+----
+
+. *Isolated Ractor memory*
++
+[source]
+----
+Ractor A Memory          Ractor B Memory
+┌─────────────┐          ┌─────────────┐
+│ @counter    │          │ @counter    │
+│ @state      │          │ @state      │
+│ @worker     │          │ @worker     │
+└─────────────┘          └─────────────┘
+      │                        │
+      └────────╳───────────────┘
+           No shared access
+----
+
+. *Thread-safe queues*
++
+[source,ruby]
+----
+# WorkQueue uses Thread::Queue internally
+class WorkQueue
+  def initialize
+    @queue = Thread::Queue.new  # Thread-safe
+    @mutex = Mutex.new          # Additional safety
+  end
+end
+----
+
+. *Message copying*
++
+[source]
+----
+Send: work object copied → Ractor receives copy
+Receive: result copied → Supervisor receives copy
+
+No shared references between Ractors
+----
+
+== Workflow architecture
+
+=== Workflow DSL implementation
+
+The workflow DSL provides a declarative way to define complex processing graphs:
+
+.Workflow definition structure
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "processing-pipeline" do
+    # Metadata
+    input_type InputModel
+    output_type OutputModel
+
+    # Job definitions with dependencies
+    job "parse", ParseWorker
+    job "validate", ValidateWorker, needs: "parse"
+    job "transform", TransformWorker, needs: "validate"
+    job "store", StoreWorker, needs: "transform", outputs: :workflow
+
+    # Workflow boundaries
+    start_with "parse"
+    end_with "store"
+  end
+end
+----
+
+=== Dependency graph resolution
+
+The workflow executor resolves dependencies using topological sorting:
+
+[source]
+----
+Dependency Graph:
+        parse
+          │
+          ▼
+       validate
+          │
+          ▼
+      transform
+          │
+          ▼
+        store
+
+Execution Order (topological sort):
+  1. parse      (no dependencies)
+  2. validate   (depends on parse)
+  3. transform  (depends on validate)
+  4. store      (depends on transform)
+
+Parallel Execution Where Possible:
+      ┌─────┐
+      │parse│
+      └──┬──┘
+         ├────────────┐
+         ▼            ▼
+    ┌────────┐  ┌─────────┐
+    │validate│  │summarize│  ← Can run in parallel
+    └────┬───┘  └────┬────┘
+         │           │
+         └─────┬─────┘
+               ▼
+         ┌─────────┐
+         │transform│
+         └─────────┘
+----
+
+.Dependency resolution algorithm
+[example]
+====
+[source,ruby]
+----
+# Pseudocode for dependency resolution
+def resolve_execution_order(jobs)
+  # Build dependency graph
+  graph = build_graph(jobs)
+
+  # Find jobs with no dependencies (starting points)
+  ready = jobs.select { |j| j.dependencies.empty? }
+
+  # Topological sort
+  order = []
+  while ready.any?
+    # Process ready jobs
+    job = ready.shift
+    order << job
+
+    # Find newly ready jobs
+    jobs.each do |j|
+      if j.dependencies.all? { |dep| order.include?(dep) }
+        ready << j unless ready.include?(j)
+      end
+    end
+  end
+
+  order
+end
+----
+====
+
+=== Execution engine design
+
+The workflow executor manages job execution:
+
+[source]
+----
+WorkflowExecutor Components:
+
+┌───────────────────────────────────────────────┐
+│         WorkflowExecutor                      │
+│                                               │
+│  ┌─────────────────────────────────────────┐ │
+│  │  WorkflowContext                        │ │
+│  │  - Input data                           │ │
+│  │  - Job outputs                          │ │
+│  │  - Execution state                      │ │
+│  └─────────────────────────────────────────┘ │
+│                                               │
+│  ┌─────────────────────────────────────────┐ │
+│  │  ExecutionTrace (optional)              │ │
+│  │  - Job start/end times                  │ │
+│  │  - Data flow tracking                   │ │
+│  │  - Performance metrics                  │ │
+│  └─────────────────────────────────────────┘ │
+│                                               │
+│  ┌─────────────────────────────────────────┐ │
+│  │  DeadLetterQueue (optional)             │ │
+│  │  - Failed job data                      │ │
+│  │  - Error context                        │ │
+│  │  - Retry tracking                       │ │
+│  └─────────────────────────────────────────┘ │
+└───────────────────────────────────────────────┘
+----
+
+.Workflow execution flow
+[source]
+----
+1. Initialization
+   └──> Create WorkflowContext
+         └──> Store input data
+               └──> Initialize job state
+
+2. Job Execution Loop
+   └──> For each job in execution order:
+         ├──> Check dependencies satisfied
+         │     └──> All required jobs completed?
+         │
+         ├──> Check conditional execution
+         │     └──> Evaluate if_condition if present
+         │
+         ├──> Prepare job input
+         │     └──> Gather outputs from dependencies
+         │           └──> Transform to job input type
+         │
+         ├──> Execute job
+         │     └──> Create supervisor for job workers
+         │           └──> Run work items through workers
+         │                 └──> Collect results
+         │
+         ├──> Handle result
+         │     ├──> Success: Store output in context
+         │     └──> Error: Apply retry/circuit breaker logic
+         │
+         └──> Update trace (if enabled)
+
+3. Completion
+   └──> Extract workflow output
+         └──> Return WorkflowResult
+               ├──> Output data
+               ├──> Execution trace
+               └──> Success/failure status
+----
+
+=== State management
+
+Workflow state is managed through [`WorkflowContext`](../../lib/fractor/workflow/workflow_context.rb):
+
+[source,ruby]
+----
+# WorkflowContext manages:
+# 1. Input data
+# 2. Job outputs
+# 3. Execution metadata
+
+context = WorkflowContext.new(input_data)
+
+# Store job output
+context.set_job_output("parse", parsed_data)
+
+# Retrieve for next job
+input_for_validate = context.get_job_output("parse")
+
+# Type-safe access
+context.get_job_output_as(OutputModel, "parse")
+----
+
+State transitions:
+
+[source]
+----
+State Lifecycle:
+
+PENDING ──> IN_PROGRESS ──> COMPLETED
+   │            │               │
+   │            │               └──> Output stored
+   │            │
+   │            └──> ERROR ──> RETRY ──> IN_PROGRESS
+   │                   │
+   │                   └──> FAILED (max retries)
+   │
+   └──> SKIPPED (conditional not met)
+----
+
+== Queue architecture
+
+=== Work queue implementation
+
+Basic work queue using Ruby's thread-safe `Thread::Queue`:
+
+[source,ruby]
+----
+class WorkQueue
+  def initialize
+    @queue = Thread::Queue.new
+    @mutex = Mutex.new
+  end
+
+  def <<(work_item)
+    validate_work!(work_item)
+    @queue << work_item
+  end
+
+  def pop_batch(max_items = 10)
+    items = []
+    max_items.times do
+      break if @queue.empty?
+      items << @queue.pop(true) rescue break
+    end
+    items
+  end
+end
+----
+
+Features:
+
+* Thread-safe operations
+* Batch retrieval for efficiency
+* FIFO ordering
+* Non-blocking pop option
+
+=== Priority queue design
+
+Priority queue with aging to prevent starvation:
+
+[source]
+----
+PriorityWorkQueue Structure:
+
+Priority Levels (0-4):
+  0: Critical     ← Highest priority
+  1: High
+  2: Normal       ← Default
+  3: Low
+  4: Background   ← Lowest priority
+
+Internal Storage:
+┌────────────────────────────────────────┐
+│  Sorted Array                          │
+│  ┌──────────────────────────────────┐  │
+│  │ [Critical Work 1] age: 10s       │  │
+│  │ [Critical Work 2] age: 5s        │  │
+│  │ [High Work 1]     age: 30s       │  │
+│  │ [Normal Work 1]   age: 45s       │  │
+│  │ [Low Work 1]      age: 70s ⚡    │  │  ← Age boost!
+│  └──────────────────────────────────┘  │
+└────────────────────────────────────────┘
+
+Aging Mechanism:
+  If work.age >= aging_threshold (60s):
+    Effective priority increases
+    Prevents starvation of low-priority items
+----
+
+.Priority calculation with aging
+[example]
+====
+[source,ruby]
+----
+# Effective priority = base_priority - (age / threshold).floor
+work = PriorityWork.new(data, priority: :low)  # base = 3
+
+# After 0 seconds: effective = 3 - 0 = 3 (low)
+# After 60 seconds: effective = 3 - 1 = 2 (normal)
+# After 120 seconds: effective = 3 - 2 = 1 (high)
+# After 180 seconds: effective = 3 - 3 = 0 (critical)
+----
+====
+
+=== Queue selection strategies
+
+Choosing the right queue for your needs:
+
+[cols="2,3,3,2"]
+|===
+|Queue Type |Use Case |Benefits |Trade-offs
+
+|`WorkQueue`
+|General-purpose processing
+|Simple, FIFO, predictable
+|No prioritization
+
+|`PriorityWorkQueue`
+|Mixed-priority workloads
+|Priority handling, aging
+|Slight overhead
+
+|`Thread::Queue`
+|Simple threading
+|Built-in, minimal overhead
+|Basic features only
+
+|External (Redis)
+|Distributed systems
+|Persistence, clustering
+|Network latency
+|===
+
+=== Continuous server integration
+
+[`ContinuousServer`](../../lib/fractor/continuous_server.rb) provides high-level queue integration:
+
+[source,ruby]
+----
+# Automatic queue integration
+queue = Fractor::WorkQueue.new
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: MyWorker }],
+  work_queue: queue  # Auto-registered
+)
+
+# Queue automatically polled
+# No manual work source registration needed
+server.run
+----
+
+Internal architecture:
+
+[source]
+----
+ContinuousServer Architecture:
+
+┌────────────────────────────────────────────────┐
+│          ContinuousServer                      │
+│  ┌──────────────────────────────────────────┐ │
+│  │  Main Thread                             │ │
+│  │  - Signal handling                       │ │
+│  │  - Lifecycle management                  │ │
+│  └──────────────────────────────────────────┘ │
+│                                                │
+│  ┌──────────────────────────────────────────┐ │
+│  │  Supervisor Thread                       │ │
+│  │  - Work distribution                     │ │
+│  │  - Ractor management                     │ │
+│  └──────────────────────────────────────────┘ │
+│                                                │
+│  ┌──────────────────────────────────────────┐ │
+│  │  Results Thread                          │ │
+│  │  - Callback execution                    │ │
+│  │  - Error handling                        │ │
+│  └──────────────────────────────────────────┘ │
+└────────────────────────────────────────────────┘
+----
+
+== Error handling architecture
+
+=== Error propagation model
+
+Error propagation follows a clear path from worker to handler:
+
+[source]
+----
+Error Origin                   Error Handling
+     │                              │
+     ▼                              ▼
+┌──────────┐                 ┌──────────┐
+│  Worker  │                 │ Handler  │
+│ process()│                 │ Callback │
+└────┬─────┘                 └────▲─────┘
+     │                            │
+     │ raise StandardError        │
+     ▼                            │
+┌──────────┐                      │
+│  Ractor  │                      │
+│  rescue  │                      │
+└────┬─────┘                      │
+     │                            │
+     │ Create WorkResult          │
+     │ with error details         │
+     ▼                            │
+┌────────────┐                    │
+│ Supervisor │                    │
+│   select   │                    │
+└────┬───────┘                    │
+     │                            │
+     │ Receive :error message     │
+     ▼                            │
+┌──────────────┐                  │
+│ResultAggregator                 │
+│ @errors << result               │
+└────┬─────────┘                  │
+     │                            │
+     │ Trigger callbacks          │
+     └────────────────────────────┘
+----
+
+No errors are silently swallowed—all failures captured and exposed.
+
+=== Retry mechanism design
+
+Workflow retry configuration:
+
+[source,ruby]
+----
+# Job-level retry configuration
+job "fetch_data", APIWorker do
+  retry_on NetworkError, max_attempts: 3, backoff: :exponential
+  retry_on Timeout::Error, max_attempts: 5, backoff: :linear
+end
+----
+
+Retry state machine:
+
+[source]
+----
+                    ┌─────────┐
+                    │ EXECUTE │
+                    └────┬────┘
+                         │
+                ┌────────┴────────┐
+                │                 │
+             Success            Failure
+                │                 │
+                ▼                 ▼
+          ┌─────────┐       ┌─────────┐
+          │COMPLETED│       │  ERROR  │
+          └─────────┘       └────┬────┘
+                                 │
+                          Check retry policy
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+              Retriable                  Not retriable
+             (attempts < max)            (or max reached)
+                    │                         │
+                    ▼                         ▼
+              ┌─────────┐               ┌─────────┐
+              │  RETRY  │               │ FAILED  │
+              └────┬────┘               └─────────┘
+                   │
+            Apply backoff delay
+                   │
+                   └──> EXECUTE (again)
+----
+
+=== Circuit breaker implementation
+
+Circuit breaker prevents cascading failures:
+
+[source]
+----
+Circuit Breaker States:
+
+CLOSED (Normal Operation)
+  │
+  │ Failures < threshold
+  ▼
+  Success ←──────┐
+                 │
+  Failure ───────┤
+                 │
+  Failures >= threshold
+  │
+  ▼
+OPEN (Failing Fast)
+  │
+  │ All requests fail immediately
+  │ Wait timeout period
+  │
+  ▼
+HALF-OPEN (Testing)
+  │
+  │ Allow 1 request through
+  │
+  ├──> Success ──> CLOSED
+  │
+  └──> Failure ──> OPEN
+----
+
+Configuration:
+
+[source,ruby]
+----
+job "external_api", APIWorker do
+  circuit_breaker(
+    failure_threshold: 5,    # Open after 5 failures
+    timeout: 60,             # Try again after 60s
+    half_open_attempts: 3    # Test with 3 requests
+  )
+end
+----
+
+=== Dead letter queue architecture
+
+Failed items sent to DLQ for analysis and retry:
+
+[source]
+----
+Dead Letter Queue Structure:
+
+┌─────────────────────────────────────────────────┐
+│           DeadLetterQueue                       │
+│                                                 │
+│  ┌───────────────────────────────────────────┐ │
+│  │  Entry Storage                            │ │
+│  │  - Work item                              │ │
+│  │  - Error details                          │ │
+│  │  - Timestamp                              │ │
+│  │  - Attempt count                          │ │
+│  │  - Context data                           │ │
+│  └───────────────────────────────────────────┘ │
+│                                                 │
+│  ┌───────────────────────────────────────────┐ │
+│  │  Persister (optional)                     │ │
+│  │  - Save to disk/database                  │ │
+│  │  - Enable crash recovery                  │ │
+│  └───────────────────────────────────────────┘ │
+│                                                 │
+│  ┌───────────────────────────────────────────┐ │
+│  │  Callbacks                                │ │
+│  │  - on_add: Notification                   │ │
+│  │  - Custom processing                      │ │
+│  └───────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+----
+
+Usage:
+
+[source,ruby]
+----
+# Configure DLQ for workflow
+class MyWorkflow < Fractor::Workflow
+  workflow "processing" do
+    configure_dead_letter_queue(
+      max_size: 1000,
+      persister: DiskPersister.new("dlq"),
+      on_add: ->(entry) { alert_ops(entry) }
+    )
+
+    # Jobs...
+  end
+end
+
+# Access DLQ after execution
+result = workflow.execute(input: data)
+failed_items = workflow.dead_letter_queue.entries
+----
+
+== Sequence diagrams
+
+=== Pipeline mode execution
+
+[source]
+----
+Client    Supervisor    WorkQueue    Ractor    Worker
+  │           │             │           │         │
+  ├─ new ──►  │             │           │         │
+  │           │             │           │         │
+  ├─ add_work_items ──────► │           │         │
+  │           │             │           │         │
+  ├─ run ───► │             │           │         │
+  │           │             │           │         │
+  │           ├─ start_workers ───────► │         │
+  │           │             │           │         │
+  │           │             │           ├─ new ─► │
+  │           │             │           │         │
+  │           │◄──── :initialize ───────┤         │
+  │           │             │           │         │
+  │           ├──── pop ──► │           │         │
+  │           │             │           │         │
+  │           │◄──── work ──┤           │         │
+  │           │             │           │         │
+  │           ├──── work ─────────────► │         │
+  │           │             │           │         │
+  │           │             │           ├─ process ─► │
+  │           │             │           │         │
+  │           │             │           │◄── result ──┤
+  │           │             │           │         │
+  │           │◄──── :result ───────────┤         │
+  │           │             │           │         │
+  │           ├─ add_result │           │         │
+  │           │             │           │         │
+  │           ├──── pop ──► │           │         │
+  │           │             │           │         │
+  │           │◄──── work ──┤           │         │
+  │           │             │           │         │
+  │           ├──── work ─────────────► │         │
+  │           │             │           │         │
+  │          ...           ...         ...       ...
+  │           │             │           │         │
+  │           ├─ (all work done)        │         │
+  │           │             │           │         │
+  │◄─ results ┤             │           │         │
+  │           │             │           │         │
+----
+
+=== Continuous mode execution
+
+[source]
+----
+Client  ContinuousServer  Supervisor  WorkSource  Ractor  Worker
+  │           │               │           │          │       │
+  ├─ new ───► │               │           │          │       │
+  │           │               │           │          │       │
+  ├─ on_result(callback) ──► │           │          │       │
+  │           │               │           │          │       │
+  ├─ run ────► │               │           │          │       │
+  │           │               │           │          │       │
+  │           ├─ Thread.new ─► │           │          │       │
+  │           │               │           │          │       │
+  │           │               ├─ start_workers ─────► │       │
+  │           │               │           │          │       │
+  │           │               │           │          ├─ new ─► │
+  │           │               │           │          │       │
+  │           │               │◄─ :initialize ───────┤       │
+  │           │               │           │          │       │
+  │        [Main loop]        │           │          │       │
+  │           │               │           │          │       │
+  │           │               ├─ poll ──► │          │       │
+  │           │               │           │          │       │
+  │           │               │◄─ [work] ─┤          │       │
+  │           │               │           │          │       │
+  │           │               ├─ add_work │          │       │
+  │           │               │           │          │       │
+  │           │               ├─ send ──────────────► │       │
+  │           │               │           │          │       │
+  │           │               │           │          ├─ process ─► │
+  │           │               │           │          │       │
+  │           │               │           │          │◄─ result ──┤
+  │           │               │           │          │       │
+  │           │               │◄─ :result ───────────┤       │
+  │           │               │           │          │       │
+  │           │               ├─ add_result          │       │
+  │           │               │           │          │       │
+  │           │◄─ result ─────┤           │          │       │
+  │           │               │           │          │       │
+  │           ├─ callback()   │           │          │       │
+  │           │               │           │          │       │
+  │        [Loop continues]   │           │          │       │
+  │           │               │           │          │       │
+  ├─ SIGINT ─► │               │           │          │       │
+  │           │               │           │          │       │
+  │           ├─ stop ───────► │           │          │       │
+  │           │               │           │          │       │
+  │           │               ├─ :shutdown ─────────► │       │
+  │           │               │           │          │       │
+  │           │               │◄─ :shutdown ─────────┤       │
+  │           │               │           │          │       │
+  │           │◄─ cleanup ────┤           │          │       │
+  │           │               │           │          │       │
+  │◄─ exit ───┤               │           │          │       │
+  │           │               │           │          │       │
+----
+
+=== Workflow execution sequence
+
+[source]
+----
+Client  Workflow  Executor  Job1  Supervisor  Ractor  Worker
+  │        │         │        │       │         │       │
+  ├─ new ─► │        │        │       │         │       │
+  │        │         │        │       │         │       │
+  ├─ execute(input) ► │       │       │         │       │
+  │        │         │        │       │         │       │
+  │        │         ├─ resolve dependencies    │       │
+  │        │         │        │       │         │       │
+  │        │         ├─ execute(Job1) ►         │       │
+  │        │         │        │       │         │       │
+  │        │         │        ├─ new ─►         │       │
+  │        │         │        │       │         │       │
+  │        │         │        │       ├─ start ► │       │
+  │        │         │        │       │         │       │
+  │        │         │        │       │         ├─ new ─► │
+  │        │         │        │       │         │       │
+  │        │         │        │       ├─ run    │       │
+  │        │         │        │       │         │       │
+  │        │         │        │       │◄─ result ─      │
+  │        │         │        │       │         │       │
+  │        │         │        │◄─ results ───────       │
+  │        │         │        │       │         │       │
+  │        │         │◄─ job1_output ─┤         │       │
+  │        │         │        │       │         │       │
+  │        │         ├─ execute(Job2, input: job1_output)
+  │        │         │        │       │         │       │
+  │        │        ...      ...     ...       ...     ...
+  │        │         │        │       │         │       │
+  │        │◄─ WorkflowResult ┤       │         │       │
+  │        │         │        │       │         │       │
+  │◄─ result │        │        │       │         │       │
+  │        │         │        │       │         │       │
+----
+
+== Performance considerations
+
+=== Monitoring and optimization
+
+Key metrics to monitor:
+
+[cols="2,3,2"]
+|===
+|Metric |Description |Target
+
+|Worker utilization
+|% of time workers are busy
+|> 80%
+
+|Queue depth
+|Number of items in queue
+|< 1000
+
+|Processing latency
+|Time from submission to completion
+|Minimize
+
+|Error rate
+|% of failed work items
+|< 1%
+
+|Memory per Ractor
+|RAM used by each Ractor
+|< 100MB
+
+|GC frequency
+|Garbage collection cycles
+|Minimize
+|===
+
+.Optimization checklist
+[example]
+====
+* Optimize worker count based on workload type (CPU vs I/O)
+* Use priority queues for mixed-criticality workloads
+* Implement backpressure to prevent overload
+* Monitor queue depth and adjust production rate
+* Profile memory usage and optimize large objects
+* Use callbacks for immediate result processing
+* Enable workflow tracing only when needed
+* Batch work items where possible
+====
+
+== Next steps
+
+* Read link:design-principles.adoc[Design Principles] for philosophy and rationale
+* Explore link:core-concepts.adoc[Core Concepts] for component details
+* Try link:../guides/pipeline-mode.adoc[Pipeline Mode] for batch processing
+* Try link:../guides/continuous-mode.adoc[Continuous Mode] for long-running services
+* Learn link:../features/workflows.adoc[Workflows] for complex processing
+* Review link:../features/error-handling.adoc[Error Handling] strategies
+* Study link:../reference/examples.adoc[Examples] for real-world patterns

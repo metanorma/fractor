@@ -1,0 +1,133 @@
+---
+layout: home
+title: Home
+nav_order: 1
+description: "Fractor - Parallel processing framework for Ruby using Ractors"
+permalink: /
+---
+
+++++
+<div style="text-align: center; margin: 2em 0;">
+  <img src="/fractor/assets/images/fractor-logo.svg" alt="Fractor Logo" style="max-width: 400px; width: 100%;">
+</div>
+++++
+
+== Fractor Documentation
+
+Fractor is a powerful parallel processing framework for Ruby that leverages Ractors to provide true concurrent execution without the Global Interpreter Lock (GIL) limitations.
+
+---
+
+== What's New
+
+=== Recent Updates
+
+* ✨ **Enhanced Workflow System**: Added support for circuit breakers, retry strategies, and dead letter queues
+* 📊 **Performance Monitoring**: New performance monitoring capabilities with Prometheus and JSON export support
+* 🔄 **Improved Error Handling**: Rich error categorization with automatic retry logic for transient failures
+* 📚 **Comprehensive Documentation**: Complete tutorials, guides, and reference documentation with 18+ real-world examples
+* 🛠️ **Production Ready**: Battle-tested patterns for continuous mode, signal handling, and graceful shutdown
+* 🎯 **Workflow Visualizer**: Built-in tools for visualizing complex workflow graphs and execution traces
+
+See the link:../ROADMAP.md[Roadmap] for full details on completed features and upcoming enhancements.
+
+---
+
+== Quick Start
+
+Get started with Fractor in minutes:
+
+[source,ruby]
+----
+require 'fractor'
+
+class MyWork < Fractor::Work
+  def initialize(value)
+    super({ value: value })
+  end
+end
+
+class MyWorker < Fractor::Worker
+  def process(work)
+    result = work.input[:value] * 2
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+end
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker }]
+)
+
+supervisor.add_work_items([MyWork.new(1), MyWork.new(2), MyWork.new(3)])
+supervisor.run
+
+puts supervisor.results.results.map(&:result)
+# => [2, 4, 6]
+----
+
+---
+
+== Learning Path
+
+=== 🎯 Beginner - Get Started
+
+New to Fractor? Start here to learn the fundamentals.
+
+* link:tutorials/installation/[Installation] - Set up Fractor in your environment
+* link:tutorials/first-application/[Your First Application] - Build your first parallel processor
+* link:tutorials/getting-started/[Getting Started Guide] - Understand modes and basic patterns
+
+=== 📚 Intermediate - Core Concepts
+
+Ready to build real applications? Dive into core features.
+
+* link:_pages/core-concepts/[Core Concepts] - Components, data flow, and concurrency model
+* link:_pages/architecture/[Architecture Guide] - System design and implementation details
+* link:_pages/design-principles/[Design Principles] - Philosophy and design decisions
+* link:_guides/pipeline-mode/[Pipeline Mode] - Batch processing patterns
+* link:_guides/continuous-mode/[Continuous Mode] - Long-running server applications
+* link:_features/workflows/[Workflows] - Complex processing graphs
+* link:_features/error-handling/[Error Handling] - Robust error management
+* link:_features/signal-handling/[Signal Handling] - Graceful shutdown patterns
+
+=== 🚀 Advanced - Deep Dive
+
+Master advanced patterns and optimization techniques.
+
+* link:reference/api/[API Reference] - Complete API documentation
+* link:reference/patterns/[Design Patterns] - Real-world examples and patterns
+* link:reference/performance/[Performance Tuning] - Optimization strategies
+* link:reference/best-practices/[Best Practices] - Production deployment guide
+
+---
+
+== Key Features
+
+* *True Parallelism*: Leverages Ruby 3.0+ Ractors for concurrent execution without GIL
+* *Two Modes*: Pipeline mode for batch jobs, Continuous mode for servers
+* *Worker Pools*: Multiple specialized worker types with automatic scaling
+* *Rich Error Handling*: Categorized errors with retry logic and context
+* *Workflow Engine*: Build complex processing graphs with retry, circuit breakers, and more
+* *Signal Handling*: Graceful shutdown with SIGINT, SIGTERM support
+* *Production Ready*: Performance monitoring, error reporting, and dead letter queues
+
+---
+
+== System Requirements
+
+* Ruby 3.0 or later (Ractor support required)
+* Multi-core CPU (for true parallel execution)
+
+---
+
+== Community
+
+* https://github.com/metanorma/fractor[GitHub Repository]
+* https://github.com/metanorma/fractor/issues[Issue Tracker]
+* https://github.com/metanorma/fractor/discussions[Discussions]
+
+---
+
+== License
+
+Fractor is distributed under the link:../LICENSE[MIT License].

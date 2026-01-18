@@ -1,0 +1,1193 @@
+---
+layout: default
+title: Error Handling
+parent: Features
+nav_order: 3
+---
+= Error Reporting and Analytics
+
+== Overview
+
+Fractor provides comprehensive error reporting and analytics through the `ErrorReporter` class. This system aggregates errors, tracks statistics, detects trends, and provides actionable insights into application health.
+
+== Purpose
+
+The ErrorReporter helps you:
+
+* **Monitor error patterns** across your application
+* **Identify problematic jobs** with high error rates
+* **Detect trending issues** before they become critical
+* **Track error severity** and categorization
+* **Export metrics** to monitoring systems
+* **Respond to critical errors** in real-time
+
+== Basic Usage
+
+=== Setup
+
+[source,ruby]
+----
+require 'fractor'
+
+# Create an error reporter instance
+reporter = Fractor::ErrorReporter.new
+----
+
+=== Recording Work Results
+
+The ErrorReporter tracks both successes and failures:
+
+[source,ruby]
+----
+# Record a successful result
+work_result = Fractor::WorkResult.new(result: "Success")
+reporter.record(work_result)
+
+# Record an error result
+work_result = Fractor::WorkResult.new(
+  error: StandardError.new("Connection failed"),
+  error_code: :connection_failed,
+  error_category: :network,
+  error_severity: :error
+)
+reporter.record(work_result, job_name: "fetch_data")
+----
+
+=== Viewing Statistics
+
+[source,ruby]
+----
+# Overall statistics
+puts "Total Errors: #{reporter.total_errors}"
+puts "Total Successes: #{reporter.total_successes}"
+puts "Error Rate: #{reporter.overall_error_rate}%"
+
+# Top error categories
+reporter.top_categories.each do |category, count|
+  puts "#{category}: #{count} errors"
+end
+
+# Top error jobs
+reporter.top_jobs.each do |job, count|
+  puts "#{job}: #{count} errors"
+end
+----
+
+== Error Categorization
+
+Fractor automatically categorizes errors based on their type:
+
+[cols="1,2,3"]
+|===
+|Category |Error Types |Description
+
+|`:validation`
+|`ArgumentError`, `TypeError`
+|Input validation errors
+
+|`:timeout`
+|`Timeout::Error`
+|Operation timeout errors
+
+|`:network`
+|`SocketError`, `Errno::ECONNREFUSED`, `Errno::ETIMEDOUT`
+|Network-related errors
+
+|`:resource`
+|`Errno::ENOMEM`, `Errno::ENOSPC`
+|Resource exhaustion errors
+
+|`:system`
+|`SystemCallError`, `SystemStackError`
+|System-level errors
+
+|`:business`
+|Custom business logic errors
+|Application-specific errors
+
+|`:unknown`
+|Other errors
+|Uncategorized errors
+|===
+
+== Error Severity Levels
+
+Errors are assigned severity levels:
+
+[cols="1,3"]
+|===
+|Severity |Description
+
+|`:critical`
+|System-breaking errors requiring immediate attention
+
+|`:error`
+|Standard errors that prevent operation completion
+
+|`:warning`
+|Non-fatal issues that may need investigation
+
+|`:info`
+|Informational messages
+|===
+
+== Real-Time Error Handlers
+
+Register callbacks to respond to errors as they occur:
+
+=== Basic Handler
+
+[source,ruby]
+----
+reporter.on_error do |work_result, job_name|
+  puts "Error in #{job_name}: #{work_result.error.message}"
+end
+----
+
+=== Critical Error Alerts
+
+[source,ruby]
+----
+reporter.on_error do |work_result, job_name|
+  if work_result.critical?
+    # Send alert to operations team
+    AlertService.notify(
+      severity: "critical",
+      job: job_name,
+      error: work_result.error.message,
+      context: work_result.error_context
+    )
+  end
+end
+----
+
+=== Multiple Handlers
+
+You can register multiple handlers for different purposes:
+
+[source,ruby]
+----
+# Handler 1: Log all errors
+reporter.on_error do |work_result, job_name|
+  Logger.error("Job #{job_name} failed: #{work_result.error.message}")
+end
+
+# Handler 2: Send metrics
+reporter.on_error do |work_result, job_name|
+  Metrics.increment("errors.#{work_result.error_category}")
+end
+
+# Handler 3: Alert on critical errors
+reporter.on_error do |work_result, job_name|
+  AlertService.notify(work_result) if work_result.critical?
+end
+----
+
+== Generating Reports
+
+=== Formatted Text Report
+
+Generate a human-readable report:
+
+[source,ruby]
+----
+puts reporter.formatted_report
+----
+
+Output example:
+
+[source]
+----
+================================================================================
+ERROR REPORT
+================================================================================
+
+SUMMARY
+--------------------------------------------------------------------------------
+Uptime:          127.45s
+Total Errors:    15
+Total Successes: 85
+Error Rate:      15.0%
+
+Errors by Severity:
+  critical  : 1
+  error     : 12
+  warning   : 2
+
+TOP ERROR CATEGORIES
+--------------------------------------------------------------------------------
+network            : 8 errors
+validation         : 5 errors
+timeout            : 2 errors
+
+TOP ERROR JOBS
+--------------------------------------------------------------------------------
+fetch_data         : 8 errors
+process_data       : 5 errors
+validate_input     : 2 errors
+
+CRITICAL ERRORS
+--------------------------------------------------------------------------------
+Category: system
+Count:    1
+Recent errors:
+  - [2025-01-15 10:30:45] SystemStackError: Stack overflow
+
+TRENDING ERRORS (Increasing)
+--------------------------------------------------------------------------------
+Category:    network
+Total Count: 8
+Error Rate:  0.06/s
+Trend:       increasing
+================================================================================
+----
+
+=== Programmatic Access
+
+[source,ruby]
+----
+report = reporter.report
+
+# Access specific sections
+summary = report[:summary]
+puts "Uptime: #{summary[:uptime]}s"
+puts "Error Rate: #{summary[:error_rate]}%"
+
+# Critical errors
+report[:critical_errors].each do |error_info|
+  puts "Critical in #{error_info[:category]}: #{error_info[:count]} errors"
+end
+
+# Trending errors
+report[:trending_errors].each do |trend|
+  puts "Trending: #{trend[:category]}"
+end
+----
+
+== Exporting Metrics
+
+=== Prometheus Format
+
+Export metrics for Prometheus monitoring:
+
+[source,ruby]
+----
+# Write to file
+File.write("metrics.txt", reporter.to_prometheus)
+
+# Or serve via HTTP endpoint
+get '/metrics' do
+  content_type 'text/plain'
+  reporter.to_prometheus
+end
+----
+
+Example output:
+
+[source]
+----
+# HELP fractor_errors_total Total number of errors
+# TYPE fractor_errors_total counter
+fractor_errors_total 15
+
+# HELP fractor_successes_total Total number of successes
+# TYPE fractor_successes_total counter
+fractor_successes_total 85
+
+# HELP fractor_error_rate Error rate percentage
+# TYPE fractor_error_rate gauge
+fractor_error_rate 15.0
+
+# HELP fractor_errors_by_severity Errors by severity level
+# TYPE fractor_errors_by_severity gauge
+fractor_errors_by_severity{severity="critical"} 1
+fractor_errors_by_severity{severity="error"} 12
+fractor_errors_by_severity{severity="warning"} 2
+
+# HELP fractor_errors_by_category Errors by category
+# TYPE fractor_errors_by_category gauge
+fractor_errors_by_category{category="network"} 8
+fractor_errors_by_category{category="validation"} 5
+fractor_errors_by_category{category="timeout"} 2
+----
+
+=== JSON Format
+
+Export as JSON for programmatic consumption:
+
+[source,ruby]
+----
+# Write to file
+File.write("error_report.json", reporter.to_json)
+
+# Or serve via API
+get '/api/errors' do
+  content_type 'application/json'
+  reporter.to_json
+end
+----
+
+== Job-Specific Statistics
+
+Get detailed statistics for a specific job:
+
+[source,ruby]
+----
+stats = reporter.job_stats("fetch_data")
+
+puts "Job: fetch_data"
+puts "Total Errors: #{stats[:total_count]}"
+puts "Error Rate: #{stats[:error_rate]}/s"
+puts "Most Common Error: #{stats[:most_common_code]}"
+puts "Highest Severity: #{stats[:highest_severity]}"
+puts "Trend: #{stats[:trending]}"
+----
+
+== Category-Specific Statistics
+
+Get detailed statistics for an error category:
+
+[source,ruby]
+----
+stats = reporter.category_stats(:network)
+
+puts "Category: network"
+puts "Total Count: #{stats[:total_count]}"
+puts "Error Rate: #{stats[:error_rate]}/s"
+puts "By Severity: #{stats[:by_severity]}"
+puts "By Code: #{stats[:by_code]}"
+puts "Trending: #{stats[:trending]}"
+----
+
+== Detecting Trends
+
+The ErrorReporter automatically detects increasing error rates:
+
+[source,ruby]
+----
+# Get all trending errors
+trending = reporter.trending_errors
+
+trending.each do |trend|
+  category = trend[:category]
+  stats = trend[:stats]
+
+  puts "⚠️  #{category} errors are increasing!"
+  puts "   Count: #{stats[:total_count]}"
+  puts "   Rate: #{stats[:error_rate]}/s"
+end
+----
+
+== Integration Examples
+
+=== With Supervisor
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker, count: 4 }]
+)
+
+reporter = Fractor::ErrorReporter.new
+
+# Record results as they complete
+supervisor.on_result do |result|
+  reporter.record(result)
+end
+----
+
+=== With Workflows
+
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "monitored-workflow" do
+    job "process" do
+      runs_with ProcessWorker
+
+      on_error do |error, context|
+        # Report error
+        reporter.record(
+          Fractor::WorkResult.new(
+            error: error,
+            error_context: context
+          ),
+          job_name: "process"
+        )
+      end
+    end
+  end
+end
+----
+
+=== Periodic Reporting
+
+[source,ruby]
+----
+# Report every 5 minutes
+Thread.new do
+  loop do
+    sleep 300 # 5 minutes
+
+    # Log summary
+    Logger.info("Error Summary: #{reporter.overall_error_rate}% error rate")
+
+    # Alert on high error rates
+    if reporter.overall_error_rate > 10.0
+      AlertService.notify("High error rate detected!")
+    end
+
+    # Check for trending errors
+    reporter.trending_errors.each do |trend|
+      AlertService.notify("Trending: #{trend[:category]}")
+    end
+  end
+end
+----
+
+== Production Best Practices
+
+=== 1. Set Up Monitoring
+
+[source,ruby]
+----
+# Configure Prometheus scraping
+# In config/prometheus.yml:
+# scrape_configs:
+#   - job_name: 'fractor'
+#     static_configs:
+#       - targets: ['localhost:9090']
+
+# Serve metrics endpoint
+require 'sinatra'
+
+get '/metrics' do
+  content_type 'text/plain'
+  $error_reporter.to_prometheus
+end
+----
+
+=== 2. Configure Alerts
+
+[source,ruby]
+----
+reporter.on_error do |work_result, job_name|
+  case work_result.error_severity
+  when :critical
+    PagerDuty.alert(work_result, job_name)
+  when :error
+    Slack.notify(work_result, job_name) if should_notify?(work_result)
+  when :warning
+    Logger.warn("#{job_name}: #{work_result.error.message}")
+  end
+end
+
+def should_notify?(work_result)
+  # Only notify for non-retriable errors or after multiple failures
+  !work_result.retriable? || failure_count(work_result) > 3
+end
+----
+
+=== 3. Regular Health Checks
+
+[source,ruby]
+----
+# Run health checks every minute
+Thread.new do
+  loop do
+    sleep 60
+
+    # Check critical errors
+    critical = reporter.critical_errors
+    if critical.any?
+      PagerDuty.alert("Critical errors detected: #{critical.size}")
+    end
+
+    # Check error rate
+    if reporter.overall_error_rate > 25.0
+      Slack.notify("High error rate: #{reporter.overall_error_rate}%")
+    end
+
+    # Check trending
+    if reporter.trending_errors.any?
+      Slack.notify("Trending errors detected")
+    end
+  end
+end
+----
+
+=== 4. Data Retention
+
+[source,ruby]
+----
+# Reset statistics daily to prevent unbounded memory growth
+Thread.new do
+  loop do
+    sleep 86400 # 24 hours
+
+    # Archive current stats
+    File.write(
+      "error_report_#{Date.today}.json",
+      reporter.to_json
+    )
+
+    # Reset for new day
+    reporter.reset
+    Logger.info("Error reporter statistics reset")
+  end
+end
+----
+
+== Advanced Features
+
+=== Custom Error Categorization
+
+Override the default categorization:
+
+[source,ruby]
+----
+class MyCustomError < StandardError; end
+
+# In your worker
+def process(work)
+  raise MyCustomError, "Custom error"
+rescue MyCustomError => e
+  Fractor::WorkResult.new(
+    error: e,
+    error_category: :business,  # Custom category
+    error_code: :custom_failure,
+    error_severity: :error,
+    work: work
+  )
+end
+----
+
+=== Error Context Enrichment
+
+Add contextual information to errors:
+
+[source,ruby]
+----
+def process(work)
+  start_time = Time.now
+  # ... processing ...
+rescue => e
+  Fractor::WorkResult.new(
+    error: e,
+    error_context: {
+      duration: Time.now - start_time,
+      input_size: work.input.size,
+      memory_used: get_memory_usage,
+      retry_count: work.retry_count,
+      worker_id: Thread.current.object_id
+    },
+    work: work
+  )
+end
+----
+
+=== Filtering and Analysis
+
+[source,ruby]
+----
+# Get errors by specific criteria
+report = reporter.report
+
+# High-severity errors
+high_severity = report[:category_breakdown].select do |category, stats|
+  stats[:highest_severity] == :critical ||
+  stats[:highest_severity] == :error
+end
+
+# Categories with high error rates
+high_rate = report[:category_breakdown].select do |category, stats|
+  stats[:error_rate] > 1.0  # More than 1 error per second
+end
+
+# Recent spikes
+recent_spikes = report[:trending_errors].select do |trend|
+  trend[:stats][:trending] == "increasing"
+end
+----
+
+== Orchestrators
+
+Fractor provides two powerful orchestrator patterns for resilient error handling: retry logic with configurable backoff strategies, and circuit breaker pattern for preventing cascading failures.
+
+=== Retry Orchestrator
+
+The `RetryOrchestrator` manages retry logic with configurable backoff strategies. It tracks retry attempts, calculates delays, and provides detailed state information.
+
+==== Purpose
+
+The RetryOrchestrator helps you:
+
+* **Handle transient failures** with automatic retries
+* **Configure backoff strategies** (exponential, linear, constant)
+* **Track all retry attempts** for debugging and analysis
+* **Control retry behavior** with max attempts and retryable error types
+
+==== Basic Usage
+
+[source,ruby]
+----
+require 'fractor'
+
+# Create a retry configuration with exponential backoff
+config = Fractor::Workflow::RetryConfig.from_options(
+  backoff: :exponential,
+  base_delay: 1,      # 1 second base
+  max_delay: 60,      # max 60 seconds
+  multiplier: 2,      # double each time
+  max_attempts: 5,
+  retryable_errors: [Timeout::Error, Errno::ECONNREFUSED]
+)
+
+# Create orchestrator
+orchestrator = Fractor::Workflow::RetryOrchestrator.new(
+  config,
+  debug: true
+)
+
+# Execute with retry logic
+result = orchestrator.execute_with_retry(job) do |job|
+  # Job execution logic
+  execute_job(job)
+end
+----
+
+==== Retry Strategies
+
+===== Exponential Backoff (Default)
+
+Exponential backoff increases delay between retries exponentially:
+
+[source,ruby]
+----
+config = Fractor::Workflow::RetryConfig.from_options(
+  backoff: :exponential,
+  base_delay: 1,      # Start at 1 second
+  max_delay: 60,      # Cap at 60 seconds
+  multiplier: 2       # Double each retry
+)
+# Delays: 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s, ...
+----
+
+===== Linear Backoff
+
+Linear backoff increases delay by a fixed amount each retry:
+
+[source,ruby]
+----
+config = Fractor::Workflow::RetryConfig.from_options(
+  backoff: :linear,
+  base_delay: 5,      # Start at 5 seconds
+  increment: 5        # Add 5 seconds each retry
+)
+# Delays: 5s, 10s, 15s, 20s, 25s, ...
+----
+
+===== Constant Delay
+
+Constant delay uses the same delay for all retries:
+
+[source,ruby]
+----
+config = Fractor::Workflow::RetryConfig.from_options(
+  backoff: :constant,
+  delay: 10           # Always wait 10 seconds
+)
+# Delays: 10s, 10s, 10s, 10s, ...
+----
+
+===== Custom Backoff Strategy
+
+Provide your own backoff calculation:
+
+[source,ruby]
+----
+config = Fractor::Workflow::RetryConfig.from_options(
+  backoff: :custom,
+  calculator: ->(attempt) { attempt ** 3 }  # Cubic backoff
+)
+# Delays: 1s, 8s, 27s, 64s, 125s, ...
+----
+
+==== Controlling Retryable Errors
+
+By default, all `StandardError` exceptions are retried. Customize which errors are retryable:
+
+[source,ruby]
+----
+# Only retry specific errors
+config = Fractor::Workflow::RetryConfig.from_options(
+  retryable_errors: [Timeout::Error, Errno::ECONNREFUSED, Errno::ETIMEDOUT]
+)
+
+# Use a proc for complex logic
+config = Fractor::Workflow::RetryConfig.from_options(
+  retryable_errors: ->(error) {
+    # Retry on network errors with specific messages
+    error.is_a?(Errno::ECONNREFUSED) && error.message.include?("temporary")
+  }
+)
+
+# Don't retry on specific errors
+config = Fractor::Workflow::RetryConfig.from_options(
+  non_retryable_errors: [ArgumentError, ValidationError]
+)
+----
+
+==== Accessing Retry State
+
+Get detailed information about retry attempts:
+
+[source,ruby]
+----
+state = orchestrator.state
+# => {
+#      attempts: 3,
+#      max_attempts: 5,
+#      last_error: "Timeout::Error",
+#      exhausted: false,
+#      all_errors: [
+#        { attempt: 1, error_class: "Timeout::Error", error_message: "...", timestamp: ... },
+#        { attempt: 2, error_class: "Timeout::Error", error_message: "...", timestamp: ... }
+#      ],
+#      total_time: 12.5
+#    }
+
+puts "Attempt #{state[:attempts]} of #{state[:max_attempts]}"
+puts "Last error: #{state[:last_error]}"
+puts "All errors: #{state[:all_errors].inspect}"
+puts "Total time: #{state[:total_time]}s"
+----
+
+==== Integration with Workflows
+
+[source,ruby]
+----
+class APIWorkflow < Fractor::Workflow
+  workflow "api-workflow" do
+    job "fetch_data" do
+      runs_with APIWorker
+
+      # Enable retry with exponential backoff
+      retry_config(
+        backoff: :exponential,
+        base_delay: 1,
+        max_delay: 30,
+        multiplier: 2,
+        max_attempts: 3
+      )
+      retry_on [Timeout::Error, Errno::ECONNREFUSED]
+    end
+  end
+end
+----
+
+=== Circuit Breaker Orchestrator
+
+The `CircuitBreakerOrchestrator` implements the circuit breaker pattern to prevent cascading failures. It automatically opens the circuit when failures exceed a threshold, blocking requests to failing services.
+
+==== Purpose
+
+The CircuitBreakerOrchestrator helps you:
+
+* **Prevent cascading failures** by stopping requests to failing services
+* **Enable automatic recovery** by testing service health periodically
+* **Protect downstream services** from overload
+* **Maintain system responsiveness** during partial outages
+
+==== How It Works
+
+The circuit breaker has three states:
+
+[cols="1,2"]
+|===
+|State |Description
+
+|`:closed` (default)
+|Normal operation - requests pass through to the service
+
+|`:open`
+|Circuit is open - requests are immediately rejected without calling the service
+
+|`:half_open`
+|Testing recovery - limited requests are allowed to test if the service has recovered
+|===
+
+[source]
+----
+CLOSED ──(threshold failures)──> OPEN ──(timeout)──> HALF_OPEN ──(success)──> CLOSED
+   ^                                    |
+   |                                    v
+   <──────────(failure)─────────────────┘
+----
+
+==== Basic Usage
+
+[source,ruby]
+----
+require 'fractor'
+
+# Create a circuit breaker orchestrator
+breaker = Fractor::Workflow::CircuitBreakerOrchestrator.new(
+  threshold: 5,          # Open after 5 failures
+  timeout: 60,           # Try recovery after 60 seconds
+  half_open_calls: 3,    # Allow 3 test calls when half-open
+  job_name: "api_call",
+  debug: true
+)
+
+# Execute with circuit breaker protection
+begin
+  result = breaker.execute_with_breaker(job) do
+    # Call external service
+    ExternalAPI.call
+  end
+rescue Fractor::Workflow::CircuitOpenError => e
+  # Circuit is open - request rejected
+  logger.warn("Circuit breaker open: #{e.message}")
+  # Return cached result or fallback
+  cached_response
+end
+----
+
+==== Configuration Options
+
+[cols="1,1,3"]
+|===
+|Parameter |Default |Description
+
+|`threshold`
+|5
+|Number of failures before opening circuit
+
+|`timeout`
+|60
+|Seconds to wait before attempting recovery (moving to half-open)
+
+|`half_open_calls`
+|3
+|Number of successful calls needed to close circuit when half-open
+
+|`job_name`
+|nil
+|Optional job name for logging/debugging
+
+|`debug`
+|false
+|Enable debug logging
+|===
+
+==== Monitoring Circuit State
+
+[source,ruby]
+----
+# Check current state
+puts breaker.state                    # => :closed, :open, or :half_open
+puts breaker.open?                    # => true if open
+puts breaker.closed?                  # => true if closed
+puts breaker.half_open?               # => true if half-open
+
+# Get detailed statistics
+stats = breaker.stats
+# => {
+#      state: :closed,
+#      failure_count: 2,
+#      threshold: 5,
+#      last_failure_time: nil,
+#      execution_count: 100,
+#      success_count: 98,
+#      blocked_count: 0
+#    }
+
+# Get human-readable description
+puts breaker.state_description
+# => "CLOSED (normal operation)"
+# => "OPEN (blocking requests, 5/5 failures)"
+# => "HALF_OPEN (testing recovery, 2/3 successes)"
+----
+
+==== Manual Control
+
+[source,ruby]
+----
+# Manually open circuit (emergency/maintenance)
+breaker.open_circuit!
+
+# Manually close circuit (forced recovery)
+breaker.close_circuit!
+
+# Reset all statistics
+breaker.reset!
+----
+
+==== Bypassing the Circuit Breaker
+
+Execute a call even when the circuit is open:
+
+[source,ruby]
+----
+# Execute regardless of circuit state
+result = breaker.execute_bypassing_breaker(job) do
+  # This will execute even if circuit is open
+  # Still tracks results for circuit breaker state
+  ExternalAPI.call
+end
+----
+
+==== Integration with Workflows
+
+[source,ruby]
+----
+class ExternalAPIWorkflow < Fractor::Workflow
+  workflow "external-api-workflow" do
+    job "fetch_from_api" do
+      runs_with ExternalAPIWorker
+
+      # Enable circuit breaker
+      circuit_breaker(
+        key: "external_api",
+        threshold: 5,
+        timeout: 60,
+        half_open_calls: 3
+      )
+
+      # Optional: fallback job when circuit is open
+      fallback_to "use_cache"
+    end
+
+    job "use_cache" do
+      runs_with CacheWorker
+      inputs_from_job "fetch_from_api"
+    end
+  end
+end
+----
+
+==== Shared Circuit Breakers
+
+Multiple jobs can share a circuit breaker to protect a single service:
+
+[source,ruby]
+----
+class MultiStepAPIWorkflow < Fractor::Workflow
+  workflow "multi-step-api" do
+    # All three jobs share the same circuit breaker
+    job "fetch_users" do
+      runs_with UsersAPIWorker
+      circuit_breaker(key: "shared_api", threshold: 10)
+    end
+
+    job "fetch_products" do
+      runs_with ProductsAPIWorker
+      circuit_breaker(key: "shared_api", threshold: 10)
+    end
+
+    job "fetch_orders" do
+      runs_with OrdersAPIWorker
+      circuit_breaker(key: "shared_api", threshold: 10)
+    end
+  end
+end
+----
+
+All failures across all three jobs count toward the shared threshold. When the circuit opens, all three jobs are blocked.
+
+=== Combining Retry and Circuit Breaker
+
+For maximum resilience, combine both patterns:
+
+[source,ruby]
+----
+class ResilientWorkflow < Fractor::Workflow
+  workflow "resilient-workflow" do
+    job "call_external_service" do
+      runs_with ExternalServiceWorker
+
+      # Configure retry for transient failures
+      retry_config(
+        backoff: :exponential,
+        base_delay: 1,
+        max_delay: 10,
+        max_attempts: 3
+      )
+
+      # Configure circuit breaker for persistent failures
+      circuit_breaker(
+        threshold: 5,
+        timeout: 60,
+        half_open_calls: 2
+      )
+
+      # Fallback when all retries and circuit breaker fail
+      fallback_to "use_fallback"
+    end
+
+    job "use_fallback" do
+      runs_with FallbackWorker
+    end
+  end
+end
+----
+
+**Execution flow:**
+
+. Retry attempts 1-3 with exponential backoff (1s, 2s, 4s delays)
+. If all retries fail, increment circuit breaker failure count
+. After 5 circuit breaker failures, circuit opens
+. Subsequent calls immediately fail with `CircuitOpenError`
+. Fallback job executes
+. After 60 seconds, circuit moves to half-open
+. If 2 calls succeed, circuit closes and normal operation resumes
+
+=== Dead Letter Queue Integration
+
+Both orchestrators integrate with the Dead Letter Queue (DLQ) for failed work:
+
+[source,ruby]
+----
+class DLQWorkflow < Fractor::Workflow
+  workflow "dlq-workflow" do
+    # Configure dead letter queue
+    configure_dead_letter_queue(
+      max_size: 1000,
+      on_add: ->(entry) {
+        # Notify team of failed work
+        AlertService.notify("Work added to DLQ", entry)
+      }
+    )
+
+    job "risky_operation" do
+      runs_with RiskyWorker
+
+      retry_config(max_attempts: 3)
+      circuit_breaker(threshold: 5)
+    end
+  end
+end
+----
+
+When a job exhausts all retries, it's added to the DLQ with:
+
+* Original work item
+* All errors from each retry attempt
+* Retry metadata (attempts, max attempts, total time)
+* Job and workflow context
+
+=== Production Example
+
+Complete example with monitoring and alerting:
+
+[source,ruby]
+----
+class ProductionWorkflow < Fractor::Workflow
+  workflow "production-api" do
+    configure_dead_letter_queue(max_size: 5000)
+
+    job "primary_api_call" do
+      runs_with PrimaryAPIWorker
+
+      # Retry configuration
+      retry_config(
+        backoff: :exponential,
+        base_delay: 2,
+        max_delay: 60,
+        max_attempts: 5
+      )
+      retry_on [Timeout::Error, Errno::ECONNREFUSED, Errno::ETIMEDOUT]
+
+      # Circuit breaker configuration
+      circuit_breaker(
+        key: "production_api",
+        threshold: 10,
+        timeout: 120,
+        half_open_calls: 5
+      )
+
+      # Fallback to secondary service
+      fallback_to "secondary_api_call"
+
+      # Real-time error monitoring
+      on_error do |error, context|
+        ErrorReporter.record(
+          WorkResult.new(error: error),
+          job_name: "primary_api_call"
+        )
+      end
+    end
+
+    job "secondary_api_call" do
+      runs_with SecondaryAPIWorker
+
+      retry_config(max_attempts: 2)
+      fallback_to "cached_response"
+    end
+
+    job "cached_response" do
+      runs_with CacheWorker
+    end
+  end
+end
+----
+
+== Troubleshooting
+
+=== Memory Usage
+
+The ErrorReporter keeps the last 100 errors per category. For high-volume applications:
+
+[source,ruby]
+----
+# Reset periodically
+reporter.reset
+
+# Or implement custom cleanup
+class CustomErrorReporter < Fractor::ErrorReporter
+  def record(work_result, job_name: nil)
+    super
+    cleanup_if_needed
+  end
+
+  private
+
+  def cleanup_if_needed
+    # Custom cleanup logic
+    if total_errors > 10_000
+      @mutex.synchronize do
+        # Keep only recent categories
+        @by_category.select! do |_, stats|
+          stats.recent_errors.any? { |e| e[:timestamp] > 1.hour.ago }
+        end
+      end
+    end
+  end
+end
+----
+
+=== Thread Safety
+
+All ErrorReporter operations are thread-safe. No additional synchronization needed:
+
+[source,ruby]
+----
+# Safe to use from multiple threads
+threads = 10.times.map do
+  Thread.new do
+    100.times do |i|
+      result = process_work(i)
+      reporter.record(result)  # Thread-safe
+    end
+  end
+end
+
+threads.each(&:join)
+----
+
+== See Also
+
+* link:../reference/api.adoc[API Reference] - Complete API documentation
+* link:../pages/core-concepts.adoc[Core Concepts] - Understanding WorkResult
+* link:workflows.adoc[Workflows] - Workflow error handling

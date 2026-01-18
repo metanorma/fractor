@@ -1,0 +1,1022 @@
+---
+layout: default
+title: Implementing Complex Workflows
+nav_order: 7
+---
+
+== Implementing Complex Workflows
+
+=== Overview
+
+In this 45-minute advanced tutorial, you'll build a sophisticated data processing workflow with conditional execution, retry logic, circuit breakers, and error recovery. This demonstrates Fractor's workflow system for production-grade applications.
+
+**What you'll learn:**
+
+* Building multi-stage workflows with dependencies
+* Implementing retry logic with different backoff strategies
+* Using circuit breakers to prevent cascading failures
+* Handling errors with Dead Letter Queues
+* Creating conditional workflows
+* Monitoring workflow execution
+* Testing workflow patterns
+
+**Prerequisites:**
+
+* Completed link:getting-started[Getting Started] and link:data-processing-pipeline[Data Processing Pipeline] tutorials
+* Understanding of link:../guides/core-concepts[Core Concepts]
+* Familiarity with link:../guides/workflows[Workflows]
+
+=== The Problem
+
+You need to build an order fulfillment workflow that:
+
+1. **Validate Order**: Check inventory, pricing, customer credit
+2. **Payment Processing**: Charge customer with retry and fallback
+3. **Inventory Reservation**: Reserve items with circuit breaker protection
+4. **Shipping**: Create shipping label (conditional on payment success)
+5. **Notification**: Send confirmations with retry logic
+6. **Audit**: Log all steps for compliance
+
+The workflow must handle:
+
+* External API failures (payment, shipping)
+* Inventory shortages
+* Network timeouts
+* Partial failures
+* Concurrent order processing
+
+=== Step 1: Set Up the Project
+
+Create the project:
+
+[source,sh]
+----
+mkdir order_fulfillment
+cd order_fulfillment
+mkdir -p lib spec
+----
+
+Create `Gemfile`:
+
+[source,ruby]
+----
+source 'https://rubygems.org'
+
+gem 'fractor'
+gem 'rspec'
+----
+
+Install:
+
+[source,sh]
+----
+bundle install
+----
+
+=== Step 2: Define Data Models
+
+Create `lib/models.rb`:
+
+[source,ruby]
+----
+# Order input
+class Order
+  attr_accessor :order_id, :customer_id, :items, :total, :shipping_address
+
+  def initialize(attrs = {})
+    @order_id = attrs[:order_id]
+    @customer_id = attrs[:customer_id]
+    @items = attrs[:items] || []
+    @total = attrs[:total]
+    @shipping_address = attrs[:shipping_address]
+  end
+
+  def to_h
+    {
+      order_id: @order_id,
+      customer_id: @customer_id,
+      items: @items,
+      total: @total,
+      shipping_address: @shipping_address
+    }
+  end
+end
+
+# Validation result
+class ValidationResult
+  attr_accessor :valid, :errors, :warnings, :order
+
+  def initialize(valid:, errors: [], warnings: [], order:)
+    @valid = valid
+    @errors = errors
+    @warnings = warnings
+    @order = order
+  end
+
+  def valid?
+    @valid
+  end
+end
+
+# Payment result
+class PaymentResult
+  attr_accessor :success, :transaction_id, :amount, :payment_method
+
+  def initialize(attrs = {})
+    @success = attrs[:success]
+    @transaction_id = attrs[:transaction_id]
+    @amount = attrs[:amount]
+    @payment_method = attrs[:payment_method] || 'primary'
+  end
+
+  def success?
+    @success
+  end
+end
+
+# Inventory result
+class InventoryResult
+  attr_accessor :reserved, :reservation_ids, :items
+
+  def initialize(attrs = {})
+    @reserved = attrs[:reserved]
+    @reservation_ids = attrs[:reservation_ids] || []
+    @items = attrs[:items] || []
+  end
+
+  def reserved?
+    @reserved
+  end
+end
+
+# Shipping result
+class ShippingResult
+  attr_accessor :tracking_number, :carrier, :estimated_delivery
+
+  def initialize(attrs = {})
+    @tracking_number = attrs[:tracking_number]
+    @carrier = attrs[:carrier]
+    @estimated_delivery = attrs[:estimated_delivery]
+  end
+end
+
+# Final fulfillment result
+class FulfillmentResult
+  attr_accessor :order_id, :status, :payment, :inventory, :shipping, :timestamp
+
+  def initialize(attrs = {})
+    @order_id = attrs[:order_id]
+    @status = attrs[:status]
+    @payment = attrs[:payment]
+    @inventory = attrs[:inventory]
+    @shipping = attrs[:shipping]
+    @timestamp = Time.now
+  end
+
+  def to_h
+    {
+      order_id: @order_id,
+      status: @status,
+      payment: @payment,
+      inventory: @inventory,
+      shipping: @shipping,
+      timestamp: @timestamp
+    }
+  end
+end
+----
+
+=== Step 3: Create Workflow Workers
+
+Create `lib/workers.rb`:
+
+[source,ruby]
+----
+require 'fractor'
+require_relative 'models'
+
+# Step 1: Validate order
+class ValidateOrderWorker < Fractor::Worker
+  def process(work)
+    order = work.input
+    errors = []
+    warnings = []
+
+    # Inventory check
+    order.items.each do |item|
+      if item[:quantity] > available_inventory(item[:sku])
+        errors << "Insufficient inventory for #{item[:sku]}"
+      end
+    end
+
+    # Credit check
+    if customer_credit_limit(order.customer_id) < order.total
+      warnings << "Order exceeds normal credit limit"
+    end
+
+    # Price validation
+    if order.total < 0
+      errors << "Invalid total amount"
+    end
+
+    result = ValidationResult.new(
+      valid: errors.empty?,
+      errors: errors,
+      warnings: warnings,
+      order: order
+    )
+
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+
+  private
+
+  def available_inventory(sku)
+    # Simulate inventory check
+    rand(10..100)
+  end
+
+  def customer_credit_limit(customer_id)
+    # Simulate credit check
+    10000
+  end
+end
+
+# Step 2: Process payment with retry and fallback
+class ProcessPaymentWorker < Fractor::Worker
+  def process(work)
+    order = work.input[:order]
+
+    # Simulate payment processing
+    sleep(0.1 + rand * 0.2)
+
+    # Simulate occasional failures
+    if rand < 0.15
+      raise Net::HTTPRetriableError.new("Payment gateway timeout", nil)
+    end
+
+    result = PaymentResult.new(
+      success: true,
+      transaction_id: "TXN-#{SecureRandom.hex(8)}",
+      amount: order.total,
+      payment_method: 'primary'
+    )
+
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :payment_failed,
+      error_context: { order_id: order.order_id, amount: order.total },
+      work: work
+    )
+  end
+end
+
+# Fallback payment worker (uses backup payment method)
+class ProcessPaymentFallbackWorker < Fractor::Worker
+  def process(work)
+    order = work.input[:order]
+
+    sleep(0.1)
+
+    result = PaymentResult.new(
+      success: true,
+      transaction_id: "TXN-FALLBACK-#{SecureRandom.hex(8)}",
+      amount: order.total,
+      payment_method: 'backup'
+    )
+
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+end
+
+# Step 3: Reserve inventory with circuit breaker
+class ReserveInventoryWorker < Fractor::Worker
+  def process(work)
+    order = work.input[:order]
+
+    sleep(0.05 + rand * 0.1)
+
+    # Simulate occasional service issues
+    if rand < 0.1
+      raise Errno::ECONNREFUSED.new("Inventory service unavailable")
+    end
+
+    reservation_ids = order.items.map do |item|
+      "RES-#{SecureRandom.hex(6)}"
+    end
+
+    result = InventoryResult.new(
+      reserved: true,
+      reservation_ids: reservation_ids,
+      items: order.items
+    )
+
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :inventory_failed,
+      error_context: { order_id: order.order_id },
+      work: work
+    )
+  end
+end
+
+# Step 4: Create shipping label
+class CreateShippingWorker < Fractor::Worker
+  def process(work)
+    order = work.input[:order]
+    payment = work.input[:payment]
+
+    # Only ship if payment succeeded
+    unless payment.success?
+      return Fractor::WorkResult.new(
+        error: "Cannot ship without successful payment",
+        error_code: :shipping_skipped,
+        work: work
+      )
+    end
+
+    sleep(0.1 + rand * 0.15)
+
+    result = ShippingResult.new(
+      tracking_number: "TRACK-#{SecureRandom.hex(10)}",
+      carrier: 'FedEx',
+      estimated_delivery: Date.today + 3
+    )
+
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :shipping_failed,
+      error_context: { order_id: order.order_id },
+      work: work
+    )
+  end
+end
+
+# Step 5: Send notifications
+class SendNotificationWorker < Fractor::Worker
+  def process(work)
+    fulfillment = work.input
+
+    sleep(0.05)
+
+    # Send email notification
+    send_email(fulfillment)
+
+    # Send SMS if configured
+    send_sms(fulfillment) if fulfillment[:send_sms]
+
+    Fractor::WorkResult.new(
+      result: { notified: true, channels: ['email'] },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :notification_failed,
+      error_context: { order_id: fulfillment[:order_id] },
+      work: work
+    )
+  end
+
+  private
+
+  def send_email(fulfillment)
+    # Simulate email sending
+    puts "  📧 Sent order confirmation for #{fulfillment[:order_id]}"
+  end
+
+  def send_sms(fulfillment)
+    # Simulate SMS sending
+    puts "  📱 Sent SMS notification for #{fulfillment[:order_id]}"
+  end
+end
+
+# Step 6: Audit logging
+class AuditLogWorker < Fractor::Worker
+  def process(work)
+    fulfillment = work.input
+
+    # Log to audit system
+    log_audit_event(fulfillment)
+
+    Fractor::WorkResult.new(
+      result: FulfillmentResult.new(fulfillment),
+      work: work
+    )
+  end
+
+  private
+
+  def log_audit_event(fulfillment)
+    # In production: write to audit log, compliance system
+    puts "  📝 Logged audit event for order #{fulfillment[:order_id]}"
+  end
+end
+----
+
+=== Step 4: Build the Workflow
+
+Create `lib/order_workflow.rb`:
+
+[source,ruby]
+----
+require 'fractor'
+require_relative 'models'
+require_relative 'workers'
+
+class OrderFulfillmentWorkflow < Fractor::Workflow
+  workflow "order-fulfillment" do
+    input_type Order
+    output_type FulfillmentResult
+
+    # Configure Dead Letter Queue for permanently failed orders
+    configure_dead_letter_queue(
+      max_size: 1000,
+      on_add: lambda { |entry|
+        puts "⚠️  Order #{entry.metadata[:order_id]} added to DLQ"
+        puts "   Reason: #{entry.error.message}"
+      }
+    )
+
+    # Step 1: Validate the order
+    job "validate" do
+      runs_with ValidateOrderWorker
+      inputs_from_workflow
+
+      on_error do |error, context|
+        puts "Validation error: #{error.message}"
+      end
+    end
+
+    # Step 2: Process payment with retry and fallback
+    job "payment" do
+      needs "validate"
+      runs_with ProcessPaymentWorker
+      inputs_from_job "validate"
+
+      # Retry up to 5 times with exponential backoff
+      retry_on_error max_attempts: 5,
+                     backoff: :exponential,
+                     initial_delay: 1,
+                     max_delay: 30,
+                     retryable_errors: [Net::HTTPRetriableError, Timeout::Error]
+
+      # Use backup payment method if primary fails
+      fallback_to "payment_fallback"
+
+      on_error do |error, context|
+        puts "Payment attempt failed: #{error.message}"
+        puts "Attempt #{context.metadata[:attempt]} of 5"
+      end
+    end
+
+    # Fallback payment processing
+    job "payment_fallback" do
+      runs_with ProcessPaymentFallbackWorker
+      inputs_from_job "validate"
+
+      on_error do |error, context|
+        puts "Backup payment also failed: #{error.message}"
+      end
+    end
+
+    # Step 3: Reserve inventory with circuit breaker
+    job "inventory" do
+      needs "payment"
+      runs_with ReserveInventoryWorker
+      inputs_from_job "validate"
+
+      # Circuit breaker: open after 5 failures, stay open for 60s
+      circuit_breaker threshold: 5,
+                      timeout: 60,
+                      half_open_calls: 3,
+                      shared_key: "inventory_service"
+
+      # Retry with linear backoff
+      retry_on_error max_attempts: 3,
+                     backoff: :linear,
+                     increment: 2,
+                     retryable_errors: [Errno::ECONNREFUSED, Errno::ETIMEDOUT]
+
+      on_error do |error, context|
+        if error.is_a?(Fractor::Workflow::CircuitOpenError)
+          puts "⚡ Circuit breaker open for inventory service"
+        else
+          puts "Inventory reservation failed: #{error.message}"
+        end
+      end
+    end
+
+    # Step 4: Create shipping label (conditional on payment success)
+    job "shipping" do
+      needs "payment", "inventory"
+      runs_with CreateShippingWorker
+
+      # Combine inputs from multiple jobs
+      inputs_from_jobs "validate", "payment"
+
+      retry_on_error max_attempts: 3,
+                     backoff: :exponential
+    end
+
+    # Step 5: Send notifications
+    job "notify" do
+      needs "shipping"
+      runs_with SendNotificationWorker
+
+      # Build notification payload
+      inputs_from_jobs "validate", "payment", "shipping"
+
+      # Retry notifications
+      retry_on_error max_attempts: 3,
+                     backoff: :constant,
+                     delay: 5
+    end
+
+    # Step 6: Audit logging (always runs)
+    job "audit" do
+      needs "notify"
+      runs_with AuditLogWorker
+      inputs_from_jobs "validate", "payment", "inventory", "shipping"
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+----
+
+=== Step 5: Add Workflow Execution
+
+Create `lib/workflow_executor.rb`:
+
+[source,ruby]
+----
+require_relative 'order_workflow'
+require_relative 'models'
+
+class OrderProcessor
+  def initialize
+    @stats = {
+      total: 0,
+      succeeded: 0,
+      failed: 0,
+      in_dlq: 0
+    }
+  end
+
+  def process_order(order)
+    @stats[:total] += 1
+
+    puts "\n" + "=" * 60
+    puts "Processing Order #{order.order_id}"
+    puts "=" * 60
+    puts "Customer: #{order.customer_id}"
+    puts "Total: $#{order.total}"
+    puts "Items: #{order.items.size}"
+    puts ""
+
+    workflow = OrderFulfillmentWorkflow.new
+
+    begin
+      # Execute the workflow
+      result = workflow.execute(order)
+
+      @stats[:succeeded] += 1
+
+      puts "\n✓ Order #{order.order_id} fulfilled successfully"
+      puts "  Status: #{result.status}"
+      puts "  Payment: #{result.payment[:transaction_id]}"
+      puts "  Tracking: #{result.shipping[:tracking_number]}"
+
+      result
+    rescue Fractor::Workflow::WorkflowExecutionError => e
+      @stats[:failed] += 1
+
+      puts "\n✗ Order #{order.order_id} failed"
+      puts "  Error: #{e.message}"
+
+      # Check Dead Letter Queue
+      check_dlq(workflow)
+
+      nil
+    end
+  end
+
+  def process_batch(orders)
+    puts "\nProcessing batch of #{orders.size} orders...\n"
+
+    results = orders.map { |order| process_order(order) }
+
+    print_statistics
+
+    results
+  end
+
+  private
+
+  def check_dlq(workflow)
+    dlq = workflow.dead_letter_queue
+    return unless dlq && dlq.size > 0
+
+    @stats[:in_dlq] += 1
+
+    puts "\n  DLQ Status:"
+    puts "  Total entries: #{dlq.size}"
+
+    # Show recent failures
+    dlq.all.last(3).each do |entry|
+      puts "    - #{entry.error.class.name}: #{entry.error.message}"
+    end
+  end
+
+  def print_statistics
+    puts "\n" + "=" * 60
+    puts "Batch Processing Complete"
+    puts "=" * 60
+    puts "Total orders:     #{@stats[:total]}"
+    puts "Succeeded:        #{@stats[:succeeded]}"
+    puts "Failed:           #{@stats[:failed]}"
+    puts "In DLQ:           #{@stats[:in_dlq]}"
+    puts "Success rate:     #{success_rate}%"
+    puts "=" * 60
+  end
+
+  def success_rate
+    return 0 if @stats[:total] == 0
+    ((@stats[:succeeded].to_f / @stats[:total]) * 100).round(2)
+  end
+end
+----
+
+=== Step 6: Create Test Suite
+
+Create `spec/order_workflow_spec.rb`:
+
+[source,ruby]
+----
+require 'rspec'
+require_relative '../lib/order_workflow'
+require_relative '../lib/workflow_executor'
+
+RSpec.describe OrderFulfillmentWorkflow do
+  let(:valid_order) do
+    Order.new(
+      order_id: 'ORD-001',
+      customer_id: 'CUST-123',
+      items: [
+        { sku: 'WIDGET-A', quantity: 2, price: 10.00 },
+        { sku: 'GADGET-B', quantity: 1, price: 25.00 }
+      ],
+      total: 45.00,
+      shipping_address: {
+        street: '123 Main St',
+        city: 'Portland',
+        state: 'OR',
+        zip: '97201'
+      }
+    )
+  end
+
+  describe "successful workflow" do
+    it "processes valid order through all stages" do
+      workflow = OrderFulfillmentWorkflow.new
+      result = workflow.execute(valid_order)
+
+      expect(result).to be_a(FulfillmentResult)
+      expect(result.order_id).to eq('ORD-001')
+      expect(result.status).to_not be_nil
+    end
+  end
+
+  describe "validation stage" do
+    it "validates order data" do
+      order = valid_order
+      workflow = OrderFulfillmentWorkflow.new
+
+      result = workflow.execute(order)
+      expect(result).to_not be_nil
+    end
+  end
+
+  describe "retry logic" do
+    it "retries on transient failures" do
+      # Test by observing retry behavior in logs
+      processor = OrderProcessor.new
+      result = processor.process_order(valid_order)
+
+      expect(result).to_not be_nil
+    end
+  end
+
+  describe "circuit breaker" do
+    it "opens circuit after threshold failures" do
+      # Would need to inject failures to test properly
+      # This is a placeholder for circuit breaker testing
+      expect(true).to be true
+    end
+  end
+
+  describe "dead letter queue" do
+    it "captures permanently failed orders" do
+      processor = OrderProcessor.new
+
+      # Create intentionally failing order
+      bad_order = valid_order
+      bad_order.total = -100 # Invalid
+
+      result = processor.process_order(bad_order)
+      # Result might be nil for failed orders
+    end
+  end
+end
+----
+
+=== Step 7: Run the Workflow
+
+Create `run_workflow.rb`:
+
+[source,ruby]
+----
+require_relative 'lib/workflow_executor'
+require_relative 'lib/models'
+
+# Create test orders
+orders = [
+  Order.new(
+    order_id: 'ORD-001',
+    customer_id: 'CUST-001',
+    items: [{ sku: 'WIDGET-A', quantity: 2, price: 10.00 }],
+    total: 20.00,
+    shipping_address: { city: 'Portland', state: 'OR' }
+  ),
+  Order.new(
+    order_id: 'ORD-002',
+    customer_id: 'CUST-002',
+    items: [{ sku: 'GADGET-B', quantity: 1, price: 50.00 }],
+    total: 50.00,
+    shipping_address: { city: 'Seattle', state: 'WA' }
+  ),
+  Order.new(
+    order_id: 'ORD-003',
+    customer_id: 'CUST-003',
+    items: [{ sku: 'WIDGET-C', quantity: 5, price: 15.00 }],
+    total: 75.00,
+    shipping_address: { city: 'San Francisco', state: 'CA' }
+  )
+]
+
+# Process orders
+processor = OrderProcessor.new
+processor.process_batch(orders)
+----
+
+Run it:
+
+[source,sh]
+----
+ruby run_workflow.rb
+----
+
+Run tests:
+
+[source,sh]
+----
+bundle exec rspec spec/order_workflow_spec.rb
+----
+
+=== Step 8: Add Workflow Visualization
+
+Create `visualize_workflow.rb`:
+
+[source,ruby]
+----
+require_relative 'lib/order_workflow'
+require 'fractor/workflow/visualizer'
+
+workflow = OrderFulfillmentWorkflow.new
+
+visualizer = Fractor::Workflow::Visualizer.new(workflow)
+
+# Generate Mermaid diagram
+puts "Mermaid Diagram:"
+puts "=" * 60
+puts visualizer.to_mermaid
+puts ""
+
+# Generate ASCII diagram
+puts "ASCII Diagram:"
+puts "=" * 60
+puts visualizer.to_ascii
+puts ""
+
+# Save DOT format for Graphviz
+File.write('workflow.dot', visualizer.to_dot)
+puts "Graphviz DOT saved to workflow.dot"
+puts "Generate image: dot -Tpng workflow.dot -o workflow.png"
+----
+
+=== Best Practices Demonstrated
+
+==== 1. Layered Error Handling
+
+Multiple levels of protection:
+
+[source,ruby]
+----
+# Layer 1: Retry for transient failures
+retry_on_error max_attempts: 5, backoff: :exponential
+
+# Layer 2: Circuit breaker for sustained failures
+circuit_breaker threshold: 5, timeout: 60
+
+# Layer 3: Fallback for when all else fails
+fallback_to "payment_fallback"
+
+# Layer 4: Dead Letter Queue for permanent failures
+configure_dead_letter_queue max_size: 1000
+----
+
+==== 2. Selective Retry
+
+Only retry specific error types:
+
+[source,ruby]
+----
+retry_on_error retryable_errors: [
+  Net::HTTPRetriableError,
+  Timeout::Error,
+  Errno::ECONNREFUSED
+]
+----
+
+==== 3. Backoff Strategies
+
+Choose appropriate backoff for each job:
+
+* **Exponential**: For external APIs (prevents hammering)
+* **Linear**: For resource contention
+* **Constant**: For notification retries
+
+==== 4. Circuit Breaker Sharing
+
+Share circuit breakers across related jobs:
+
+[source,ruby]
+----
+# Multiple jobs can share the same circuit
+circuit_breaker shared_key: "inventory_service"
+----
+
+==== 5. Comprehensive Monitoring
+
+Track workflow execution:
+
+[source,ruby]
+----
+trace = workflow.execution_trace
+trace.jobs.each do |job_id, job_trace|
+  puts "#{job_id}: #{job_trace.duration}s (#{job_trace.status})"
+end
+----
+
+=== Advanced Patterns
+
+==== 1. Conditional Execution
+
+Create jobs that run conditionally:
+
+[source,ruby]
+----
+job "premium_handling" do
+  runs_with PremiumHandlingWorker
+
+  # Only run for premium customers
+  condition ->(context) { context.input.customer_tier == 'premium' }
+end
+----
+
+==== 2. Fan-Out/Fan-In
+
+Parallel processing with aggregation:
+
+[source,ruby]
+----
+# Fan out to multiple jobs
+job "validate_inventory" do
+  runs_with InventoryWorker
+end
+
+job "validate_pricing" do
+  runs_with PricingWorker
+end
+
+# Fan in: aggregate results
+job "combine_validation" do
+  needs "validate_inventory", "validate_pricing"
+  runs_with AggregationWorker
+end
+----
+
+==== 3. Workflow Composition
+
+Reuse workflows:
+
+[source,ruby]
+----
+class ParentWorkflow < Fractor::Workflow
+  workflow "parent" do
+    job "sub_workflow" do
+      runs_with SubWorkflowWorker
+      # SubWorkflowWorker internally runs another workflow
+    end
+  end
+end
+----
+
+=== Production Deployment
+
+==== Monitoring
+
+Add comprehensive monitoring:
+
+[source,ruby]
+----
+workflow = OrderFulfillmentWorkflow.new
+
+# Before execution
+monitor = Fractor::PerformanceMonitor.new(workflow.supervisor)
+monitor.start
+
+# Execute
+result = workflow.execute(order)
+
+# After execution
+puts monitor.report
+File.write('metrics.json', monitor.to_json)
+monitor.stop
+----
+
+==== Error Tracking
+
+Integrate with error tracking services:
+
+[source,ruby]
+----
+on_error do |error, context|
+  Sentry.capture_exception(error, extra: context.to_h)
+  Datadog.increment('workflow.errors', tags: ["job:#{context.job_id}"])
+end
+----
+
+==== DLQ Processing
+
+Process DLQ entries:
+
+[source,ruby]
+----
+# Manual DLQ review and retry
+dlq = workflow.dead_letter_queue
+
+dlq.all.each do |entry|
+  puts "Failed: #{entry.error.message}"
+
+  # Fix issue and retry
+  if should_retry?(entry)
+    workflow.execute(entry.work.input)
+  end
+end
+----
+
+=== Summary
+
+You've built a production-ready workflow with:
+
+✓ Multi-stage processing with dependencies
+✓ Retry logic with multiple backoff strategies
+✓ Circuit breakers for service protection
+✓ Fallback jobs for resilience
+✓ Dead Letter Queue for failure tracking
+✓ Comprehensive error handling
+✓ Monitoring and visualization
+
+**Key takeaways:**
+
+1. Layer error handling (retry → circuit breaker → fallback → DLQ)
+2. Choose appropriate backoff strategies per job type
+3. Use circuit breakers for external service calls
+4. Implement fallback paths for critical operations
+5. Monitor workflow execution and failures
+6. Test all failure scenarios
+
+=== Next Steps
+
+* Explore link:../guides/workflows[Workflows Guide] for more patterns
+* Check link:../reference/api[API Reference] for complete workflow DSL
+* Review link:../reference/error-reporting[Error Reporting] for production monitoring
+* See workflow examples in link:../../examples/workflow/[examples/workflow/]

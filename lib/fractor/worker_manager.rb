@@ -57,7 +57,7 @@ module Fractor
       {
         total: @workers.size,
         idle: idle_workers.size,
-        busy: busy_workers.size
+        busy: busy_workers.size,
       }
     end
 

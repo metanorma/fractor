@@ -7,7 +7,8 @@ module Fractor
   # Note: The ShutdownSignal exception class is defined in supervisor.rb
   # to maintain backwards compatibility.
   class SignalHandler
-    def initialize(continuous_mode: false, debug: false, status_callback: nil, shutdown_callback: nil)
+    def initialize(continuous_mode: false, debug: false, status_callback: nil,
+shutdown_callback: nil)
       @continuous_mode = continuous_mode
       @debug = debug
       @status_callback = status_callback
@@ -39,21 +40,19 @@ module Fractor
 
     def setup_windows_status_signal
       # Windows: Try SIGBREAK (Ctrl+Break) if available
-      begin
-        Signal.trap("BREAK") { trigger_status_callback }
-      rescue ArgumentError
-        # SIGBREAK not supported on this Ruby version/platform
-        # Status monitoring unavailable on Windows
-      end
+
+      Signal.trap("BREAK") { trigger_status_callback }
+    rescue ArgumentError
+      # SIGBREAK not supported on this Ruby version/platform
+      # Status monitoring unavailable on Windows
     end
 
     def setup_unix_status_signal
       # Unix/Linux/macOS: Use SIGUSR1
-      begin
-        Signal.trap("USR1") { trigger_status_callback }
-      rescue ArgumentError
-        # SIGUSR1 not supported on this platform
-      end
+
+      Signal.trap("USR1") { trigger_status_callback }
+    rescue ArgumentError
+      # SIGUSR1 not supported on this platform
     end
 
     def handle_shutdown(signal_name)

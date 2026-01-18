@@ -13,6 +13,8 @@ class PreExecutionTestWorker < Fractor::Worker
 end
 
 RSpec.describe Fractor::Workflow::PreExecutionContext do
+  subject(:context) { described_class.new(workflow, input) }
+
   let(:workflow_class) do
     Class.new(Fractor::Workflow) do
       workflow "test_workflow" do
@@ -33,8 +35,6 @@ RSpec.describe Fractor::Workflow::PreExecutionContext do
 
   let(:input) { "test input" }
   let(:workflow) { workflow_class.new }
-
-  subject(:context) { described_class.new(workflow, input) }
 
   describe "#initialize" do
     it "stores the workflow and input" do
@@ -117,15 +117,16 @@ RSpec.describe Fractor::Workflow::PreExecutionContext do
       let(:input) { 123 } # Wrong type
 
       it "raises WorkflowError" do
-        expect {
+        expect do
           context.validate!
-        }.to raise_error(Fractor::WorkflowError, /expects input of type String, got Integer/)
+        end.to raise_error(Fractor::WorkflowError,
+                           /expects input of type String, got Integer/)
       end
 
       it "includes the type mismatch in error message" do
-        expect {
+        expect do
           context.validate!
-        }.to raise_error(/got #{input.class}/)
+        end.to raise_error(/got #{input.class}/)
       end
     end
 
@@ -133,25 +134,27 @@ RSpec.describe Fractor::Workflow::PreExecutionContext do
       let(:input) { nil }
 
       it "raises WorkflowError when workflow requires input" do
-        expect {
+        expect do
           context.validate!
-        }.to raise_error(Fractor::WorkflowError, /requires input but none was provided/)
+        end.to raise_error(Fractor::WorkflowError,
+                           /requires input but none was provided/)
       end
     end
   end
 
   describe "#add_validation_hook" do
     it "raises ArgumentError without a block" do
-      expect {
+      expect do
         context.add_validation_hook(:test_hook)
-      }.to raise_error(ArgumentError, "Must provide a block for validation hook")
+      end.to raise_error(ArgumentError,
+                         "Must provide a block for validation hook")
     end
 
     it "stores the validation hook" do
       context.add_validation_hook(:test_hook) { |ctx| ctx.add_error("test") }
-      expect {
+      expect do
         context.validate!
-      }.to raise_error(Fractor::WorkflowError, /test/)
+      end.to raise_error(Fractor::WorkflowError, /test/)
     end
   end
 
@@ -166,9 +169,9 @@ RSpec.describe Fractor::Workflow::PreExecutionContext do
         end
       end
 
-      expect {
+      expect do
         short_context.validate!
-      }.to raise_error(Fractor::WorkflowError, /Input too short/)
+      end.to raise_error(Fractor::WorkflowError, /Input too short/)
     end
 
     it "passes validation when custom hook conditions are met" do
@@ -201,26 +204,28 @@ RSpec.describe Fractor::Workflow::PreExecutionContext do
         raise StandardError, "Hook failed"
       end
 
-      expect {
+      expect do
         context.validate!
-      }.to raise_error(Fractor::WorkflowError, /Validation hook 'failing_hook' raised error/)
+      end.to raise_error(Fractor::WorkflowError,
+                         /Validation hook 'failing_hook' raised error/)
     end
   end
 
   describe "error message formatting" do
     it "includes workflow name in error message" do
-      expect {
+      # Valid case
+      expect do
         context.validate!
-      }.not_to raise_error # Valid case
+      end.not_to raise_error
     end
 
     it "formats multiple errors clearly" do
       context.add_validation_hook(:error1) { |ctx| ctx.add_error("Error 1") }
       context.add_validation_hook(:error2) { |ctx| ctx.add_error("Error 2") }
 
-      expect {
+      expect do
         context.validate!
-      }.to raise_error do |error|
+      end.to raise_error do |error|
         expect(error.message).to include("Error 1")
         expect(error.message).to include("Error 2")
         expect(error.message).to include("Errors:")
@@ -228,12 +233,16 @@ RSpec.describe Fractor::Workflow::PreExecutionContext do
     end
 
     it "includes warnings in error message when errors present" do
-      context.add_validation_hook(:critical) { |ctx| ctx.add_error("Critical error") }
-      context.add_validation_hook(:warning) { |ctx| ctx.add_warning("Minor warning") }
+      context.add_validation_hook(:critical) do |ctx|
+        ctx.add_error("Critical error")
+      end
+      context.add_validation_hook(:warning) do |ctx|
+        ctx.add_warning("Minor warning")
+      end
 
-      expect {
+      expect do
         context.validate!
-      }.to raise_error do |error|
+      end.to raise_error do |error|
         expect(error.message).to include("Critical error")
         expect(error.message).to include("Minor warning")
         expect(error.message).to include("Warnings:")

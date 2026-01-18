@@ -87,7 +87,7 @@ module Fractor
       # @param attempt [Integer] The current attempt number
       # @param error [Exception] The error that occurred
       # @return [Boolean] true if retry should be attempted
-      def should_retry?(attempt, error)
+      def should_retry?(_attempt, error)
         return false if exhausted?(@retry_config.max_attempts)
 
         @retry_config.retryable?(error)
@@ -141,7 +141,7 @@ module Fractor
               timestamp: err[:timestamp],
             }
           end,
-          total_time: @started_at ? Time.now - @started_at : 0
+          total_time: @started_at ? Time.now - @started_at : 0,
         }
       end
 

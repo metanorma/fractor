@@ -8,7 +8,7 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
       backoff: :exponential,
       max_attempts: 3,
       initial_delay: 1,
-      max_delay: 10
+      max_delay: 10,
     )
   end
 
@@ -38,14 +38,14 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
 
     context "when execution succeeds on first attempt" do
       it "returns the result without retries" do
-        result = orchestrator.execute_with_retry(job) { |j| "success" }
+        result = orchestrator.execute_with_retry(job) { |_j| "success" }
 
         expect(result).to eq("success")
         expect(orchestrator.attempts).to eq(1)
       end
 
       it "does not set last_error" do
-        orchestrator.execute_with_retry(job) { |j| "success" }
+        orchestrator.execute_with_retry(job) { |_j| "success" }
 
         expect(orchestrator.last_error).to be_nil
       end
@@ -55,9 +55,10 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
       it "retries and returns result" do
         attempt_count = 0
 
-        result = orchestrator.execute_with_retry(job) do |j|
+        result = orchestrator.execute_with_retry(job) do |_j|
           attempt_count += 1
           raise StandardError, "temporarily failed" if attempt_count == 1
+
           "success"
         end
 
@@ -71,18 +72,18 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
         retry_config_non_retryable = Fractor::Workflow::RetryConfig.from_options(
           backoff: :exponential,
           max_attempts: 3,
-          retryable_errors: []
+          retryable_errors: [],
         )
         orch = described_class.new(retry_config_non_retryable, debug: false)
 
         attempt_count = 0
 
-        expect {
-          orch.execute_with_retry(job) do |j|
+        expect do
+          orch.execute_with_retry(job) do |_j|
             attempt_count += 1
             raise StandardError, "not retryable"
           end
-        }.to raise_error(StandardError, "not retryable")
+        end.to raise_error(StandardError, "not retryable")
 
         expect(attempt_count).to eq(1)
         expect(orch.attempts).to eq(1)
@@ -93,18 +94,18 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
       it "raises the last error" do
         retry_config_max_2 = Fractor::Workflow::RetryConfig.from_options(
           backoff: :exponential,
-          max_attempts: 2
+          max_attempts: 2,
         )
         orch = described_class.new(retry_config_max_2, debug: false)
 
         attempt_count = 0
 
-        expect {
-          orch.execute_with_retry(job) do |j|
+        expect do
+          orch.execute_with_retry(job) do |_j|
             attempt_count += 1
             raise StandardError, "persistent error"
           end
-        }.to raise_error(StandardError, "persistent error")
+        end.to raise_error(StandardError, "persistent error")
 
         expect(attempt_count).to eq(2)
         expect(orch.attempts).to eq(2)
@@ -117,7 +118,7 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
         retry_config_delayed = Fractor::Workflow::RetryConfig.from_options(
           backoff: :exponential,
           max_attempts: 3,
-          initial_delay: 0.1
+          initial_delay: 0.1,
         )
         orch = described_class.new(retry_config_delayed, debug: false)
 
@@ -125,13 +126,14 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
         start_time = Time.now
 
         # First attempt fails, second succeeds (after delay)
-        orch.execute_with_retry(job) do |j|
+        orch.execute_with_retry(job) do |_j|
           attempt_count += 1
           raise StandardError, "failed" if attempt_count == 1
+
           "success"
         end
 
-        elapsed = Time.now - start_time
+        Time.now - start_time
         # Should have waited once after attempt 1 failed
         # delay_for(1) = 0, so for attempt 2, delay is 0.1
         # But the loop increments @attempts FIRST, so:
@@ -148,7 +150,7 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
         retry_config_delayed = Fractor::Workflow::RetryConfig.from_options(
           backoff: :constant,
           max_attempts: 5,
-          delay: 0.1
+          delay: 0.1,
         )
         orch = described_class.new(retry_config_delayed, debug: false)
 
@@ -156,9 +158,10 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
         start_time = Time.now
 
         begin
-          orch.execute_with_retry(job) do |j|
+          orch.execute_with_retry(job) do |_j|
             attempt_count += 1
             raise StandardError, "failed" if attempt_count <= 2
+
             "success"
           end
         rescue StandardError
@@ -189,7 +192,7 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
       retry_config_no_retry = Fractor::Workflow::RetryConfig.from_options(
         backoff: :exponential,
         max_attempts: 3,
-        retryable_errors: []
+        retryable_errors: [],
       )
       orch = described_class.new(retry_config_no_retry, debug: false)
 
@@ -223,7 +226,7 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
       test_error = StandardError.new("test error")
 
       begin
-        orchestrator.execute_with_retry(job) do |j|
+        orchestrator.execute_with_retry(job) do |_j|
           raise test_error
         end
       rescue StandardError
@@ -258,7 +261,7 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
       job = double("Job", name: "test_job")
 
       begin
-        orchestrator.execute_with_retry(job) do |j|
+        orchestrator.execute_with_retry(job) do |_j|
           raise StandardError, "error"
         end
       rescue StandardError
@@ -276,7 +279,7 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
       job = double("Job", name: "test_job")
 
       begin
-        orchestrator.execute_with_retry(job) do |j|
+        orchestrator.execute_with_retry(job) do |_j|
           raise StandardError, "error"
         end
       rescue StandardError
@@ -294,7 +297,7 @@ RSpec.describe Fractor::Workflow::RetryOrchestrator do
     it "returns state with nil last_error when no error" do
       job = double("Job", name: "test_job")
 
-      orchestrator.execute_with_retry(job) { |j| "success" }
+      orchestrator.execute_with_retry(job) { |_j| "success" }
 
       state = orchestrator.state
 

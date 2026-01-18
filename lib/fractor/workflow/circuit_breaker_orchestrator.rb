@@ -20,11 +20,12 @@ module Fractor
       # @param half_open_calls [Integer] Number of test calls in half-open
       # @param job_name [String] Optional job name for logging
       # @param debug [Boolean] Whether to enable debug logging
-      def initialize(threshold: 5, timeout: 60, half_open_calls: 3, job_name: nil, debug: false)
+      def initialize(threshold: 5, timeout: 60, half_open_calls: 3,
+job_name: nil, debug: false)
         @breaker = CircuitBreaker.new(
           threshold: threshold,
           timeout: timeout,
-          half_open_calls: half_open_calls
+          half_open_calls: half_open_calls,
         )
         @job_name = job_name
         @debug = debug
@@ -39,12 +40,12 @@ module Fractor
       # @yield [Job] Block that executes the job
       # @return [Object] The execution result
       # @raise [CircuitOpenError] If circuit is open
-      def execute_with_breaker(job, &block)
+      def execute_with_breaker(job, &)
         @execution_count += 1
 
         log_debug "Executing job '#{job.name}' with circuit breaker protection"
 
-        check_and_call_breaker(job, &block)
+        check_and_call_breaker(job, &)
       rescue CircuitOpenError => e
         @blocked_count += 1
         log_debug "Job '#{job.name}' blocked by circuit breaker: #{e.message}"
@@ -112,7 +113,7 @@ module Fractor
         @breaker.stats.merge(
           execution_count: @execution_count,
           success_count: @success_count,
-          blocked_count: @blocked_count
+          blocked_count: @blocked_count,
         )
       end
 
@@ -138,12 +139,12 @@ module Fractor
       # @param job [Job] The job to execute
       # @yield [Job] Block that executes the job
       # @return [Object] The execution result
-      def execute_bypassing_breaker(job, &block)
+      def execute_bypassing_breaker(job)
         @execution_count += 1
 
         log_debug "Executing job '#{job.name}' bypassing circuit breaker"
 
-        result = block.call(job)
+        result = yield(job)
         @success_count += 1
         result
       rescue StandardError => e
@@ -174,8 +175,8 @@ module Fractor
       # @param job [Job] The job to execute
       # @yield [Job] Block that executes the job
       # @return [Object] The execution result
-      def check_and_call_breaker(job, &block)
-        result = @breaker.call(&block)
+      def check_and_call_breaker(job, &)
+        result = @breaker.call(&)
 
         @success_count += 1
         log_success(job) if @debug

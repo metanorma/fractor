@@ -371,7 +371,7 @@ RSpec.describe WebScraper do
 
     it "is thread-safe" do
       threads = []
-      10.times do |_i|
+      10.times do |_i| # rubocop:disable Lint/UnusedBlockArgument
         threads << Thread.new do
           result = Fractor::WorkResult.new(
             result: {},

@@ -29,7 +29,7 @@ RSpec.describe Fractor::WorkDistributionManager do
       workers,
       ractors_map,
       debug: false,
-      continuous_mode: false
+      continuous_mode: false,
     )
   end
 
@@ -51,7 +51,7 @@ RSpec.describe Fractor::WorkDistributionManager do
 
   describe "#assign_work_to_worker" do
     let(:wrapped_ractor) do
-      instance_double("Fractor::WrappedRactor",
+      instance_double(Fractor::WrappedRactor,
                       name: "test-worker",
                       closed?: false,
                       send: true)
@@ -86,19 +86,19 @@ RSpec.describe Fractor::WorkDistributionManager do
 
       it "removes work from queue" do
         expect { manager.assign_work_to_worker(wrapped_ractor) }
-          .to change { work_queue.size }.from(1).to(0)
+          .to change(work_queue, :size).from(1).to(0)
       end
 
       it "removes worker from idle list if present" do
         manager.mark_worker_idle(wrapped_ractor)
         expect { manager.assign_work_to_worker(wrapped_ractor) }
-          .to change { manager.idle_count }.from(1).to(0)
+          .to change(manager, :idle_count).from(1).to(0)
       end
     end
 
     context "when ractor is closed" do
       let(:wrapped_ractor) do
-        instance_double("Fractor::WrappedRactor",
+        instance_double(Fractor::WrappedRactor,
                         name: "closed-worker",
                         closed?: true,
                         ractor: Ractor.current)
@@ -133,13 +133,13 @@ RSpec.describe Fractor::WorkDistributionManager do
 
     it "adds worker to idle list" do
       expect { manager.mark_worker_idle(worker) }
-        .to change { manager.idle_count }.from(0).to(1)
+        .to change(manager, :idle_count).from(0).to(1)
     end
 
     it "does not add duplicate workers" do
       manager.mark_worker_idle(worker)
       expect { manager.mark_worker_idle(worker) }
-        .not_to(change { manager.idle_count })
+        .not_to(change(manager, :idle_count))
     end
 
     it "includes worker in idle_workers_list" do
@@ -154,7 +154,7 @@ RSpec.describe Fractor::WorkDistributionManager do
     it "removes worker from idle list" do
       manager.mark_worker_idle(worker)
       expect { manager.mark_worker_busy(worker) }
-        .to change { manager.idle_count }.from(1).to(0)
+        .to change(manager, :idle_count).from(1).to(0)
     end
 
     it "does not error if worker not in idle list" do
@@ -164,8 +164,8 @@ RSpec.describe Fractor::WorkDistributionManager do
 
   describe "#distribute_to_idle_workers" do
     let(:workers) do
-      3.times.map do |i|
-        instance_double("Fractor::WrappedRactor",
+      Array.new(3) do |i|
+        instance_double(Fractor::WrappedRactor,
                         name: "worker-#{i}",
                         closed?: false,
                         send: true)
@@ -178,7 +178,7 @@ RSpec.describe Fractor::WorkDistributionManager do
         workers,
         ractors_map,
         debug: false,
-        continuous_mode: false
+        continuous_mode: false,
       )
     end
 
@@ -347,7 +347,7 @@ RSpec.describe Fractor::WorkDistributionManager do
     let(:work) { work_class.new(42) }
 
     context "when performance monitor is enabled" do
-      let(:performance_monitor) { instance_double("Fractor::PerformanceMonitor") }
+      let(:performance_monitor) { instance_double(Fractor::PerformanceMonitor) }
 
       let(:manager) do
         described_class.new(
@@ -356,14 +356,15 @@ RSpec.describe Fractor::WorkDistributionManager do
           ractors_map,
           debug: false,
           continuous_mode: false,
-          performance_monitor: performance_monitor
+          performance_monitor: performance_monitor,
         )
       end
 
       before do
         work_queue.push(work)
         # Simulate tracking start time by directly setting it
-        manager.instance_variable_get(:@work_start_times)[work.object_id] = Time.now
+        manager.instance_variable_get(:@work_start_times)[work.object_id] =
+          Time.now
       end
 
       it "returns the start time" do
@@ -373,7 +374,9 @@ RSpec.describe Fractor::WorkDistributionManager do
 
       it "removes the start time from tracking" do
         expect { manager.get_work_start_time(work.object_id) }
-          .to change { manager.instance_variable_get(:@work_start_times).size }.from(1).to(0)
+          .to change {
+                manager.instance_variable_get(:@work_start_times).size
+              }.from(1).to(0)
       end
     end
 
@@ -386,7 +389,7 @@ RSpec.describe Fractor::WorkDistributionManager do
   end
 
   describe "#clear_work_start_times" do
-    let(:performance_monitor) { instance_double("Fractor::PerformanceMonitor") }
+    let(:performance_monitor) { instance_double(Fractor::PerformanceMonitor) }
 
     let(:manager) do
       described_class.new(
@@ -395,18 +398,22 @@ RSpec.describe Fractor::WorkDistributionManager do
         ractors_map,
         debug: false,
         continuous_mode: false,
-        performance_monitor: performance_monitor
+        performance_monitor: performance_monitor,
       )
     end
 
     it "clears all tracked start times" do
       work1 = work_class.new(1)
       work2 = work_class.new(2)
-      manager.instance_variable_get(:@work_start_times)[work1.object_id] = Time.now
-      manager.instance_variable_get(:@work_start_times)[work2.object_id] = Time.now
+      manager.instance_variable_get(:@work_start_times)[work1.object_id] =
+        Time.now
+      manager.instance_variable_get(:@work_start_times)[work2.object_id] =
+        Time.now
 
       expect { manager.clear_work_start_times }
-        .to change { manager.instance_variable_get(:@work_start_times).size }.from(2).to(0)
+        .to change {
+              manager.instance_variable_get(:@work_start_times).size
+            }.from(2).to(0)
     end
   end
 

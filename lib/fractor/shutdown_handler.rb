@@ -7,7 +7,8 @@ module Fractor
   # This class extracts shutdown logic from Supervisor to follow
   # the Single Responsibility Principle.
   class ShutdownHandler
-    def initialize(workers, wakeup_ractor, timer_thread, performance_monitor, debug: false)
+    def initialize(workers, wakeup_ractor, timer_thread, performance_monitor,
+debug: false)
       @workers = workers
       @wakeup_ractor = wakeup_ractor
       @timer_thread = timer_thread
@@ -95,7 +96,7 @@ module Fractor
     # @return [Boolean] true if all components are stopped
     def complete?
       timer_stopped = @timer_thread.nil? || !@timer_thread.alive?
-      workers_stopped = @workers.empty? || @workers.all? { |w| w.closed? }
+      workers_stopped = @workers.empty? || @workers.all?(&:closed?)
 
       timer_stopped && workers_stopped
     end
@@ -109,7 +110,7 @@ module Fractor
         timer_thread: @timer_thread&.alive? || false,
         wakeup_ractor: !@wakeup_ractor.nil?,
         workers_count: @workers.size,
-        workers_closed: @workers.count { |w| w.closed? }
+        workers_closed: @workers.count(&:closed?),
       }
     end
   end

@@ -54,8 +54,8 @@ module Fractor
   #     config.logger = Logger.new(STDOUT)
   #     config.default_worker_timeout = 60
   #   end
-  def self.configure(&block)
-    Configuration.configure(&block)
+  def self.configure(&)
+    Configuration.configure(&)
   end
 
   # Load configuration from a YAML file.

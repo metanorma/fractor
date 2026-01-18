@@ -248,14 +248,18 @@ RSpec.describe Fractor::Supervisor do
 
     describe "#debug!" do
       it "enables debug mode" do
-        expect { supervisor.debug! }.to change { supervisor.debug? }.from(false).to(true)
+        expect do
+          supervisor.debug!
+        end.to change(supervisor, :debug?).from(false).to(true)
       end
     end
 
     describe "#debug_off!" do
       it "disables debug mode" do
         supervisor.debug!
-        expect { supervisor.debug_off! }.to change { supervisor.debug? }.from(true).to(false)
+        expect do
+          supervisor.debug_off!
+        end.to change(supervisor, :debug?).from(true).to(false)
       end
     end
 
@@ -332,7 +336,9 @@ RSpec.describe Fractor::Supervisor do
         # Check worker structure
         worker_status = pool_status[:workers].first
         expect(worker_status[:name]).to be_a(String)
-        expect(worker_status[:idle]).to satisfy { |v| v == true || v == false }
+        expect(worker_status[:idle]).to(satisfy do |v|
+          [true, false].include?(v)
+        end)
       end
 
       it "returns status for multiple worker pools" do
@@ -363,7 +369,7 @@ RSpec.describe Fractor::Supervisor do
           worker_pools: [
             { worker_class: SupervisorSpec::TestWorker, num_workers: 2 },
           ],
-          enable_performance_monitoring: true
+          enable_performance_monitoring: true,
         )
 
         metrics = monitored_supervisor.performance_metrics

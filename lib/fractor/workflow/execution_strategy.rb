@@ -107,7 +107,8 @@ module Fractor
       def execute_single_job(job)
         return unless should_execute_job?(job)
 
-        job_trace = trace&.start_job(job_name: job.name, worker_class: job.worker_class&.name)
+        job_trace = trace&.start_job(job_name: job.name,
+                                     worker_class: job.worker_class&.name)
         job_trace&.set_input(job_input(job))
 
         result = execute_job_with_retry(job, job_trace)
@@ -137,7 +138,10 @@ module Fractor
       # @param job_trace [Object] The job trace
       # @return [Object] The execution result
       def execute_job_with_retry(job, job_trace)
-        return executor.send(:execute_job_with_retry, job, job_trace) if job.retry_config
+        if job.retry_config
+          return executor.send(:execute_job_with_retry, job,
+                               job_trace)
+        end
 
         executor.send(:execute_job_once, job, job_trace)
       end
@@ -173,7 +177,9 @@ module Fractor
         executor.send(:execute_jobs_parallel, job_group)
 
         # Check if any jobs failed
-        failed_jobs = job_group.select { |job| executor.instance_variable_get(:@failed_jobs).include?(job.name) }
+        failed_jobs = job_group.select do |job|
+          executor.instance_variable_get(:@failed_jobs).include?(job.name)
+        end
         if failed_jobs.any?
           handle_parallel_errors(failed_jobs)
         end
@@ -192,7 +198,8 @@ module Fractor
         return if jobs_without_fallback.empty?
 
         error_messages = jobs_without_fallback.map(&:name).join(", ")
-        raise WorkflowError, "Parallel jobs failed without fallbacks: #{error_messages}"
+        raise WorkflowError,
+              "Parallel jobs failed without fallbacks: #{error_messages}"
       end
     end
 
@@ -205,7 +212,8 @@ module Fractor
       # @return [Boolean] true if execution should continue
       def execute(job_group)
         if job_group.size > 1
-          raise WorkflowError, "Pipeline strategy expects exactly 1 job per group, got #{job_group.size}"
+          raise WorkflowError,
+                "Pipeline strategy expects exactly 1 job per group, got #{job_group.size}"
         end
 
         log_debug "Executing pipeline job: #{job_group.first.name}"

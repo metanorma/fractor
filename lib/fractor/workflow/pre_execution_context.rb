@@ -31,7 +31,7 @@ module Fractor
       #     end
       #   end
       def add_validation_hook(name = nil, &block)
-        unless block_given?
+        unless block
           raise ArgumentError, "Must provide a block for validation hook"
         end
 
@@ -120,7 +120,7 @@ module Fractor
         unless @input.is_a?(expected_type)
           add_error(
             "Workflow '#{@workflow.class.workflow_name}' expects input of type " \
-            "#{expected_type}, got #{@input.class}"
+            "#{expected_type}, got #{@input.class}",
           )
         end
       end
@@ -131,7 +131,7 @@ module Fractor
         # Check if workflow requires input
         if @workflow.class.input_model_class || requires_workflow_input?
           add_error(
-            "Workflow '#{@workflow.class.workflow_name}' requires input but none was provided"
+            "Workflow '#{@workflow.class.workflow_name}' requires input but none was provided",
           )
         end
       end
@@ -145,13 +145,11 @@ module Fractor
 
       def run_validation_hooks
         @validation_hooks.each do |hook|
-          begin
-            hook[:block].call(self)
-          rescue StandardError => e
-            add_error(
-              "Validation hook '#{hook[:name] || 'unnamed'}' raised error: #{e.message}"
-            )
-          end
+          hook[:block].call(self)
+        rescue StandardError => e
+          add_error(
+            "Validation hook '#{hook[:name] || 'unnamed'}' raised error: #{e.message}",
+          )
         end
       end
 
@@ -161,7 +159,7 @@ module Fractor
         lines = [
           "Workflow '#{workflow_name}' validation failed",
           "",
-          "Errors:"
+          "Errors:",
         ]
 
         @errors.each_with_index do |error, index|
@@ -185,9 +183,9 @@ module Fractor
       def log_warnings
         workflow_name = @workflow.class.workflow_name
 
-        $stderr.puts "Workflow '#{workflow_name}' validation warnings:"
+        warn "Workflow '#{workflow_name}' validation warnings:"
         @warnings.each_with_index do |warning, index|
-          $stderr.puts "  #{index + 1}. #{warning}"
+          warn "  #{index + 1}. #{warning}"
         end
       end
     end

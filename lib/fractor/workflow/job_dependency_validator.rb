@@ -103,7 +103,8 @@ module Fractor
 
         return true if missing.empty?
 
-        raise DependencyError, "Missing dependencies:\n  - #{missing.join("\n  - ")}"
+        raise DependencyError,
+              "Missing dependencies:\n  - #{missing.join("\n  - ")}"
       end
 
       private

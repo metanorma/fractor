@@ -4,7 +4,7 @@ module Fractor
   # Wraps a Ruby Ractor to manage a worker instance.
   # Handles communication and error propagation.
   class WrappedRactor
-    attr_reader :ractor, :name
+    attr_reader :ractor, :name, :worker_class
 
     # Initializes the WrappedRactor with a name and the Worker class to instantiate.
     # The worker_class parameter allows flexibility in specifying the worker type.

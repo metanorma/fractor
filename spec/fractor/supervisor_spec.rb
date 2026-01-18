@@ -219,4 +219,159 @@ RSpec.describe Fractor::Supervisor do
       end
     end
   end
+
+  describe "#debugging methods" do
+    let(:supervisor) do
+      described_class.new(
+        worker_pools: [
+          { worker_class: SupervisorSpec::TestWorker, num_workers: 2 },
+        ],
+      )
+    end
+
+    describe "#debug?" do
+      it "returns false by default" do
+        expect(supervisor.debug?).to be false
+      end
+
+      it "returns true when debug mode is enabled" do
+        supervisor.debug!
+        expect(supervisor.debug?).to be true
+      end
+
+      it "returns false when debug mode is disabled" do
+        supervisor.debug!
+        supervisor.debug_off!
+        expect(supervisor.debug?).to be false
+      end
+    end
+
+    describe "#debug!" do
+      it "enables debug mode" do
+        expect { supervisor.debug! }.to change { supervisor.debug? }.from(false).to(true)
+      end
+    end
+
+    describe "#debug_off!" do
+      it "disables debug mode" do
+        supervisor.debug!
+        expect { supervisor.debug_off! }.to change { supervisor.debug? }.from(true).to(false)
+      end
+    end
+
+    describe "#inspect_queue" do
+      it "returns empty queue info when no work items added" do
+        queue_info = supervisor.inspect_queue
+
+        expect(queue_info).to be_a(Hash)
+        expect(queue_info[:size]).to eq(0)
+        expect(queue_info[:total_added]).to eq(0)
+        expect(queue_info[:items]).to be_empty
+      end
+
+      it "returns queue info with work items" do
+        supervisor.add_work_items([
+                                    SupervisorSpec::TestWork.new(1),
+                                    SupervisorSpec::TestWork.new(2),
+                                  ])
+
+        queue_info = supervisor.inspect_queue
+
+        expect(queue_info[:size]).to eq(2)
+        expect(queue_info[:total_added]).to eq(2)
+        expect(queue_info[:items].size).to eq(2)
+
+        # Check first item structure
+        first_item = queue_info[:items].first
+        expect(first_item[:class]).to eq("SupervisorSpec::TestWork")
+        expect(first_item[:input]).to eq({ value: 1 })
+        expect(first_item[:inspect]).to include("TestWork")
+      end
+
+      it "returns items with detailed information" do
+        work = SupervisorSpec::TestWork.new(42)
+        supervisor.add_work_item(work)
+
+        queue_info = supervisor.inspect_queue
+        item = queue_info[:items].first
+
+        expect(item[:class]).to eq("SupervisorSpec::TestWork")
+        expect(item[:input]).to eq({ value: 42 })
+        expect(item[:inspect]).to be_a(String)
+      end
+    end
+
+    describe "#workers_status" do
+      it "returns status with zero workers before start" do
+        status = supervisor.workers_status
+
+        expect(status).to be_a(Hash)
+        expect(status[:total]).to eq(0)
+        expect(status[:idle]).to eq(0)
+        expect(status[:busy]).to eq(0)
+        # Pools are configured but workers array is empty
+        expect(status[:pools].size).to eq(1)
+        expect(status[:pools].first[:workers]).to be_empty
+      end
+
+      it "returns status with worker pool information" do
+        supervisor.start_workers
+
+        status = supervisor.workers_status
+
+        expect(status[:total]).to eq(2)
+        expect(status[:idle]).to be_a(Integer)
+        expect(status[:busy]).to be_a(Integer)
+        expect(status[:pools].size).to eq(1)
+
+        pool_status = status[:pools].first
+        expect(pool_status[:worker_class]).to eq("SupervisorSpec::TestWorker")
+        expect(pool_status[:num_workers]).to eq(2)
+        expect(pool_status[:workers].size).to eq(2)
+
+        # Check worker structure
+        worker_status = pool_status[:workers].first
+        expect(worker_status[:name]).to be_a(String)
+        expect(worker_status[:idle]).to satisfy { |v| v == true || v == false }
+      end
+
+      it "returns status for multiple worker pools" do
+        multi_pool_supervisor = described_class.new(
+          worker_pools: [
+            { worker_class: SupervisorSpec::TestWorker, num_workers: 2 },
+            { worker_class: SupervisorSpec::TestWorker, num_workers: 3 },
+          ],
+        )
+        multi_pool_supervisor.start_workers
+
+        status = multi_pool_supervisor.workers_status
+
+        expect(status[:total]).to eq(5)
+        expect(status[:pools].size).to eq(2)
+        expect(status[:pools][0][:num_workers]).to eq(2)
+        expect(status[:pools][1][:num_workers]).to eq(3)
+      end
+    end
+
+    describe "#performance_metrics" do
+      it "returns nil when performance monitoring is disabled" do
+        expect(supervisor.performance_metrics).to be_nil
+      end
+
+      it "returns metrics when performance monitoring is enabled" do
+        monitored_supervisor = described_class.new(
+          worker_pools: [
+            { worker_class: SupervisorSpec::TestWorker, num_workers: 2 },
+          ],
+          enable_performance_monitoring: true
+        )
+
+        metrics = monitored_supervisor.performance_metrics
+
+        expect(metrics).to be_a(Hash)
+        expect(metrics.keys).to include(:jobs_processed, :jobs_succeeded, :jobs_failed,
+                                        :average_latency, :throughput, :worker_count)
+      end
+    end
+  end
 end

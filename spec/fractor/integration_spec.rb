@@ -5,25 +5,28 @@ require "timeout"
 RSpec.describe "Fractor Integration" do
   # Skip these tests on Windows with Ruby 3.4
   skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
-  # Define test classes based on sample.rb
-  class MyWorker < Fractor::Worker
-    def process(work)
-      if work.input == 5
-        # Return a Fractor::WorkResult for errors
-        return Fractor::WorkResult.new(
-          error: "Error processing work #{work.input}", work: work,
-        )
+
+  # Define test classes in a namespace to avoid pollution
+  module IntegrationTest
+    class MyWorker < Fractor::Worker
+      def process(work)
+        if work.input == 5
+          # Return a Fractor::WorkResult for errors
+          return Fractor::WorkResult.new(
+            error: "Error processing work #{work.input}", work: work,
+          )
+        end
+
+        calculated = work.input * 2
+        # Return a Fractor::WorkResult for success
+        Fractor::WorkResult.new(result: calculated, work: work)
       end
-
-      calculated = work.input * 2
-      # Return a Fractor::WorkResult for success
-      Fractor::WorkResult.new(result: calculated, work: work)
     end
-  end
 
-  class MyWork < Fractor::Work
-    def to_s
-      "MyWork: #{@input}"
+    class MyWork < Fractor::Work
+      def to_s
+        "MyWork: #{@input}"
+      end
     end
   end
 
@@ -31,12 +34,12 @@ RSpec.describe "Fractor Integration" do
     # Create supervisor
     supervisor = Fractor::Supervisor.new(
       worker_pools: [
-        { worker_class: MyWorker, num_workers: 2 },
+        { worker_class: IntegrationTest::MyWorker, num_workers: 2 },
       ],
     )
 
     # Add work items (1..10)
-    work_items = (1..10).map { |i| MyWork.new(i) }
+    work_items = (1..10).map { |i| IntegrationTest::MyWork.new(i) }
     supervisor.add_work_items(work_items)
 
     # Run the supervisor with a reasonable timeout

@@ -6,17 +6,19 @@ module Fractor
   # High-level wrapper for running Fractor in continuous mode.
   # Handles threading, signal handling, and results processing automatically.
   class ContinuousServer
-    attr_reader :supervisor, :work_queue
+    attr_reader :supervisor, :work_queue, :logger
 
     # Initialize a continuous server
     # @param worker_pools [Array<Hash>] Worker pool configurations
     # @param work_queue [WorkQueue, nil] Optional work queue to auto-register
     # @param log_file [String, nil] Optional log file path
-    def initialize(worker_pools:, work_queue: nil, log_file: nil)
+    # @param logger [Logger, nil] Optional logger instance for isolation (defaults to Fractor.logger)
+    def initialize(worker_pools:, work_queue: nil, log_file: nil, logger: nil)
       @worker_pools = worker_pools
       @work_queue = work_queue
       @log_file_path = log_file
       @log_file = nil
+      @logger = logger # Store instance-specific logger for isolation
       @result_callbacks = []
       @error_callbacks = []
       @supervisor = nil
@@ -35,6 +37,14 @@ module Fractor
     # @yield [WorkResult] The error result
     def on_error(&block)
       @error_callbacks << block
+    end
+
+    # Start the server (alias for run).
+    # Provides a consistent API with stop method.
+    #
+    # @see #run
+    def start
+      run
     end
 
     # Start the server and block until shutdown
@@ -93,6 +103,7 @@ module Fractor
       @supervisor = Supervisor.new(
         worker_pools: @worker_pools,
         continuous_mode: true,
+        logger: @logger, # Pass instance-specific logger for isolation
       )
 
       # Auto-register work queue if provided
@@ -110,7 +121,9 @@ module Fractor
         @supervisor.run
       rescue StandardError => e
         log_message("Supervisor error: #{e.message}")
-        log_message(e.backtrace.join("\n")) if ENV["FRACTOR_DEBUG"]
+        # Use instance logger or fall back to global
+        instance_logger = @logger || Fractor.logger
+        instance_logger.debug(e.backtrace.join("\n")) if instance_logger&.debug?
       end
 
       # Give supervisor time to start up
@@ -123,7 +136,9 @@ module Fractor
         process_results_loop
       rescue StandardError => e
         log_message("Results thread error: #{e.message}")
-        log_message(e.backtrace.join("\n")) if ENV["FRACTOR_DEBUG"]
+        # Use instance logger or fall back to global
+        instance_logger = @logger || Fractor.logger
+        instance_logger.debug(e.backtrace.join("\n")) if instance_logger&.debug?
       end
     end
 

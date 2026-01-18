@@ -1,45 +1,641 @@
 = Specialized Workers Example
 
-== Overview
+== Purpose
 
-This example demonstrates how to create specialized worker types in Fractor, each designed to handle specific kinds of work. This pattern is useful when different work items require fundamentally different processing approaches.
+Demonstrates how to create specialized worker types in Fractor, where each worker class is designed to handle a specific category of work using separate worker pools with independent configurations.
 
-== Key Concepts
+== Focus
 
-* *Specialized Workers*: Worker classes designed for specific types of tasks
-* *Work Type Differentiation*: Each worker specializes in processing a particular category of work
-* *Resource Optimization*: Workers can be tailored to the specific resources needed by each work type
-* *Domain-Specific Processing*: Separate worker implementations for different processing domains
+This example focuses on demonstrating:
 
-== Example Explanation
+* Specialized worker classes designed for specific task domains
+* Multiple independent worker pools with different configurations
+* Work type routing to appropriate specialized workers
+* Resource optimization per worker type
+* Independent scaling and tuning for different workloads
+* Comparison with polymorphic worker approach
 
-This example implements two specialized worker types:
+== Architecture
 
-1. *ComputeWorker*: Handles compute-intensive operations like matrix multiplication, image transformations, and path finding
-2. *DatabaseWorker*: Handles database operations like queries, insertions, updates, and deletions
+.Specialized Worker Pools
+[source]
+----
+Work Items (Mixed Types)
+    │
+    ├─→ ComputeWork (Matrix Multiply)
+    ├─→ ComputeWork (Image Transform)
+    ├─→ ComputeWork (Path Finding)
+    ├─→ DatabaseWork (SELECT)
+    ├─→ DatabaseWork (INSERT)
+    ├─→ DatabaseWork (UPDATE)
+    └─→ DatabaseWork (DELETE)
+        │
+        ├─────────────────────┬─────────────────────┐
+        │                     │                     │
+        ▼                     ▼                     ▼
+┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+│ Compute Supervisor│  │Database Supervisor│  │                   │
+│                   │  │                   │  │  (Independent)    │
+└───────────────────┘  └───────────────────┘  └───────────────────┘
+        │                     │
+        │ ComputeWork         │ DatabaseWork
+        │ Queue               │ Queue
+        │                     │
+  ┌─────┴─────┐         ┌─────┴─────┐
+  │           │         │           │
+  ▼           ▼         ▼           ▼
+┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
+│Compute│ │Compute│ │Database│ │Database│
+│Worker│  │Worker│  │Worker│  │Worker│
+│Ractor│  │Ractor│  │Ractor│  │Ractor│
+│  1   │  │  2   │  │  1   │  │  2   │
+└──────┘  └──────┘  └──────┘  └──────┘
+    │         │         │         │
+    │         │         │         │
+    └────┬────┘         └────┬────┘
+         │                   │
+         ▼                   ▼
+  Compute Results      Database Results
+  (matrix ops,         (query results,
+   transforms,          rows affected,
+   path finding)        execution time)
+----
 
-Each worker is optimized for its specific task domain and processes only the work types it is designed to handle.
+.Worker Specialization vs Polymorphism
+[source]
+----
+Specialized Workers          │  Polymorphic Workers
+(This Example)               │  (Multi-Work Type Example)
+─────────────────────────────┼─────────────────────────────
+                             │
+┌─────────────┐              │  ┌─────────────┐
+│ Supervisor  │              │  │ Supervisor  │
+│   Pool 1    │              │  │   Pool 1    │
+├─────────────┤              │  ├─────────────┤
+│ComputeWorker│              │  │MultiFormat  │
+│  (2 workers)│              │  │   Worker    │
+│             │              │  │  (4 workers)│
+│Only handles │              │  │             │
+│ComputeWork  │              │  │Handles both │
+└─────────────┘              │  │types        │
+                             │  └─────────────┘
+┌─────────────┐              │
+│ Supervisor  │              │  Worker detects type
+│   Pool 2    │              │  and routes internally:
+├─────────────┤              │  if ComputeWork
+│DatabaseWork │              │    process_compute()
+│  (2 workers)│              │  elsif DatabaseWork
+│             │              │    process_database()
+│Only handles │              │
+│DatabaseWork │              │
+└─────────────┘              │
+                             │
+Benefits:                    │  Benefits:
+- Clear separation           │  - Simpler config
+- Independent scaling        │  - Code reuse
+- Resource tuning            │  - Flexible mixing
+- Type safety                │
+----
 
-== Features Demonstrated
+== Key Components
 
-* Creating specialized worker types to handle different categories of work
-* Routing work items to the appropriate worker type
-* Resource optimization for different processing needs
-* Independent error handling for each worker type
-* Combining results from different worker types
+=== Specialized Work Types
 
-== Running the Example
+Define work types for different domains:
 
-[source,sh]
+[source,ruby]
+----
+class ComputeWork < Fractor::Work
+  def initialize(data, operation = :default, parameters = {})
+    super({
+      data: data,
+      operation: operation,
+      parameters: parameters
+    })
+  end
+
+  def operation; input[:operation]; end
+  def parameters; input[:parameters]; end
+end
+
+class DatabaseWork < Fractor::Work
+  def initialize(data = "", query_type = :select, table = "unknown",
+                 conditions = {})
+    super({
+      data: data,
+      query_type: query_type,
+      table: table,
+      conditions: conditions
+    })
+  end
+
+  def query_type; input[:query_type]; end
+  def table; input[:table]; end
+  def conditions; input[:conditions]; end
+end
+----
+
+=== Specialized Workers
+
+Each worker handles only its specific work type:
+
+[source,ruby]
+----
+class ComputeWorker < Fractor::Worker
+  def initialize
+    @compute_resources = { memory: 1024, cpu_cores: 4 }  # <1>
+  end
+
+  def process(work)
+    # Type guard - only handle ComputeWork
+    unless work.is_a?(ComputeWork)  # <2>
+      return Fractor::WorkResult.new(
+        error: "ComputeWorker can only process ComputeWork",
+        work: work
+      )
+    end
+
+    # Perform compute-intensive operations
+    result = case work.operation  # <3>
+             when :matrix_multiply then matrix_multiply(work.data)
+             when :image_transform then image_transform(work.data)
+             when :path_finding then path_finding(work.data)
+             else default_computation(work.data)
+             end
+
+    Fractor::WorkResult.new(
+      result: {
+        operation: work.operation,
+        computation_result: result,
+        resources_used: @compute_resources
+      },
+      work: work
+    )
+  end
+
+  private
+
+  def matrix_multiply(data)  # <4>
+    # CPU-intensive matrix operations
+    sleep(rand(0.05..0.2))
+    "Matrix result..."
+  end
+end
+
+class DatabaseWorker < Fractor::Worker
+  def initialize
+    @db_connection = { pool_size: 5, timeout: 30 }  # <5>
+  end
+
+  def process(work)
+    # Type guard - only handle DatabaseWork
+    unless work.is_a?(DatabaseWork)
+      return Fractor::WorkResult.new(
+        error: "DatabaseWorker can only process DatabaseWork",
+        work: work
+      )
+    end
+
+    # Perform database operations
+    result = case work.query_type  # <6>
+             when :select then perform_select(work.table)
+             when :insert then perform_insert(work.table, work.data)
+             when :update then perform_update(work.table, work.data)
+             when :delete then perform_delete(work.table)
+             end
+
+    Fractor::WorkResult.new(
+      result: {
+        query_type: work.query_type,
+        table: work.table,
+        rows_affected: result[:rows_affected],
+        execution_time: result[:time]
+      },
+      work: work
+    )
+  end
+
+  private
+
+  def perform_select(table)  # <7>
+    # I/O-intensive database operations
+    sleep(rand(0.01..0.1))
+    { rows_affected: rand(0..20), time: 0.05 }
+  end
+end
+----
+<1> Worker-specific resource configuration
+<2> Type guard ensures only correct work type is processed
+<3> Route to operation-specific methods
+<4> CPU-intensive computation methods
+<5> Database-specific resources (connection pool)
+<6> Route to query-specific methods
+<7> I/O-intensive database operations
+
+=== Multiple Supervisor Configuration
+
+Create separate supervisors for each worker type:
+
+[source,ruby]
+----
+class HybridSystem
+  def initialize(compute_workers: 2, db_workers: 2)
+    # Separate supervisor for compute operations
+    @compute_supervisor = Fractor::Supervisor.new(
+      worker_pools: [
+        { worker_class: ComputeWorker, num_workers: compute_workers }  # <1>
+      ]
+    )
+
+    # Separate supervisor for database operations
+    @db_supervisor = Fractor::Supervisor.new(
+      worker_pools: [
+        { worker_class: DatabaseWorker, num_workers: db_workers }  # <2>
+      ]
+    )
+  end
+
+  def process_mixed_workload(compute_tasks, db_tasks)
+    # Route compute work to compute supervisor
+    compute_work_items = compute_tasks.map do |task|
+      ComputeWork.new(task[:data], task[:operation], task[:parameters])
+    end
+    @compute_supervisor.add_work_items(compute_work_items)  # <3>
+
+    # Route database work to database supervisor
+    db_work_items = db_tasks.map do |task|
+      DatabaseWork.new(task[:data], task[:query_type], task[:table])
+    end
+    @db_supervisor.add_work_items(db_work_items)  # <4>
+
+    # Run both supervisors
+    @compute_supervisor.run  # <5>
+    @db_supervisor.run       # <6>
+
+    # Collect results from both supervisors
+    {
+      computation: format_compute_results(@compute_supervisor.results),
+      database: format_db_results(@db_supervisor.results)
+    }
+  end
+end
+----
+<1> Independent worker pool for compute operations
+<2> Independent worker pool for database operations
+<3> Add compute work to compute supervisor
+<4> Add database work to database supervisor
+<5> Run compute supervisor (can be parallelized)
+<6> Run database supervisor (can be parallelized)
+
+== Usage
+
+Run the example from the project root:
+
+[source,shell]
 ----
 ruby examples/specialized_workers/specialized_workers.rb
 ----
 
 == Expected Output
 
-The example will show:
-* Creation of different worker types
-* Processing of specialized work items by their corresponding workers
-* Performance metrics for each work type
-* Separate results from each worker type
-* Overall processing statistics
+[example]
+====
+[source]
+----
+Starting Specialized Workers Example
+===================================
+This example demonstrates two specialized worker types:
+1. ComputeWorker: Handles compute-intensive operations
+2. DatabaseWorker: Handles database operations
+Each worker is designed to process a specific type of work.
+
+Processing with 2 compute workers and 2 database workers...
+
+Received compute results: 3 items
+Received database results: 4 items
+Processing Results:
+-----------------
+Compute Tasks: 3 submitted, 3 completed
+Database Tasks: 4 submitted, 4 completed
+
+Computation Results:
+Task 1 (matrix_multiply):
+  Result: Matrix multiplication result: 10x10 matrix, determinant=47
+  Resources: {:memory=>1024, :cpu_cores=>4}
+
+Task 2 (image_transform):
+  Result: Image transformation applied: rotate, scale, blur with parameters {...}
+  Resources: {:memory=>1024, :cpu_cores=>4}
+
+Task 3 (path_finding):
+  Result: Path found using dijkstra: 12 steps, cost=45
+  Resources: {:memory=>1024, :cpu_cores=>4}
+
+Database Results:
+Query 1 (select on users):
+  Rows affected: 15
+  Execution time: 0.045 seconds
+  Data: [{:id=>1, :name=>"Record 1"}, {:id=>2, :name=>"Record 2"}...]
+
+Query 2 (insert on orders):
+  Rows affected: 1
+  Execution time: 0.023 seconds
+  Data: {:id=>5847}
+
+Query 3 (update on products):
+  Rows affected: 7
+  Execution time: 0.038 seconds
+
+Query 4 (delete on sessions):
+  Rows affected: 3
+  Execution time: 0.019 seconds
+
+Processing completed in 0.52 seconds
+----
+====
+
+== Learning Points
+
+=== Worker Specialization Benefits
+
+==== Clear Separation of Concerns
+
+Each worker focuses on one domain:
+
+[source,ruby]
+----
+# ComputeWorker only knows about computations
+class ComputeWorker < Fractor::Worker
+  def process(work)
+    unless work.is_a?(ComputeWork)
+      return error_result("Not a ComputeWork")
+    end
+    # Only compute operations here
+  end
+end
+
+# DatabaseWorker only knows about database operations
+class DatabaseWorker < Fractor::Worker
+  def process(work)
+    unless work.is_a?(DatabaseWork)
+      return error_result("Not a DatabaseWork")
+    end
+    # Only database operations here
+  end
+end
+----
+
+Benefits:
+- Easier to test (single responsibility)
+- Easier to maintain (clear boundaries)
+- Easier to understand (focused purpose)
+
+==== Independent Resource Configuration
+
+Tune each worker type separately:
+
+[source,ruby]
+----
+# CPU-intensive workers
+@compute_supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ComputeWorker, num_workers: Etc.nprocessors }  # <1>
+  ]
+)
+
+# I/O-intensive workers
+@db_supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: DatabaseWorker, num_workers: Etc.nprocessors * 2 }  # <2>
+  ]
+)
+----
+<1> CPU-bound: one worker per core
+<2> I/O-bound: over-subscribe for better throughput
+
+==== Independent Scaling
+
+Scale each worker type based on workload:
+
+[source,ruby]
+----
+# Dynamic scaling based on queue sizes
+compute_workers = compute_queue.size > 100 ? 8 : 4
+db_workers = db_queue.size > 50 ? 10 : 5
+
+system = HybridSystem.new(
+  compute_workers: compute_workers,
+  db_workers: db_workers
+)
+----
+
+=== Comparison with Polymorphic Approach
+
+==== When to Use Specialized Workers
+
+Use specialized workers when:
+
+* **Different resource profiles**: CPU-intensive vs I/O-intensive
+* **Independent scaling needs**: Different worker counts per type
+* **Clear domain boundaries**: Distinct processing logic
+* **Type safety requirements**: Prevent wrong work types
+* **Team specialization**: Different teams maintain different workers
+
+Example:
+[source,ruby]
+----
+# Good: Clear separation for different resource needs
+system = HybridSystem.new(
+  compute_workers: 4,   # CPU-bound
+  db_workers: 10,       # I/O-bound
+  network_workers: 20   # Network I/O-bound
+)
+----
+
+==== When to Use Polymorphic Workers
+
+Use polymorphic workers (link:../multi_work_type/README.adoc[Multi-Work Type Example]) when:
+
+* **Similar resource profiles**: All work types use similar resources
+* **Unified scaling**: Same worker count for all types
+* **Flexible mixing**: Work types can be intermixed freely
+* **Simpler configuration**: Single worker pool
+
+Example:
+[source,ruby]
+----
+# Good: All types have similar processing characteristics
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ContentProcessor }  # Handles text, images, videos
+  ]
+)
+----
+
+=== Worker Pool Management
+
+==== Sequential Execution
+
+Run supervisors sequentially:
+
+[source,ruby]
+----
+@compute_supervisor.run   # Wait for compute to finish
+@db_supervisor.run        # Then run database operations
+----
+
+Use when:
+- Later operations depend on earlier ones
+- Memory constraints require sequential processing
+- Resource contention must be avoided
+
+==== Parallel Execution
+
+Run supervisors in threads:
+
+[source,ruby]
+----
+threads = [
+  Thread.new { @compute_supervisor.run },
+  Thread.new { @db_supervisor.run }
+]
+threads.each(&:join)
+----
+
+Use when:
+- Operations are independent
+- System resources allow parallel execution
+- Faster completion time is important
+
+==== Hybrid Execution
+
+Mix sequential and parallel:
+
+[source,ruby]
+----
+# Phase 1: Extract and validate (parallel)
+extract_thread = Thread.new { @extract_supervisor.run }
+validate_thread = Thread.new { @validate_supervisor.run }
+[extract_thread, validate_thread].each(&:join)
+
+# Phase 2: Transform (sequential, depends on Phase 1)
+@transform_supervisor.run
+
+# Phase 3: Load (sequential, depends on Phase 2)
+@load_supervisor.run
+----
+
+=== Resource Optimization Patterns
+
+==== Memory-Bound Workers
+
+Limit workers to prevent memory exhaustion:
+
+[source,ruby]
+----
+class LargeDataWorker < Fractor::Worker
+  MAX_WORKERS = 2  # Limit due to memory usage
+
+  def process(work)
+    # Process large datasets
+    large_dataset = load_dataset(work.data)  # 1GB+
+    process_dataset(large_dataset)
+  end
+end
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: LargeDataWorker, num_workers: LargeDataWorker::MAX_WORKERS }
+  ]
+)
+----
+
+==== CPU-Bound Workers
+
+Match CPU cores:
+
+[source,ruby]
+----
+class CpuIntensiveWorker < Fractor::Worker
+  def process(work)
+    # CPU-intensive computation
+    complex_algorithm(work.data)
+  end
+end
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: CpuIntensiveWorker, num_workers: Etc.nprocessors }
+  ]
+)
+----
+
+==== I/O-Bound Workers
+
+Over-subscribe for better throughput:
+
+[source,ruby]
+----
+class NetworkWorker < Fractor::Worker
+  def process(work)
+    # Network I/O - spends most time waiting
+    http_client.get(work.url)
+  end
+end
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: NetworkWorker, num_workers: Etc.nprocessors * 3 }
+  ]
+)
+----
+
+== Use Cases
+
+=== ETL Pipeline
+
+Different workers for each stage:
+
+[source,ruby]
+----
+etl_system = ETLSystem.new(
+  extract_workers: 10,    # I/O-bound: fetch from APIs
+  transform_workers: 4,   # CPU-bound: data transformation
+  load_workers: 5         # I/O-bound: write to database
+)
+----
+
+=== Microservices
+
+Specialized workers for each service:
+
+[source,ruby]
+----
+microservices = MicroserviceOrchestrator.new(
+  auth_workers: 8,        # Authentication service
+  payment_workers: 4,     # Payment processing
+  notification_workers: 12, # Email/SMS notifications
+  analytics_workers: 6    # Analytics processing
+)
+----
+
+=== Multi-Tenant System
+
+Workers per tenant category:
+
+[source,ruby]
+----
+multi_tenant = MultiTenantSystem.new(
+  premium_workers: 10,    # High-priority tenants
+  standard_workers: 5,    # Standard tenants
+  trial_workers: 2        # Trial tenants
+)
+----
+
+== Next Steps
+
+After understanding specialized workers, explore:
+
+* link:../multi_work_type/README.adoc[Multi-Work Type] - Polymorphic worker approach for comparison
+* link:../pipeline_processing/README.adoc[Pipeline Processing] - Sequential multi-stage processing
+* link:../simple/README.adoc[Simple Example] - Basic Fractor concepts

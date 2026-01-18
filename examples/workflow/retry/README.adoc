@@ -1,0 +1,248 @@
+= Retry Workflow Example
+
+This example demonstrates Fractor's retry and error handling capabilities for workflows.
+
+== Overview
+
+The retry feature allows workflows to automatically retry failed jobs with configurable backoff strategies. This is essential for handling transient errors in production systems, such as:
+
+* Temporary network issues
+* Rate-limited API calls
+* Database connection timeouts
+* Resource contention
+
+== Features Demonstrated
+
+=== Retry Strategies
+
+==== Exponential Backoff
+
+Delays increase exponentially between retries:
+
+[source,ruby]
+----
+retry_on_error max_attempts: 3,
+               backoff: :exponential,
+               initial_delay: 0.5,
+               max_delay: 5
+----
+
+Delay sequence: 0.5s → 1s → 2s → 4s (capped at 5s)
+
+==== Linear Backoff
+
+Delays increase linearly between retries:
+
+[source,ruby]
+----
+retry_on_error max_attempts: 5,
+               backoff: :linear,
+               initial_delay: 1,
+               increment: 0.5
+----
+
+Delay sequence: 1s → 1.5s → 2s → 2.5s → 3s
+
+==== Constant Delay
+
+Fixed delay between retries:
+
+[source,ruby]
+----
+retry_on_error max_attempts: 4,
+               backoff: :constant,
+               delay: 1
+----
+
+Delay sequence: 1s → 1s → 1s → 1s
+
+=== Error Handlers
+
+Add custom error handling logic:
+
+[source,ruby]
+----
+on_error do |error, context|
+  puts "Error in job: #{error.message}"
+  # Log to monitoring service
+  # Send alerts
+  # Update metrics
+end
+----
+
+=== Fallback Jobs
+
+Provide alternative execution paths when retries are exhausted:
+
+[source,ruby]
+----
+job "fetch_api_data" do
+  runs_with UnreliableApiWorker
+  retry_on_error max_attempts: 3, backoff: :exponential
+  fallback_to "fetch_cached_data"
+end
+
+job "fetch_cached_data" do
+  runs_with CachedDataWorker
+  inputs_from_workflow
+end
+----
+
+== Running the Example
+
+[source,shell]
+----
+ruby examples/workflow/retry/retry_workflow.rb
+----
+
+== Example Output
+
+----
+============================================================
+Retry Workflow Examples
+============================================================
+
+1. Exponential Backoff Retry (with fallback)
+------------------------------------------------------------
+Error in fetch_api_data: API timeout: https://api.example.com/data
+Executing fallback job
+Result: Using cached data from https://api.example.com/data
+Status: SUCCESS
+
+2. Linear Backoff Retry
+------------------------------------------------------------
+Job retry attempt: attempt 2/5, delay: 1.0s
+Job retry attempt: attempt 3/5, delay: 1.5s
+Job retry succeeded on attempt 3
+Result: Fresh data from https://api.example.com/data
+Status: SUCCESS
+
+3. Constant Delay Retry
+------------------------------------------------------------
+Job retry attempt: attempt 2/4, delay: 1.0s
+Job retry attempt: attempt 3/4, delay: 1.0s
+Job retry attempt: attempt 4/4, delay: 1.0s
+Workflow failed after retries: Job 'fetch_api_data' failed: API timeout
+----
+
+== Use Cases
+
+=== External API Calls
+
+[example]
+====
+[source,ruby]
+----
+job "call_payment_api" do
+  runs_with PaymentApiWorker
+  retry_on_error max_attempts: 5,
+                 backoff: :exponential,
+                 retryable_errors: [Net::HTTPRetriableError, Timeout::Error]
+end
+----
+====
+
+=== Database Operations
+
+[example]
+====
+[source,ruby]
+----
+job "save_to_database" do
+  runs_with DatabaseWorker
+  retry_on_error max_attempts: 3,
+                 backoff: :linear,
+                 retryable_errors: [ActiveRecord::ConnectionNotEstablished]
+end
+----
+====
+
+=== File I/O
+
+[example]
+====
+[source,ruby]
+----
+job "write_to_storage" do
+  runs_with StorageWorker
+  retry_on_error max_attempts: 4,
+                 backoff: :constant,
+                 delay: 2
+  fallback_to "write_to_local_cache"
+end
+----
+====
+
+== Best Practices
+
+. *Choose appropriate backoff strategy*
+  * Exponential: Best for most transient errors
+  * Linear: Good for predictable retry windows
+  * Constant: Use when timing is critical
+
+. *Set reasonable max_attempts*
+  * Too few: Might not recover from transient issues
+  * Too many: Wastes resources and delays failure detection
+
+. *Use retryable_errors selectively*
+  * Only retry errors that are likely to be transient
+  * Don't retry validation errors or permanent failures
+
+. *Implement fallback strategies*
+  * Provide cached data
+  * Use default values
+  * Degrade gracefully
+
+. *Monitor retry metrics*
+  * Track retry rates
+  * Alert on high retry counts
+  * Identify patterns in failures
+
+== Configuration Options
+
+[cols="1,1,3"]
+|===
+|Option |Type |Description
+
+|`max_attempts`
+|Integer
+|Maximum number of attempts (including initial attempt). Default: 3
+
+|`backoff`
+|Symbol
+|Retry strategy: `:exponential`, `:linear`, `:constant`, `:none`. Default: `:exponential`
+
+|`initial_delay`
+|Numeric
+|Initial delay in seconds. Default: 1
+
+|`max_delay`
+|Numeric
+|Maximum delay between retries. Default: nil (no cap)
+
+|`increment`
+|Numeric
+|(Linear only) Delay increment per attempt. Default: 1
+
+|`multiplier`
+|Numeric
+|(Exponential only) Delay multiplier per attempt. Default: 2
+
+|`delay`
+|Numeric
+|(Constant only) Fixed delay in seconds. Default: 1
+
+|`timeout`
+|Numeric
+|Job execution timeout in seconds. Default: nil
+
+|`retryable_errors`
+|Array<Class>
+|List of retryable error classes. Default: `[StandardError]`
+|===
+
+== See Also
+
+* link:../../../docs/workflows.adoc[Workflow Documentation]
+* link:../simple_linear/README.adoc[Simple Linear Workflow]
+* link:../conditional/README.adoc[Conditional Workflow]

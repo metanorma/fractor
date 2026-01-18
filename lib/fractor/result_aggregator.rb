@@ -39,5 +39,37 @@ module Fractor
         errors: @errors.map(&:inspect),
       }
     end
+
+    # Get a summary of errors
+    # @return [Hash] Error summary with counts, categories, and other stats
+    def errors_summary
+      return {} if @errors.empty?
+
+      # Group errors by category
+      by_category = @errors.group_by do |e|
+        e.error_category || :unknown
+      end.transform_values(&:count)
+
+      # Group errors by severity
+      by_severity = @errors.group_by do |e|
+        e.error_severity || :unknown
+      end.transform_values(&:count)
+
+      # Count error types (class names)
+      error_types = @errors.map do |e|
+        e.error&.class&.name || e.error&.class || "String"
+      end.tally
+
+      # Get unique error messages (first 10)
+      unique_messages = @errors.map { |e| e.error.to_s }.uniq.first(10)
+
+      {
+        total_errors: @errors.size,
+        by_category: by_category,
+        by_severity: by_severity,
+        error_types: error_types,
+        sample_messages: unique_messages,
+      }
+    end
   end
 end

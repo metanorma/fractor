@@ -1,0 +1,170 @@
+= Batch File Processor Example
+:toc:
+:toclevels: 3
+
+Production-ready batch file processor that handles CSV, JSON, and XML files with validation, transformation, retry logic, and dead letter queue (DLQ) support using Fractor.
+
+== Purpose
+
+This example demonstrates:
+
+* Batch processing of multiple file formats (CSV, JSON, XML)
+* Data validation and transformation
+* Dead letter queue for failed files
+* Retry logic for transient failures
+* Progress tracking and reporting
+* Checksum verification
+
+== Features
+
+=== Multi-Format Support
+
+* **CSV**: Headers with data rows
+* **JSON**: Arrays or objects
+* **XML**: Records with elements
+
+=== Dead Letter Queue (DLQ)
+
+Files that fail validation or parsing are moved to a DLQ for later inspection and retry:
+
+* Failed files preserved with error details
+* Inspection of DLQ contents
+* Individual file retry from DLQ
+* Automatic removal on successful retry
+
+=== Data Transformation
+
+* Type conversion (strings to numbers, booleans)
+* Key normalization (symbol keys)
+* Automatic data enrichment
+
+== Usage
+
+=== Basic Processing
+
+Process all CSV, JSON, and XML files:
+
+[source,bash]
+----
+ruby file_processor.rb sample_files/*.{csv,json,xml}
+----
+
+=== Custom Workers
+
+Process with 8 workers:
+
+[source,bash]
+----
+ruby file_processor.rb -w 8 sample_files/*.csv
+----
+
+=== Disable Validation
+
+Skip validation step:
+
+[source,bash]
+----
+ruby file_processor.rb --no-validate sample_files/*.json
+----
+
+=== Inspect DLQ
+
+View failed files in dead letter queue:
+
+[source,bash]
+----
+ruby file_processor.rb --inspect-dlq
+----
+
+=== Retry DLQ File
+
+Retry a specific file from DLQ:
+
+[source,bash]
+----
+ruby file_processor.rb --retry-dlq invalid_dlq.json
+----
+
+=== Generate Report
+
+Save processing report to file:
+
+[source,bash]
+----
+ruby file_processor.rb -o report.txt sample_files/*.csv
+----
+
+== Architecture
+
+The processor consists of:
+
+* **FileWork**: Work item encapsulating file path and options
+* **FileProcessorWorker**: Worker that parses, validates, and transforms files
+* **BatchFileProcessor**: Orchestrates processing and manages DLQ
+* **ProcessingReport**: Generates summary reports
+
+== Examples
+
+=== Example 1: Successful Processing
+
+[source,bash]
+----
+$ ruby file_processor.rb sample_files/users.csv
+
+Processing 1 files with 4 workers...
+Validation: enabled
+Transformation: enabled
+
+[✓] users.csv: 5 records processed
+
+=== Processing Complete ===
+Successful: 1
+Errors: 0
+DLQ: 0
+----
+
+=== Example 2: Mixed Results with DLQ
+
+[source,bash]
+----
+$ ruby file_processor.rb sample_files/*.csv
+
+Processing 2 files with 4 workers...
+
+[✓] users.csv: 5 records processed
+[✗] invalid.csv: No records found
+
+=== Processing Complete ===
+Successful: 1
+Errors: 1
+DLQ: 1
+----
+
+=== Example 3: DLQ Inspection
+
+[source,bash]
+----
+$ ruby file_processor.rb --inspect-dlq
+
+=== Dead Letter Queue Inspection ===
+
+File: invalid.csv
+  Error: No records found
+  Moved at: 2024-10-25T13:00:00+08:00
+  Checksum: abc123...
+----
+
+== Testing
+
+Run the test suite:
+
+[source,bash]
+----
+bundle exec rspec spec/examples/file_processor_spec.rb
+----
+
+== See Also
+
+* link:../../README.adoc[Fractor Main Documentation]
+* link:../log_analyzer/README.adoc[Log Analyzer Example]
+* link:../api_aggregator/README.adoc[API Aggregator Example]

@@ -1,0 +1,374 @@
+= Dead Letter Queue Workflow Example
+:toc:
+:toclevels: 3
+
+== Purpose
+
+This example demonstrates how to use Dead Letter Queue (DLQ) functionality in Fractor workflows to capture and manage permanently failed work items. The DLQ provides a safety net for work that cannot be successfully processed even after retry attempts.
+
+== What is a Dead Letter Queue?
+
+A Dead Letter Queue is a holding area for work items that have failed permanently and cannot be processed successfully. Instead of losing failed work or letting it crash the system, the DLQ:
+
+* Captures failed work items with full context
+* Preserves error information and retry history
+* Enables manual inspection and retry
+* Provides persistence options for durability
+* Supports custom notification handlers
+
+== Use Cases
+
+* *Error Analysis*: Inspect failed work to identify patterns and root causes
+* *Manual Recovery*: Review and manually retry failed items after fixing issues
+* *Alerting*: Trigger notifications when work fails permanently
+* *Audit Trail*: Maintain a record of all failures with context
+* *Batch Retry*: Retry multiple failed items after deploying fixes
+
+== Features Demonstrated
+
+=== Basic Dead Letter Queue
+
+The simplest configuration captures failed work automatically:
+
+[source,ruby]
+----
+class BasicDLQWorkflow
+  include Fractor::Workflow
+
+  workflow_name "basic_dlq_workflow"
+
+  # Configure Dead Letter Queue
+  configure_dead_letter_queue max_size: 100
+
+  job :unreliable_task,
+      worker: UnreliableWorker,
+      input: ->(ctx) { ctx.workflow_input },
+      retry: {
+        max_attempts: 3,
+        backoff: :exponential,
+        initial_delay: 0.1,
+      }
+
+  end_job :unreliable_task
+end
+----
+
+When retries are exhausted, the work is automatically added to the DLQ with:
+
+* The failed work item
+* The error that caused the failure
+* Workflow context (inputs, completed/failed jobs)
+* Retry metadata (attempts, total time, all errors)
+
+=== Custom Notification Handlers
+
+Add callbacks to be notified when work is added to the DLQ:
+
+[source,ruby]
+----
+class DLQWithHandlersWorkflow
+  include Fractor::Workflow
+
+  workflow_name "dlq_with_handlers_workflow"
+
+  configure_dead_letter_queue(
+    max_size: 50,
+    on_add: lambda { |entry|
+      # Send alert, log to monitoring system, etc.
+      puts "⚠️  Work added to DLQ:"
+      puts "   Error: #{entry.error.class.name}: #{entry.error.message}"
+      puts "   Timestamp: #{entry.timestamp}"
+      puts "   Metadata: #{entry.metadata.inspect}"
+    }
+  )
+
+  job :risky_task,
+      worker: UnreliableWorker,
+      input: ->(ctx) { ctx.workflow_input },
+      retry: {
+        max_attempts: 2,
+        backoff: :linear,
+        initial_delay: 0.1,
+      }
+
+  end_job :risky_task
+end
+----
+
+=== File Persistence
+
+Persist DLQ entries to disk for durability across restarts:
+
+[source,ruby]
+----
+class DLQWithPersistenceWorkflow
+  include Fractor::Workflow
+
+  workflow_name "dlq_with_persistence_workflow"
+
+  configure_dead_letter_queue(
+    max_size: 200,
+    persister: Fractor::Workflow::DeadLetterQueue::FilePersister.new(
+      directory: "tmp/dlq"
+    )
+  )
+
+  job :persistent_task,
+      worker: UnreliableWorker,
+      input: ->(ctx) { ctx.workflow_input },
+      retry: {
+        max_attempts: 3,
+        backoff: :exponential,
+        initial_delay: 0.1,
+      }
+
+  end_job :persistent_task
+end
+----
+
+Each failed work item is saved as a JSON file with all context and metadata.
+
+== Querying the Dead Letter Queue
+
+The DLQ provides multiple methods to query and filter entries:
+
+=== Get All Entries
+
+[source,ruby]
+----
+dlq = workflow.dead_letter_queue
+all_entries = dlq.all
+puts "Total entries: #{all_entries.size}"
+----
+
+=== Filter by Error Class
+
+[source,ruby]
+----
+standard_errors = dlq.by_error_class(StandardError)
+timeout_errors = dlq.by_error_class(Timeout::Error)
+----
+
+=== Filter by Time Range
+
+[source,ruby]
+----
+# Get recent failures (last hour)
+recent = dlq.by_time_range(Time.now - 3600, Time.now)
+
+# Get yesterday's failures
+yesterday_start = Time.now - 86400
+yesterday_end = Time.now - 86400 + 86400
+yesterday_failures = dlq.by_time_range(yesterday_start, yesterday_end)
+----
+
+=== Custom Filtering
+
+[source,ruby]
+----
+# Find entries with specific context
+query_test_entries = dlq.filter do |entry|
+  entry.context[:message]&.include?("Query test")
+end
+
+# Find entries for specific job
+job_entries = dlq.filter do |entry|
+  entry.metadata[:job_name] == "unreliable_task"
+end
+----
+
+== Retrying Failed Work
+
+=== Retry Single Entry
+
+[source,ruby]
+----
+entry = dlq.all.first
+
+dlq.retry_entry(entry) do |work, error, context|
+  # Custom retry logic
+  # Return result or raise to fail again
+  MyWorker.perform(work)
+end
+----
+
+=== Retry All Failed Work
+
+[source,ruby]
+----
+dlq.retry_all do |work, error, context|
+  # Attempt to reprocess each failed item
+  begin
+    MyWorker.perform(work)
+  rescue StandardError => e
+    # Log but don't fail the batch retry
+    puts "Retry failed: #{e.message}"
+    nil
+  end
+end
+----
+
+== DLQ Statistics
+
+Get aggregate information about the DLQ:
+
+[source,ruby]
+----
+stats = dlq.stats
+
+puts "Total entries: #{stats[:total]}"
+puts "Oldest entry: #{stats[:oldest_timestamp]}"
+puts "Newest entry: #{stats[:newest_timestamp]}"
+puts "Error types: #{stats[:error_types].inspect}"
+puts "Jobs: #{stats[:jobs].inspect}"
+----
+
+== Entry Structure
+
+Each DLQ entry contains:
+
+=== Core Information
+
+* `work`: The failed Work object with original payload
+* `error`: The exception that caused the failure
+* `timestamp`: When the entry was added to DLQ
+* `context`: Workflow context (inputs, job states)
+* `metadata`: Additional information
+
+=== Metadata Fields
+
+When added by the workflow executor, entries include:
+
+[source,ruby]
+----
+{
+  job_name: "task_name",
+  worker_class: "WorkerClass",
+  correlation_id: "uuid",
+  workflow_name: "workflow_name",
+  retry_attempts: 3,
+  total_retry_time: 5.2,
+  all_errors: ["Error 1", "Error 2", "Error 3"]
+}
+----
+
+== Configuration Options
+
+[options="header"]
+|===
+| Option | Type | Default | Description
+| `max_size` | Integer | 1000 | Maximum DLQ entries to retain
+| `persister` | Object | nil | Optional persistence strategy
+| `on_add` | Proc | nil | Callback when entry is added
+|===
+
+== Best Practices
+
+=== Size Management
+
+Configure `max_size` based on your error rate and retention needs:
+
+[source,ruby]
+----
+# High-volume system
+configure_dead_letter_queue max_size: 10000
+
+# Low-volume system
+configure_dead_letter_queue max_size: 100
+----
+
+=== Monitoring
+
+Set up monitoring for DLQ growth:
+
+[source,ruby]
+----
+configure_dead_letter_queue(
+  on_add: lambda { |entry|
+    # Send to monitoring system
+    StatsD.increment("dlq.entries")
+    StatsD.gauge("dlq.size", workflow.dead_letter_queue.size)
+
+    # Alert if DLQ grows too large
+    if workflow.dead_letter_queue.size > 500
+      AlertService.send("DLQ size exceeds threshold")
+    end
+  }
+)
+----
+
+=== Regular Cleanup
+
+Implement regular DLQ review and cleanup:
+
+[source,ruby]
+----
+# Review old entries
+old_entries = dlq.by_time_range(Time.now - 7.days, Time.now)
+
+# Remove resolved entries
+old_entries.each do |entry|
+  if issue_resolved?(entry)
+    dlq.remove(entry)
+  end
+end
+----
+
+=== Persistence Strategy
+
+Choose persistence based on requirements:
+
+* *Memory-only*: Fast, suitable for development and low-stakes scenarios
+* *File-based*: Durable, good for single-server deployments
+* *Redis/Database*: Centralized, required for multi-server deployments
+
+== Integration with Retry Logic
+
+The DLQ works seamlessly with retry configuration:
+
+[source,ruby]
+----
+job :task,
+    worker: Worker,
+    retry: {
+      max_attempts: 3,        # Try 3 times
+      backoff: :exponential,  # With exponential backoff
+      initial_delay: 1.0,
+    }
+----
+
+Flow:
+
+1. Job fails → First retry attempt
+2. Retry fails → Second retry attempt
+3. Retry fails → Third retry attempt
+4. All retries exhausted → **Added to DLQ**
+
+== Running the Examples
+
+[source,bash]
+----
+# Run all DLQ examples
+ruby examples/workflow/dead_letter_queue/dead_letter_queue_workflow.rb
+
+# Example output:
+# ================================================================================
+# Dead Letter Queue Workflow Examples
+# ================================================================================
+#
+# --- Example 1: Basic Dead Letter Queue ---
+# Running workflow with failing work that exhausts retries...
+#
+# ✓ Workflow failed as expected: Job 'unreliable_task' failed: ...
+#
+# Dead Letter Queue Status:
+#   Entries: 1
+#   Stats: {:total=>1, :oldest_timestamp=>..., :error_types=>...}
+# ...
+----
+
+== See Also
+
+* link:../retry/README.adoc[Retry Mechanism]
+* link:../circuit_breaker/README.adoc[Circuit Breaker]
+* link:../../../docs/workflows.adoc[Workflow Documentation]

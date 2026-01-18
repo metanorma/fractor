@@ -5,11 +5,14 @@ require_relative "../../lib/fractor"
 module SpecializedWorkers
   # First work type: Compute-intensive operations
   class ComputeWork < Fractor::Work
+    attr_reader :work_type
+
     def initialize(data, operation = :default, parameters = {})
       super({
         data: data,
         operation: operation,
         parameters: parameters,
+        work_type: :compute,  # Add work type identifier for Ractor compatibility
       })
     end
 
@@ -25,6 +28,10 @@ module SpecializedWorkers
       input[:parameters]
     end
 
+    def work_type
+      input[:work_type]
+    end
+
     def to_s
       "ComputeWork: operation=#{operation}, parameters=#{parameters}"
     end
@@ -32,6 +39,8 @@ module SpecializedWorkers
 
   # Second work type: Database operations
   class DatabaseWork < Fractor::Work
+    attr_reader :work_type
+
     def initialize(data = "", query_type = :select, table = "unknown",
 conditions = {})
       super({
@@ -39,6 +48,7 @@ conditions = {})
         query_type: query_type,
         table: table,
         conditions: conditions,
+        work_type: :database,  # Add work type identifier for Ractor compatibility
       })
     end
 
@@ -58,6 +68,10 @@ conditions = {})
       input[:conditions]
     end
 
+    def work_type
+      input[:work_type]
+    end
+
     def to_s
       "DatabaseWork: query_type=#{query_type}, table=#{table}, conditions=#{conditions}"
     end
@@ -65,14 +79,15 @@ conditions = {})
 
   # First worker type: Handles compute-intensive operations
   class ComputeWorker < Fractor::Worker
-    def initialize
+    def initialize(name: nil)
       # Setup resources needed for computation
-      @compute_resources = { memory: 1024, cpu_cores: 4 }
+      # Use Ractor.make_shareable to make the hash shareable across Ractors
+      @compute_resources = Ractor.make_shareable({ memory: 1024, cpu_cores: 4 })
     end
 
     def process(work)
-      # Only handle ComputeWork
-      unless work.is_a?(ComputeWork)
+      # Only handle ComputeWork - check work_type for Ractor compatibility
+      unless work.respond_to?(:work_type) && work.work_type == :compute
         return Fractor::WorkResult.new(
           error: "ComputeWorker can only process ComputeWork, got: #{work.class}",
           work: work,
@@ -133,14 +148,15 @@ conditions = {})
 
   # Second worker type: Handles database operations
   class DatabaseWorker < Fractor::Worker
-    def initialize
+    def initialize(name: nil)
       # Setup database connection and resources
-      @db_connection = { pool_size: 5, timeout: 30 }
+      # Use Ractor.make_shareable to make the hash shareable across Ractors
+      @db_connection = Ractor.make_shareable({ pool_size: 5, timeout: 30 })
     end
 
     def process(work)
-      # Only handle DatabaseWork
-      unless work.is_a?(DatabaseWork)
+      # Only handle DatabaseWork - check work_type for Ractor compatibility
+      unless work.respond_to?(:work_type) && work.work_type == :database
         return Fractor::WorkResult.new(
           error: "DatabaseWorker can only process DatabaseWork, got: #{work.class}",
           work: work,
@@ -255,14 +271,20 @@ conditions = {})
       compute_work_items = compute_tasks.map do |task|
         ComputeWork.new(task[:data], task[:operation], task[:parameters])
       end
+      puts "Created #{compute_work_items.size} compute work items"
+      puts "First compute work item: #{compute_work_items.first.inspect}" if compute_work_items.any?
       @compute_supervisor.add_work_items(compute_work_items)
+      puts "Added compute work items to supervisor"
 
       # Create and add database work items
       db_work_items = db_tasks.map do |task|
         DatabaseWork.new(task[:data], task[:query_type], task[:table],
                          task[:conditions])
       end
+      puts "Created #{db_work_items.size} database work items"
+      puts "First db work item: #{db_work_items.first.inspect}" if db_work_items.any?
       @db_supervisor.add_work_items(db_work_items)
+      puts "Added database work items to supervisor"
 
       # Run the supervisors directly - this is more reliable
       @compute_supervisor.run
@@ -273,7 +295,19 @@ conditions = {})
       db_results_agg = @db_supervisor.results
 
       puts "Received compute results: #{compute_results_agg.results.size} items"
+      puts "Received compute errors: #{compute_results_agg.errors.size} items"
+      if compute_results_agg.errors.any?
+        compute_results_agg.errors.each do |e|
+          puts "  Error: #{e.error}"
+        end
+      end
       puts "Received database results: #{db_results_agg.results.size} items"
+      puts "Received database errors: #{db_results_agg.errors.size} items"
+      if db_results_agg.errors.any?
+        db_results_agg.errors.each do |e|
+          puts "  Error: #{e.error}"
+        end
+      end
 
       # Format and store results
       @compute_results = format_compute_results(compute_results_agg)

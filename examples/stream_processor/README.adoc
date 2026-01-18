@@ -1,0 +1,206 @@
+= Real-Time Data Stream Processor Example
+:toc:
+:toclevels: 3
+
+Real-time event stream processor using Fractor::ContinuousServer for processing continuous data streams with windowing, metrics tracking, and graceful shutdown.
+
+== Purpose
+
+This example demonstrates:
+
+* Continuous event processing with Fractor::ContinuousServer
+* Sliding window aggregation (5-second windows)
+* Real-time metrics tracking
+* Backpressure handling
+* Graceful shutdown with SIGINT/SIGTERM
+* Performance monitoring
+
+== Features
+
+=== Continuous Processing
+
+Processes events as they arrive without stopping:
+
+* Non-blocking event ingestion
+* Parallel processing across workers
+* Result collection in background thread
+* Automatic workload distribution
+
+=== Sliding Window Aggregation
+
+Maintains a sliding time window of recent events:
+
+* Configurable window size (default: 5 seconds)
+* Automatic cleanup of old events
+* Window-based metrics calculation
+* Real-time window size tracking
+
+=== Performance Metrics
+
+Tracks and displays real-time metrics:
+
+* Total events processed
+* Events per second
+* Average processing time
+* Current window size
+
+=== Graceful Shutdown
+
+Handles termination signals properly:
+
+* SIGINT (Ctrl+C) for manual shutdown
+* SIGTERM for system shutdown
+* Preserves in-flight work
+* Final summary report
+
+== Usage
+
+=== Basic Usage
+
+Run with default settings (30 seconds, 10 events/second):
+
+[source,bash]
+----
+ruby stream_processor.rb
+----
+
+=== Custom Duration
+
+Process for 60 seconds:
+
+[source,bash]
+----
+ruby stream_processor.rb -d 60
+----
+
+=== Custom Event Rate
+
+Generate 50 events per second:
+
+[source,bash]
+----
+ruby stream_processor.rb -r 50
+----
+
+=== Custom Workers
+
+Use 8 worker ractors:
+
+[source,bash]
+----
+ruby stream_processor.rb -w 8
+----
+
+=== Custom Window Size
+
+Use 10-second window:
+
+[source,bash]
+----
+ruby stream_processor.rb --window 10
+----
+
+=== Combined Options
+
+[source,bash]
+----
+ruby stream_processor.rb -w 8 -d 120 -r 100 --window 10
+----
+
+== Examples
+
+=== Example 1: Default Settings
+
+[source,bash]
+----
+$ ruby stream_processor.rb
+
+Starting Stream Processor...
+Window size: 5 seconds
+Workers: 4
+Press Ctrl+C to stop gracefully
+
+Generating event stream for 30 seconds at 10 events/second...
+
+Events: 300 | Processed: 298 | Rate: 9.93 e/s | Window: 47 | Avg Time: 0.12 ms
+
+Generated 300 events
+
+Stopping Stream Processor...
+
+============================================================
+FINAL SUMMARY
+============================================================
+Total Events: 300
+Processed: 300
+Errors: 0
+Duration: 30.25 seconds
+Average Rate: 9.92 events/second
+============================================================
+----
+
+=== Example 2: High Throughput
+
+[source,bash]
+----
+$ ruby stream_processor.rb -w 8 -r 100 -d 10
+
+Starting Stream Processor...
+Window size: 5 seconds
+Workers: 8
+
+Events: 1000 | Processed: 998 | Rate: 99.8 e/s | Window: 492 | Avg Time: 0.08 ms
+
+Generated 1000 events
+
+FINAL SUMMARY
+============================================================
+Total Events: 1000
+Processed: 1000
+Duration: 10.05 seconds
+Average Rate: 99.50 events/second
+----
+
+=== Example 3: Graceful Shutdown
+
+Press Ctrl+C during processing:
+
+[source,bash]
+----
+$ ruby stream_processor.rb
+
+Events: 150 | Processed: 148 | Rate: 10.1 e/s | Window: 48 | Avg Time: 0.10 ms
+^C
+Stopping Stream Processor...
+
+FINAL SUMMARY
+============================================================
+Total Events: 150
+Processed: 150
+Duration: 14.87 seconds
+Average Rate: 10.09 events/second
+----
+
+== Architecture
+
+The processor consists of:
+
+* **Event**: Work item representing a stream event
+* **EventProcessorWorker**: Worker that processes events
+* **StreamProcessor**: Main processor managing the continuous server
+* **EventGenerator**: Test utility for generating event streams
+
+== Testing
+
+Run the test suite:
+
+[source,bash]
+----
+bundle exec rspec spec/examples/stream_processor_spec.rb
+----
+
+== See Also
+
+* link:../../README.adoc[Fractor Main Documentation]
+* link:../../docs/continuous-mode.adoc[Continuous Mode Guide]
+* link:../log_analyzer/README.adoc[Log Analyzer Example]

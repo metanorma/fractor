@@ -1,0 +1,12 @@
+{
+  "original": "/Users/mulgogi/src/mn/fractor/examples/image_processor/test_images/sample_2.png",
+  "operations": {
+    "resize": {
+      "width": 800,
+      "height": 600
+    },
+    "filter": "grayscale",
+    "convert": "jpg"
+  },
+  "processed_at": "2025-10-25T22:16:20+09:00"
+}

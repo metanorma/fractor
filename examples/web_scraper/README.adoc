@@ -1,0 +1,625 @@
+= Web Scraper with Rate Limiting
+:toc:
+:toc-placement!:
+
+A production-ready web scraper that demonstrates parallel URL fetching with rate limiting, retry logic, and robust error handling using Fractor.
+
+toc::[]
+
+== Problem Description
+
+Web scraping often involves fetching data from multiple URLs, which can be slow when done sequentially. However, parallel scraping must be carefully managed to:
+
+* Respect rate limits and avoid overwhelming target servers
+* Handle network errors and timeouts gracefully
+* Retry failed requests with exponential backoff
+* Track progress across multiple workers
+* Store scraped data in an organized manner
+
+This example demonstrates how to build a production-ready web scraper that handles all these concerns using Fractor's parallel processing capabilities.
+
+== When to Use This Pattern
+
+Use this web scraping pattern when you need to:
+
+* **Scrape multiple URLs efficiently**: Process hundreds or thousands of URLs in parallel while respecting rate limits
+* **Handle unreliable networks**: Implement retry logic with exponential backoff for network failures
+* **Respect server policies**: Enforce rate limiting to avoid overwhelming target servers or violating terms of service
+* **Track progress**: Monitor scraping progress across multiple parallel workers
+* **Handle errors gracefully**: Continue processing even when some URLs fail
+* **Store results reliably**: Save scraped data with proper error handling
+
+This pattern is ideal for:
+
+* Data aggregation from multiple sources
+* Content monitoring and change detection
+* Price comparison and monitoring
+* SEO and content analysis
+* Research data collection
+* Web archiving projects
+
+== Architecture
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────┐
+│                    Main Application                         │
+│  • Creates ScrapeWork for each URL                         │
+│  • Initializes ProgressTracker                             │
+│  • Submits work to Supervisor                              │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  │ Submits ScrapeWork
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Supervisor                             │
+│  • Manages 3 WebScraperWorker instances                    │
+│  • Distributes work across workers                         │
+│  • Collects results                                        │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+        ┌─────────┼─────────┐
+        │         │         │
+        ▼         ▼         ▼
+┌─────────┐ ┌─────────┐ ┌─────────┐
+│ Worker 1│ │ Worker 2│ │ Worker 3│
+│         │ │         │ │         │
+│ Rate    │ │ Rate    │ │ Rate    │
+│ Limiter │ │ Limiter │ │ Limiter │
+│         │ │         │ │         │
+│ Retry   │ │ Retry   │ │ Retry   │
+│ Logic   │ │ Logic   │ │ Logic   │
+└────┬────┘ └────┬────┘ └────┬────┘
+     │           │           │
+     │  Fetch    │  Fetch    │  Fetch
+     ▼           ▼           ▼
+┌─────────────────────────────────┐
+│        Target Websites          │
+│  • httpbin.org/html            │
+│  • httpbin.org/json            │
+│  • httpbin.org/xml             │
+│  • ... more URLs ...           │
+└─────────────────────────────────┘
+     │           │           │
+     │  Save     │  Save     │  Save
+     ▼           ▼           ▼
+┌─────────────────────────────────┐
+│       Output Directory          │
+│  • url_timestamp.json          │
+│  • url_timestamp.html          │
+│  • Metadata and content        │
+└─────────────────────────────────┘
+----
+
+=== Components
+
+**ScrapeWork**::
+Work class that encapsulates a URL to scrape and the current retry attempt number.
+
+**WebScraperWorker**::
+Worker class that processes scrape work with:
++
+* **Rate limiting**: Enforces minimum delay between requests per domain
+* **HTTP fetching**: Makes HTTP requests with proper headers and timeouts
+* **Error handling**: Catches network errors and HTTP errors
+* **Retry logic**: Implements exponential backoff for failed requests
+* **Data parsing**: Extracts and structures response data
+* **File saving**: Stores both metadata (JSON) and content (HTML)
+
+**ProgressTracker**::
+Monitors and reports scraping progress:
++
+* Tracks completed, successful, and failed URLs
+* Calculates completion percentage
+* Measures scraping rate (URLs/second)
+* Provides real-time progress updates
+* Generates final summary statistics
+
+== Key Features
+
+=== Rate Limiting
+
+Each worker maintains per-domain rate limits to avoid overwhelming servers:
+
+[source,ruby]
+----
+RATE_LIMIT_DELAY = 0.5 # 500ms between requests
+
+def enforce_rate_limit(url)
+  domain = extract_domain(url)
+  last_time = @last_request_time[domain]
+
+  if last_time
+    elapsed = Time.now - last_time
+    if elapsed < RATE_LIMIT_DELAY
+      sleep_time = RATE_LIMIT_DELAY - elapsed
+      sleep(sleep_time)
+    end
+  end
+
+  @last_request_time[domain] = Time.now
+end
+----
+
+=== Exponential Backoff
+
+Failed requests are retried with increasing delays:
+
+[source,ruby]
+----
+MAX_RETRIES = 3
+RETRY_DELAYS = [1, 2, 4].freeze # Seconds
+
+# First retry: 1s delay
+# Second retry: 2s delay
+# Third retry: 4s delay
+----
+
+=== Comprehensive Error Handling
+
+Handles multiple error scenarios:
+
+* Network timeouts and connection errors
+* HTTP errors (403, 404, 500, etc.)
+* Invalid URLs
+* Response parsing errors
+* File system errors
+
+=== Progress Tracking
+
+Real-time monitoring of scraping progress:
+
+[source]
+----
+============================================================
+Progress: 7/10 (70.0%)
+Successful: 5 | Failed: 1
+Elapsed: 12.3s | Rate: 0.57 URLs/s
+============================================================
+----
+
+== Setup Instructions
+
+=== Prerequisites
+
+* Ruby 3.0 or higher (required for Ractor support)
+* Fractor gem installed
+* Internet connection for scraping
+
+=== Installation
+
+. Install dependencies:
++
+[source,shell]
+----
+bundle install
+----
+
+. Create the example directory:
++
+[source,shell]
+----
+mkdir -p examples/web_scraper
+----
+
+== Usage
+
+=== Basic Usage
+
+Run the example with default URLs:
+
+[source,shell]
+----
+cd examples/web_scraper
+ruby web_scraper.rb
+----
+
+=== Custom URLs
+
+Modify the `urls` array in the script to scrape your own URLs:
+
+[source,ruby]
+----
+urls = [
+  "https://example.com/page1",
+  "https://example.com/page2",
+  "https://another-site.com/data"
+]
+----
+
+=== Configuration Options
+
+Adjust scraping parameters by modifying the worker class:
+
+[source,ruby]
+----
+# Change rate limit (seconds between requests)
+RATE_LIMIT_DELAY = 1.0
+
+# Adjust retry attempts
+MAX_RETRIES = 5
+
+# Modify retry delays (exponential backoff)
+RETRY_DELAYS = [1, 3, 9, 27].freeze
+
+# Change number of workers
+supervisor = Fractor::Supervisor.new(
+  worker_class: WebScraperWorker,
+  worker_count: 5,  # Increase parallelism
+  worker_args: [{ output_dir: output_dir }]
+)
+----
+
+== Expected Output
+
+=== Console Output
+
+[source]
+----
+Starting Web Scraper Example
+URLs to scrape: 10
+Workers: 3
+Rate limit: 500ms between requests per domain
+Max retries: 3 with exponential backoff
+
+[Worker 1] Scraping https://httpbin.org/html (attempt 1/3)
+[Worker 2] Scraping https://httpbin.org/json (attempt 1/3)
+[Worker 3] Scraping https://httpbin.org/xml (attempt 1/3)
+[Worker 1] ✓ Successfully scraped https://httpbin.org/html
+[Worker 1] Saved to scraped_data/httpbin_org_html_20231025_130300
+
+============================================================
+Progress: 3/10 (30.0%)
+Successful: 3 | Failed: 0
+Elapsed: 2.1s | Rate: 1.43 URLs/s
+============================================================
+
+[Worker 2] ✗ Error scraping https://httpbin.org/deny: HTTP Error: 403 Forbidden
+[Worker 2] Will retry in 1s...
+[Worker 2] Scraping https://httpbin.org/deny (attempt 2/3)
+[Worker 2] ✗ Error scraping https://httpbin.org/deny: HTTP Error: 403 Forbidden
+[Worker 2] Will retry in 2s...
+
+============================================================
+SCRAPING COMPLETE
+============================================================
+Total URLs: 10
+Successful: 8
+Failed: 2
+Total time: 15.23s
+Average rate: 0.66 URLs/s
+============================================================
+
+Failed URLs:
+  - https://httpbin.org/deny: Max retries exceeded: HTTP Error: 403 Forbidden
+  - https://httpbin.org/status/500: Max retries exceeded: HTTP Error: 500 Internal Server Error
+
+Data saved to: scraped_data/
+----
+
+=== File Output
+
+Each successfully scraped URL generates two files:
+
+[source]
+----
+scraped_data/
+├── httpbin_org_html_20231025_130300.json
+├── httpbin_org_html_20231025_130300.html
+├── httpbin_org_json_20231025_130301.json
+├── httpbin_org_json_20231025_130301.html
+└── ...
+----
+
+**JSON metadata file** contains:
+
+[source,json]
+----
+{
+  "url": "https://httpbin.org/html",
+  "content": "<!DOCTYPE html>...",
+  "content_type": "text/html; charset=utf-8",
+  "size": 3741,
+  "timestamp": "2023-10-25T13:03:00+08:00",
+  "headers": {
+    "content-type": ["text/html; charset=utf-8"],
+    "content-length": ["3741"],
+    "server": ["gunicorn/19.9.0"]
+  }
+}
+----
+
+**HTML content file** contains the raw response body.
+
+== Performance Benchmarks
+
+=== Serial vs Parallel Comparison
+
+Scraping 100 URLs with 2-second response time each:
+
+|===
+|Approach |Workers |Time |Rate
+
+|Serial
+|1
+|~200s
+|0.5 URLs/s
+
+|Parallel (3 workers)
+|3
+|~67s
+|1.5 URLs/s
+
+|Parallel (5 workers)
+|5
+|~40s
+|2.5 URLs/s
+
+|Parallel (10 workers)
+|10
+|~20s
+|5.0 URLs/s
+|===
+
+NOTE: Actual performance depends on network speed, server response times, and rate limiting constraints.
+
+=== Impact of Rate Limiting
+
+With 500ms rate limit per domain:
+
+|===
+|Scenario |Time Impact
+
+|Single domain (all URLs same host)
+|~50s for 100 URLs (limited by rate limit)
+
+|Multiple domains (different hosts)
+|~20s for 100 URLs (parallel across domains)
+|===
+
+=== Memory Usage
+
+* Base memory: ~50 MB
+* Per worker: ~10 MB
+* Per cached response: ~100 KB (varies by content size)
+* Recommended: 100-500 MB for typical scraping tasks
+
+== Best Practices
+
+=== Respect Robots.txt
+
+Always check and respect the target site's `robots.txt`:
+
+[source,ruby]
+----
+def check_robots_txt(url)
+  uri = URI.parse(url)
+  robots_url = "#{uri.scheme}://#{uri.host}/robots.txt"
+  # Parse robots.txt and check if scraping is allowed
+end
+----
+
+=== Use Appropriate User-Agent
+
+Identify your scraper with a descriptive User-Agent:
+
+[source,ruby]
+----
+request["User-Agent"] = "YourCompany Bot/1.0 (contact@example.com)"
+----
+
+=== Implement Politeness Delays
+
+Adjust rate limits based on server capacity:
+
+[source,ruby]
+----
+# Conservative: 1-2 seconds between requests
+RATE_LIMIT_DELAY = 1.5
+
+# Aggressive (only for your own servers): 100-200ms
+RATE_LIMIT_DELAY = 0.15
+----
+
+=== Handle Dynamic Content
+
+For JavaScript-heavy sites, consider using Selenium or Puppeteer instead of basic HTTP requests.
+
+=== Monitor and Log
+
+Implement comprehensive logging:
+
+[source,ruby]
+----
+def log_request(url, status, duration)
+  File.open("scraper.log", "a") do |f|
+    f.puts "#{Time.now.iso8601} | #{url} | #{status} | #{duration}s"
+  end
+end
+----
+
+=== Cache DNS Lookups
+
+For large-scale scraping, cache DNS lookups to improve performance:
+
+[source,ruby]
+----
+@dns_cache ||= {}
+@dns_cache[host] ||= Resolv.getaddress(host)
+----
+
+=== Use Connection Pooling
+
+For repeated requests to the same domain:
+
+[source,ruby]
+----
+@http_connections ||= {}
+@http_connections[domain] ||= create_http_connection(domain)
+----
+
+=== Handle Redirects
+
+Follow redirects but limit the number to prevent infinite loops:
+
+[source,ruby]
+----
+MAX_REDIRECTS = 5
+
+def fetch_url(url, redirect_count = 0)
+  # ... fetch logic ...
+  if response.is_a?(Net::HTTPRedirection) && redirect_count < MAX_REDIRECTS
+    fetch_url(response['location'], redirect_count + 1)
+  end
+end
+----
+
+== Troubleshooting
+
+=== Connection Timeouts
+
+**Problem**: Worker hangs on slow or unresponsive URLs.
+
+**Solution**: Adjust timeout values:
+
+[source,ruby]
+----
+http.open_timeout = 10  # Connection timeout
+http.read_timeout = 30  # Response read timeout
+----
+
+=== Rate Limit Too Aggressive
+
+**Problem**: Still getting blocked despite rate limiting.
+
+**Solution**: Increase the delay:
+
+[source,ruby]
+----
+RATE_LIMIT_DELAY = 2.0  # 2 seconds between requests
+----
+
+=== Memory Issues with Large Responses
+
+**Problem**: Large HTML pages consume too much memory.
+
+**Solution**: Stream large responses to disk:
+
+[source,ruby]
+----
+def fetch_large_file(url, filepath)
+  File.open(filepath, 'wb') do |file|
+    http.request_get(uri.path) do |response|
+      response.read_body { |chunk| file.write(chunk) }
+    end
+  end
+end
+----
+
+=== SSL Certificate Errors
+
+**Problem**: SSL verification failures.
+
+**Solution**: Configure SSL verification (but use with caution):
+
+[source,ruby]
+----
+http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+http.ca_file = '/path/to/ca-bundle.crt'
+----
+
+=== Worker Starvation
+
+**Problem**: Some workers idle while others are busy.
+
+**Solution**: Ensure work is evenly distributed. Fractor handles this automatically, but you can verify with logging:
+
+[source,ruby]
+----
+puts "[Worker #{worker_id}] Processed #{@request_count} requests"
+----
+
+=== Failed Retries
+
+**Problem**: URLs fail even after maximum retries.
+
+**Solution**:
+* Increase `MAX_RETRIES`
+* Adjust `RETRY_DELAYS` for longer backoff
+* Implement exponential backoff with jitter:
+
+[source,ruby]
+----
+delay = RETRY_DELAYS[attempt - 1] * (0.5 + rand * 0.5)
+----
+
+== Advanced Usage
+
+=== Custom Data Extraction
+
+Add custom parsing logic for specific content types:
+
+[source,ruby]
+----
+def parse_response(response, url)
+  content = response.body
+
+  case response["content-type"]
+  when /json/
+    JSON.parse(content)
+  when /xml/
+    Nokogiri::XML(content)
+  when /html/
+    Nokogiri::HTML(content)
+  else
+    content
+  end
+end
+----
+
+=== Proxy Support
+
+Route requests through a proxy:
+
+[source,ruby]
+----
+def fetch_url(url)
+  uri = URI.parse(url)
+  proxy = URI.parse(ENV['HTTP_PROXY'])
+
+  http = Net::HTTP.new(
+    uri.host, uri.port,
+    proxy.host, proxy.port
+  )
+  # ... rest of fetch logic
+end
+----
+
+=== Concurrent Domain Scraping
+
+Allow multiple concurrent requests per domain (use carefully):
+
+[source,ruby]
+----
+MAX_CONCURRENT_PER_DOMAIN = 2
+
+def enforce_rate_limit(url)
+  domain = extract_domain(url)
+  @domain_semaphores ||= {}
+  @domain_semaphores[domain] ||= Mutex.new
+
+  @domain_semaphores[domain].synchronize do
+    # Rate limiting logic
+  end
+end
+----
+
+== Related Examples
+
+* link:../api_aggregator/README.adoc[API Data Aggregator] - Similar pattern for API endpoints
+* link:../file_processor/README.adoc[Batch File Processor] - Retry logic and error handling
+* link:../log_analyzer/README.adoc[Log File Analyzer] - Parallel data processing
+
+== License
+
+This example is part of the Fractor gem and is available under the same license.

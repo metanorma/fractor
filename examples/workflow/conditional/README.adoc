@@ -1,0 +1,483 @@
+= Conditional Workflow
+
+== Purpose
+
+Demonstrates runtime conditional job execution based on data validation results, showcasing how workflows can make dynamic decisions during execution.
+
+== Focus
+
+This example focuses on demonstrating:
+
+* Conditional job execution using `if_condition`
+* Multiple termination points with `terminates_workflow`
+* Runtime decision making with context access
+* Lambda expressions for condition evaluation
+* Branching logic based on data validation
+* Dynamic workflow paths based on input data
+
+== Architecture
+
+.Conditional Branching Decision Tree
+[source]
+----
+[Workflow Input]
+      │
+      │ NumberInput { value: X }
+      ▼
+┌─────────────────┐
+│ Validate Job    │ ◄─── Entry Point (start_with)
+│ ValidatorWorker │      Always executes
+└─────────────────┘
+      │
+      │ ValidationResult {
+      │   is_positive: boolean,
+      │   is_even: boolean
+      │ }
+      │
+      ├──────────────┬──────────────┬──────────────┐
+      │              │              │              │
+      │ if positive  │ if even &    │ if odd &     │
+      │              │ !positive    │ !positive    │
+      ▼              ▼              ▼              │
+┌──────────┐  ┌──────────┐  ┌──────────┐         │
+│  Double  │  │  Square  │  │PassThru  │         │
+│  Worker  │  │  Worker  │  │  Worker  │         │
+└──────────┘  └──────────┘  └──────────┘         │
+      │              │              │              │
+      │ Doubles      │ Squares      │ Unchanged    │
+      │ the value    │ the value    │ value        │
+      ▼              ▼              ▼              │
+ProcessedNumber ProcessedNumber ProcessedNumber   │
+{ result: X*2,  { result: X²,   { result: X,      │
+operation:      operation:      operation:         │
+"doubled" }     "squared" }     "unchanged" }      │
+      │              │              │              │
+      └──────────────┴──────────────┴──────────────┘
+                     │
+                     │ ONE of the above (never multiple)
+                     ▼
+              [Workflow Output] ◄─── Exit Points (end_with)
+                                     (multiple conditional exits)
+----
+
+.Example Execution Paths
+[source]
+----
+Input: 5 (positive)
+────────────────────────────────────────
+[validate] → [double] → Output: 10
+
+Condition evaluation:
+  validate → is_positive = true
+  double   → if_condition evaluates to true ✓
+  square   → if_condition evaluates to false (skipped)
+  passthrough → if_condition evaluates to false (skipped)
+
+────────────────────────────────────────
+
+Input: -4 (negative, even)
+────────────────────────────────────────
+[validate] → [square] → Output: 16
+
+Condition evaluation:
+  validate → is_even = true, is_positive = false
+  double   → if_condition evaluates to false (skipped)
+  square   → if_condition evaluates to true ✓
+  passthrough → if_condition evaluates to false (skipped)
+
+────────────────────────────────────────
+
+Input: -3 (negative, odd)
+────────────────────────────────────────
+[validate] → [passthrough] → Output: -3
+
+Condition evaluation:
+  validate → is_even = false, is_positive = false
+  double   → if_condition evaluates to false (skipped)
+  square   → if_condition evaluates to false (skipped)
+  passthrough → if_condition evaluates to true ✓
+----
+
+== Key Components
+
+=== Data Models
+
+The workflow uses three data models:
+
+[source,ruby]
+----
+class NumberInput
+  attr_accessor :value
+
+  def initialize(value: 0)
+    @value = value
+  end
+end
+
+class ValidationResult
+  attr_accessor :is_positive, :is_even
+
+  def initialize(is_positive: false, is_even: false)
+    @is_positive = is_positive
+    @is_even = is_even
+  end
+end
+
+class ProcessedNumber
+  attr_accessor :result, :operation
+
+  def initialize(result: 0, operation: "")
+    @result = result
+    @operation = operation
+  end
+end
+----
+
+=== Workers
+
+Validator worker analyzes the input:
+
+[source,ruby]
+----
+class ValidatorWorker < Fractor::Worker
+  input_type NumberInput
+  output_type ValidationResult
+
+  def process(work)
+    input = work.input
+
+    output = ValidationResult.new(
+      is_positive: input.value > 0,
+      is_even: input.value.even?,
+    )
+
+    Fractor::WorkResult.new(result: output, work: work)
+  end
+end
+----
+
+Processing workers execute conditionally:
+
+[source,ruby]
+----
+class DoubleWorker < Fractor::Worker
+  input_type NumberInput
+  output_type ProcessedNumber
+
+  def process(work)
+    input = work.input
+    result = input.value * 2
+
+    output = ProcessedNumber.new(
+      result: result,
+      operation: "doubled",
+    )
+
+    Fractor::WorkResult.new(result: output, work: work)
+  end
+end
+----
+
+=== Workflow Definition
+
+The workflow defines conditional execution logic:
+
+[source,ruby]
+----
+class ConditionalWorkflow < Fractor::Workflow
+  workflow "conditional_example" do
+    input_type NumberInput
+    output_type ProcessedNumber
+
+    # Define workflow boundaries
+    start_with "validate"                    # <1>
+    end_with "double", on: :success          # <2>
+    end_with "square", on: :success
+    end_with "passthrough", on: :success
+
+    # Job 1: Validate the number (always runs)
+    job "validate" do
+      runs_with ValidatorWorker
+      inputs_from_workflow
+    end
+
+    # Job 2: Double if positive (conditional)
+    job "double" do
+      runs_with DoubleWorker
+      needs "validate"
+      inputs_from_workflow               # <3>
+      if_condition ->(context) {         # <4>
+        validation = context.job_output("validate")  # <5>
+        validation.is_positive           # <6>
+      }
+      outputs_to_workflow
+      terminates_workflow                # <7>
+    end
+
+    # Job 3: Square if even and not positive
+    job "square" do
+      runs_with SquareWorker
+      needs "validate"
+      inputs_from_workflow
+      if_condition ->(context) {
+        validation = context.job_output("validate")
+        validation.is_even && !validation.is_positive
+      }
+      outputs_to_workflow
+      terminates_workflow
+    end
+
+    # Job 4: Pass through if neither positive nor even
+    job "passthrough" do
+      runs_with PassThroughWorker
+      needs "validate"
+      inputs_from_workflow
+      if_condition ->(context) {
+        validation = context.job_output("validate")
+        !validation.is_positive && !validation.is_even
+      }
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+----
+<1> Validation job always executes first
+<2> Multiple exit points, each conditional on success
+<3> Conditional jobs still receive workflow input, not validation output
+<4> Lambda expression for condition evaluation
+<5> Access validation job's output from context
+<6> Return boolean to determine if job should execute
+<7> Job terminates workflow when it executes
+
+== Key Features
+
+=== Conditional Execution
+
+Jobs execute only when their condition evaluates to true:
+
+[source,ruby]
+----
+job "double" do
+  if_condition ->(context) {
+    validation = context.job_output("validate")
+    validation.is_positive  # Returns true or false
+  }
+end
+----
+
+The lambda receives the workflow context and must return a boolean:
+
+* `true`: Job executes
+* `false`: Job skips, workflow continues to next job
+
+=== Context Access
+
+The context object provides access to:
+
+[source,ruby]
+----
+context.job_output("job_name")  # <1>
+context.workflow_input          # <2>
+----
+<1> Output from a completed job
+<2> Original workflow input
+
+Example usage:
+
+[source,ruby]
+----
+if_condition ->(context) {
+  validation = context.job_output("validate")
+  input = context.workflow_input
+
+  # Make decision based on both
+  validation.is_positive && input.value > 10
+}
+----
+
+=== Multiple Termination Points
+
+Multiple jobs can terminate the workflow:
+
+[source,ruby]
+----
+job "double" do
+  terminates_workflow  # <1>
+end
+
+job "square" do
+  terminates_workflow  # <1>
+end
+
+job "passthrough" do
+  terminates_workflow  # <1>
+end
+----
+<1> Any of these jobs can end the workflow
+
+Only one will execute due to mutually exclusive conditions.
+
+=== Mutually Exclusive Conditions
+
+Conditions are designed to be mutually exclusive:
+
+[source,ruby]
+----
+# Only ONE of these will be true for any input
+if_condition ->(ctx) {
+  ctx.job_output("validate").is_positive  # Positive numbers
+}
+
+if_condition ->(ctx) {
+  validation = ctx.job_output("validate")
+  validation.is_even && !validation.is_positive  # Negative even
+}
+
+if_condition ->(ctx) {
+  validation = ctx.job_output("validate")
+  !validation.is_positive && !validation.is_even  # Negative odd
+}
+----
+
+== Usage
+
+Run the example from the project root:
+
+[source,shell]
+----
+ruby examples/workflow/conditional/conditional_workflow.rb
+----
+
+== Expected Output
+
+[example]
+====
+[source]
+----
+============================================================
+Conditional Workflow Example
+============================================================
+
+Test Case 1: Positive number (should double)
+------------------------------------------------------------
+Input: 5
+
+[Validator] Checking number: 5
+[Validator] Positive: true, Even: false
+[DoubleWorker] Doubled 5 to 10
+
+Results:
+  Status: SUCCESS
+  Execution Time: 0.001s
+  Completed Jobs: validate, double
+  Final Result: 10
+  Operation: doubled
+
+============================================================
+
+Test Case 2: Negative even number (should square)
+------------------------------------------------------------
+Input: -4
+
+[Validator] Checking number: -4
+[Validator] Positive: false, Even: true
+[SquareWorker] Squared -4 to 16
+
+Results:
+  Status: SUCCESS
+  Execution Time: 0.0s
+  Completed Jobs: validate, square
+  Final Result: 16
+  Operation: squared
+
+============================================================
+
+Test Case 3: Negative odd number (should pass through)
+------------------------------------------------------------
+Input: -3
+
+[Validator] Checking number: -3
+[Validator] Positive: false, Even: false
+[PassThrough] Keeping original value: -3
+
+Results:
+  Status: SUCCESS
+  Execution Time: 0.0s
+  Completed Jobs: validate, passthrough
+  Final Result: -3
+  Operation: unchanged
+
+============================================================
+----
+====
+
+== Learning Points
+
+=== Conditional Execution
+
+* Use `if_condition` with a lambda to control job execution
+* Lambda receives workflow context for decision making
+* Jobs with false conditions are skipped, not failed
+
+=== Context-Based Decisions
+
+* Access previous job outputs via `context.job_output("name")`
+* Access workflow input via `context.workflow_input`
+* Combine multiple data sources for complex conditions
+
+=== Multiple Exit Points
+
+* Multiple jobs can be marked with `terminates_workflow`
+* Use `end_with "job", on: :success` for conditional exits
+* Only one termination job executes per workflow run
+
+=== Branching Patterns
+
+* Create decision trees based on validation results
+* Design mutually exclusive conditions for clear flow
+* Each branch can perform different operations
+
+=== Job Dependencies
+
+* Conditional jobs still respect `needs` dependencies
+* Validation job must complete before condition evaluation
+* Skipped jobs don't block downstream jobs if not needed
+
+== Design Considerations
+
+=== Condition Design
+
+When designing conditions:
+
+1. **Make conditions mutually exclusive** - Only one path should execute
+2. **Handle all cases** - Ensure at least one condition will be true
+3. **Keep conditions simple** - Complex logic should be in workers
+4. **Document expected paths** - Comment which inputs trigger which paths
+
+=== Error Handling
+
+* If no condition evaluates to true, workflow may complete without output
+* Consider a default "catch-all" condition for safety
+* Validation failures should be handled in the validation worker
+
+=== Testing Strategy
+
+Test each conditional path:
+
+[source,ruby]
+----
+test_cases = [
+  { value: 5, expected_op: "doubled" },    # Positive
+  { value: -4, expected_op: "squared" },   # Negative even
+  { value: -3, expected_op: "unchanged" }, # Negative odd
+]
+----
+
+== Next Steps
+
+After understanding conditional workflows, explore:
+
+* link:../simple_linear/README.adoc[Simple Linear Workflow] - Sequential processing basics
+* link:../fan_out/README.adoc[Fan-Out Workflow] - Parallel processing patterns
+* link:../README.adoc[Workflow Overview] - Complete workflow system documentation

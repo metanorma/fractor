@@ -1,0 +1,406 @@
+= Workflow Examples
+
+This directory contains examples demonstrating Fractor's workflow system, which provides a GitHub Actions-style declarative DSL for orchestrating complex parallel processing pipelines.
+
+== Overview
+
+The Fractor workflow system allows you to:
+
+* Define workflows with declarative DSL
+* Specify job dependencies and execution order
+* Type-safe data flow between jobs
+* Automatic parallelization of independent jobs
+* Fan-out and fan-in patterns
+* Conditional job execution
+* Both pipeline and continuous modes
+
+== Quick Start
+
+[source,ruby]
+----
+# Define data models
+class InputData
+  attr_accessor :text
+  def initialize(text:) @text = text end
+end
+
+class OutputData
+  attr_accessor :result
+  def initialize(result:) @result = result end
+end
+
+# Define workers with input/output types
+class ProcessWorker < Fractor::Worker
+  input_type InputData
+  output_type OutputData
+
+  def process(work)
+    output = OutputData.new(result: work.input.text.upcase)
+    Fractor::WorkResult.new(result: output, work: work)
+  end
+end
+
+# Define workflow
+class MyWorkflow < Fractor::Workflow
+  workflow "my-workflow" do
+    input_type InputData
+    output_type OutputData
+
+    start_with "process"
+    end_with "process"
+
+    job "process" do
+      runs_with ProcessWorker
+      inputs_from_workflow
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+
+# Execute
+input = InputData.new(text: "hello")
+workflow = MyWorkflow.new
+result = workflow.execute(input: input)
+puts result.output.result  # => "HELLO"
+----
+
+== Examples
+
+Fractor provides three comprehensive workflow examples demonstrating different patterns:
+
+=== link:simple_linear/README.adoc[Simple Linear Workflow]
+
+Demonstrates sequential job processing with data transformation at each stage.
+
+*Location:* `examples/workflow/simple_linear/`
+
+*Key Concepts:*
+
+* Sequential dependencies using `needs`
+* Type-safe data flow with `input_type` and `output_type`
+* Workflow entry and exit points (`start_with` / `end_with`)
+* Job output mapping with `inputs_from_job`
+
+*Run:*
+[source,shell]
+----
+ruby examples/workflow/simple_linear/simple_linear_workflow.rb
+----
+
+=== link:fan_out/README.adoc[Fan-Out Workflow]
+
+Demonstrates parallel processing patterns with fan-out and fan-in aggregation.
+
+*Location:* `examples/workflow/fan_out/`
+
+*Key Concepts:*
+
+* Fan-out pattern: one job feeding multiple parallel jobs
+* Fan-in pattern: multiple jobs aggregating into one job
+* Multiple input aggregation with `inputs_from_multiple`
+* Input mapping syntax for aggregating job outputs
+
+*Run:*
+[source,shell]
+----
+ruby examples/workflow/fan_out/fan_out_workflow.rb
+----
+
+=== link:conditional/README.adoc[Conditional Workflow]
+
+Demonstrates runtime conditional execution based on data validation.
+
+*Location:* `examples/workflow/conditional/`
+
+*Key Concepts:*
+
+* Conditional job execution using `if_condition`
+* Multiple termination points with `terminates_workflow`
+* Runtime decision making with context access
+* Branching logic based on validation results
+
+*Run:*
+[source,shell]
+----
+ruby examples/workflow/conditional/conditional_workflow.rb
+----
+
+== Core Concepts
+
+=== Jobs
+
+Jobs are the basic units of work in a workflow. Each job:
+
+* Runs a specific Worker class
+* Declares its dependencies
+* Maps inputs from previous jobs or workflow input
+* Produces typed output
+
+[source,ruby]
+----
+job "my-job" do
+  needs "previous-job"              # Dependencies
+  runs_with MyWorker                # Worker class
+  parallel_workers 4                # Parallel execution
+  inputs_from_job "previous-job"    # Input mapping
+  outputs_to_workflow               # Output to workflow
+end
+----
+
+=== Data Flow
+
+Data flows through the workflow via typed models:
+
+[source,ruby]
+----
+# Job A output
+class AOutput
+  attr_accessor :data
+end
+
+# Job B input (can use A's output)
+class BInput
+  attr_accessor :data
+end
+
+job "job-a" do
+  runs_with WorkerA  # output_type AOutput
+end
+
+job "job-b" do
+  needs "job-a"
+  runs_with WorkerB  # input_type BInput
+
+  # Map AOutput.data → BInput.data
+  inputs_from_job "job-a", select: {
+    data: :data
+  }
+end
+----
+
+=== Fan-Out Pattern
+
+One job's output feeds multiple parallel jobs:
+
+[source,ruby]
+----
+job "extract" do
+  runs_with ExtractWorker
+end
+
+# These three run in parallel, all using extract's output
+job "validate" do
+  needs "extract"
+  runs_with ValidateWorker
+  inputs_from_job "extract"
+end
+
+job "analyze" do
+  needs "extract"
+  runs_with AnalyzeWorker
+  inputs_from_job "extract"
+end
+
+job "stats" do
+  needs "extract"
+  runs_with StatsWorker
+  inputs_from_job "extract"
+end
+----
+
+=== Fan-In Pattern
+
+Multiple jobs feed one aggregator job:
+
+[source,ruby]
+----
+job "aggregate" do
+  needs ["validate", "analyze", "stats"]
+  runs_with AggregateWorker
+
+  # Combine outputs from multiple jobs
+  inputs_from_multiple(
+    "validate" => { validated: :data },
+    "analyze" => { analysis: :results },
+    "stats" => { statistics: :summary }
+  )
+end
+----
+
+=== Conditional Execution
+
+Jobs can execute conditionally:
+
+[source,ruby]
+----
+job "optional-job" do
+  needs "check"
+  runs_with OptionalWorker
+
+  # Only run if condition is met
+  if_condition ->(ctx) {
+    ctx.job_output("check").should_process
+  }
+end
+----
+
+== Best Practices
+
+=== Define Clear Data Models
+
+Use separate classes for each job's input and output:
+
+[source,ruby]
+----
+# Good: Clear, type-safe models
+class ExtractInput
+  attr_accessor :source_url, :batch_size
+end
+
+class ExtractOutput
+  attr_accessor :raw_data, :record_count, :metadata
+end
+
+# Better: Use Lutaml::Model for validation
+class ExtractInput < Lutaml::Model::Serializable
+  attribute :source_url, :string
+  attribute :batch_size, :integer
+
+  validates :source_url, presence: true
+  validates :batch_size, numericality: { greater_than: 0 }
+end
+----
+
+=== Keep Jobs Focused
+
+Each job should have a single responsibility:
+
+[source,ruby]
+----
+# Good: Focused jobs
+job "extract" do
+  runs_with ExtractWorker  # Only extracts
+end
+
+job "validate" do
+  needs "extract"
+  runs_with ValidateWorker  # Only validates
+end
+
+# Avoid: Jobs that do too much
+job "extract-and-validate" do  # Too many responsibilities
+  runs_with ExtractAndValidateWorker
+end
+----
+
+=== Use Descriptive Names
+
+Job names should clearly indicate their purpose:
+
+[source,ruby]
+----
+# Good
+job "extract-from-api"
+job "validate-schema"
+job "transform-data"
+job "load-to-database"
+
+# Avoid
+job "job1"
+job "process"
+job "do-stuff"
+----
+
+=== Leverage Parallelization
+
+Specify worker counts for CPU-intensive jobs:
+
+[source,ruby]
+----
+job "heavy-computation" do
+  runs_with ComputeWorker
+  parallel_workers 8  # Use 8 parallel workers
+end
+----
+
+=== Handle Errors Gracefully
+
+Workers should return error results rather than raising exceptions:
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def process(work)
+    if work.input.invalid?
+      return Fractor::WorkResult.new(
+        error: "Invalid input",
+        work: work
+      )
+    end
+
+    # Normal processing...
+    Fractor::WorkResult.new(result: output, work: work)
+  rescue => e
+    Fractor::WorkResult.new(
+      error: "Unexpected error: #{e.message}",
+      work: work
+    )
+  end
+end
+----
+
+== Architecture
+
+The workflow system builds on Fractor's existing components:
+
+[source]
+----
+Workflow (DSL)
+    ↓
+Jobs (Dependencies)
+    ↓
+Workers (Processing)
+    ↓
+Supervisor (Execution)
+    ↓
+Ractors (Parallelism)
+----
+
+Key components:
+
+* `Fractor::Workflow` - Workflow definition and DSL
+* `Fractor::Workflow::Job` - Job configuration
+* `Fractor::Workflow::WorkflowExecutor` - Orchestration
+* `Fractor::Workflow::WorkflowContext` - Data flow management
+* `Fractor::Workflow::WorkflowValidator` - Structure validation
+
+== Future Features
+
+Planned enhancements:
+
+* Continuous mode support
+* Pipeline stages grouping
+* Matrix strategies
+* Workflow visualization
+* State persistence
+* Resume from failure
+* Workflow composition
+
+== Contributing
+
+When adding new workflow examples:
+
+1. Keep examples simple and focused on one feature
+2. Include clear comments explaining each part
+3. Provide example output
+4. Document any prerequisites
+5. Update this README
+
+== Support
+
+For questions or issues with workflows:
+
+* Check existing examples
+* Review the main Fractor documentation
+* Report issues via GitHub

@@ -1,0 +1,670 @@
+---
+layout: default
+title: Error Reporting
+nav_order: 3
+---
+
+== Error Reporting and Analytics
+
+=== Overview
+
+Fractor provides comprehensive error reporting and analytics through the [`ErrorReporter`](api#fractorerror reporter) class. This system aggregates errors, tracks statistics, detects trends, and provides actionable insights into application health.
+
+=== Purpose
+
+The ErrorReporter helps you:
+
+* **Monitor error patterns** across your application
+* **Identify problematic jobs** with high error rates
+* **Detect trending issues** before they become critical
+* **Track error severity** and categorization
+* **Export metrics** to monitoring systems
+* **Respond to critical errors** in real-time
+
+=== Basic Usage
+
+==== Setup
+
+[source,ruby]
+----
+require 'fractor'
+
+# Create an error reporter instance
+reporter = Fractor::ErrorReporter.new
+----
+
+==== Recording Work Results
+
+The ErrorReporter tracks both successes and failures:
+
+[source,ruby]
+----
+# Record a successful result
+work_result = Fractor::WorkResult.new(result: "Success")
+reporter.record(work_result)
+
+# Record an error result
+work_result = Fractor::WorkResult.new(
+  error: StandardError.new("Connection failed"),
+  error_code: :connection_failed,
+  error_category: :network,
+  error_severity: :error
+)
+reporter.record(work_result, job_name: "fetch_data")
+----
+
+==== Viewing Statistics
+
+[source,ruby]
+----
+# Overall statistics
+puts "Total Errors: #{reporter.total_errors}"
+puts "Total Successes: #{reporter.total_successes}"
+puts "Error Rate: #{reporter.overall_error_rate}%"
+
+# Top error categories
+reporter.top_categories.each do |category, count|
+  puts "#{category}: #{count} errors"
+end
+
+# Top error jobs
+reporter.top_jobs.each do |job, count|
+  puts "#{job}: #{count} errors"
+end
+----
+
+=== Error Categorization
+
+Fractor automatically categorizes errors based on their type:
+
+[cols="1,2,3"]
+|===
+|Category |Error Types |Description
+
+|`:validation`
+|`ArgumentError`, `TypeError`
+|Input validation errors
+
+|`:timeout`
+|`Timeout::Error`
+|Operation timeout errors
+
+|`:network`
+|`SocketError`, `Errno::ECONNREFUSED`, `Errno::ETIMEDOUT`
+|Network-related errors
+
+|`:resource`
+|`Errno::ENOMEM`, `Errno::ENOSPC`
+|Resource exhaustion errors
+
+|`:system`
+|`SystemCallError`, `SystemStackError`
+|System-level errors
+
+|`:business`
+|Custom business logic errors
+|Application-specific errors
+
+|`:unknown`
+|Other errors
+|Uncategorized errors
+|===
+
+=== Error Severity Levels
+
+Errors are assigned severity levels:
+
+[cols="1,3"]
+|===
+|Severity |Description
+
+|`:critical`
+|System-breaking errors requiring immediate attention
+
+|`:error`
+|Standard errors that prevent operation completion
+
+|`:warning`
+|Non-fatal issues that may need investigation
+
+|`:info`
+|Informational messages
+|===
+
+=== Real-Time Error Handlers
+
+Register callbacks to respond to errors as they occur:
+
+==== Basic Handler
+
+[source,ruby]
+----
+reporter.on_error do |work_result, job_name|
+  puts "Error in #{job_name}: #{work_result.error.message}"
+end
+----
+
+==== Critical Error Alerts
+
+[source,ruby]
+----
+reporter.on_error do |work_result, job_name|
+  if work_result.critical?
+    # Send alert to operations team
+    AlertService.notify(
+      severity: "critical",
+      job: job_name,
+      error: work_result.error.message,
+      context: work_result.error_context
+    )
+  end
+end
+----
+
+==== Multiple Handlers
+
+You can register multiple handlers for different purposes:
+
+[source,ruby]
+----
+# Handler 1: Log all errors
+reporter.on_error do |work_result, job_name|
+  Logger.error("Job #{job_name} failed: #{work_result.error.message}")
+end
+
+# Handler 2: Send metrics
+reporter.on_error do |work_result, job_name|
+  Metrics.increment("errors.#{work_result.error_category}")
+end
+
+# Handler 3: Alert on critical errors
+reporter.on_error do |work_result, job_name|
+  AlertService.notify(work_result) if work_result.critical?
+end
+----
+
+=== Generating Reports
+
+==== Formatted Text Report
+
+Generate a human-readable report:
+
+[source,ruby]
+----
+puts reporter.formatted_report
+----
+
+Output example:
+
+[source]
+----
+================================================================================
+ERROR REPORT
+================================================================================
+
+SUMMARY
+--------------------------------------------------------------------------------
+Uptime:          127.45s
+Total Errors:    15
+Total Successes: 85
+Error Rate:      15.0%
+
+Errors by Severity:
+  critical  : 1
+  error     : 12
+  warning   : 2
+
+TOP ERROR CATEGORIES
+--------------------------------------------------------------------------------
+network            : 8 errors
+validation         : 5 errors
+timeout            : 2 errors
+
+TOP ERROR JOBS
+--------------------------------------------------------------------------------
+fetch_data         : 8 errors
+process_data       : 5 errors
+validate_input     : 2 errors
+
+CRITICAL ERRORS
+--------------------------------------------------------------------------------
+Category: system
+Count:    1
+Recent errors:
+  - [2025-01-15 10:30:45] SystemStackError: Stack overflow
+
+TRENDING ERRORS (Increasing)
+--------------------------------------------------------------------------------
+Category:    network
+Total Count: 8
+Error Rate:  0.06/s
+Trend:       increasing
+================================================================================
+----
+
+==== Programmatic Access
+
+[source,ruby]
+----
+report = reporter.report
+
+# Access specific sections
+summary = report[:summary]
+puts "Uptime: #{summary[:uptime]}s"
+puts "Error Rate: #{summary[:error_rate]}%"
+
+# Critical errors
+report[:critical_errors].each do |error_info|
+  puts "Critical in #{error_info[:category]}: #{error_info[:count]} errors"
+end
+
+# Trending errors
+report[:trending_errors].each do |trend|
+  puts "Trending: #{trend[:category]}"
+end
+----
+
+=== Exporting Metrics
+
+==== Prometheus Format
+
+Export metrics for Prometheus monitoring:
+
+[source,ruby]
+----
+# Write to file
+File.write("metrics.txt", reporter.to_prometheus)
+
+# Or serve via HTTP endpoint
+get '/metrics' do
+  content_type 'text/plain'
+  reporter.to_prometheus
+end
+----
+
+Example output:
+
+[source]
+----
+# HELP fractor_errors_total Total number of errors
+# TYPE fractor_errors_total counter
+fractor_errors_total 15
+
+# HELP fractor_successes_total Total number of successes
+# TYPE fractor_successes_total counter
+fractor_successes_total 85
+
+# HELP fractor_error_rate Error rate percentage
+# TYPE fractor_error_rate gauge
+fractor_error_rate 15.0
+
+# HELP fractor_errors_by_severity Errors by severity level
+# TYPE fractor_errors_by_severity gauge
+fractor_errors_by_severity{severity="critical"} 1
+fractor_errors_by_severity{severity="error"} 12
+fractor_errors_by_severity{severity="warning"} 2
+
+# HELP fractor_errors_by_category Errors by category
+# TYPE fractor_errors_by_category gauge
+fractor_errors_by_category{category="network"} 8
+fractor_errors_by_category{category="validation"} 5
+fractor_errors_by_category{category="timeout"} 2
+----
+
+==== JSON Format
+
+Export as JSON for programmatic consumption:
+
+[source,ruby]
+----
+# Write to file
+File.write("error_report.json", reporter.to_json)
+
+# Or serve via API
+get '/api/errors' do
+  content_type 'application/json'
+  reporter.to_json
+end
+----
+
+=== Job-Specific Statistics
+
+Get detailed statistics for a specific job:
+
+[source,ruby]
+----
+stats = reporter.job_stats("fetch_data")
+
+puts "Job: fetch_data"
+puts "Total Errors: #{stats[:total_count]}"
+puts "Error Rate: #{stats[:error_rate]}/s"
+puts "Most Common Error: #{stats[:most_common_code]}"
+puts "Highest Severity: #{stats[:highest_severity]}"
+puts "Trend: #{stats[:trending]}"
+----
+
+=== Category-Specific Statistics
+
+Get detailed statistics for an error category:
+
+[source,ruby]
+----
+stats = reporter.category_stats(:network)
+
+puts "Category: network"
+puts "Total Count: #{stats[:total_count]}"
+puts "Error Rate: #{stats[:error_rate]}/s"
+puts "By Severity: #{stats[:by_severity]}"
+puts "By Code: #{stats[:by_code]}"
+puts "Trending: #{stats[:trending]}"
+----
+
+=== Detecting Trends
+
+The ErrorReporter automatically detects increasing error rates:
+
+[source,ruby]
+----
+# Get all trending errors
+trending = reporter.trending_errors
+
+trending.each do |trend|
+  category = trend[:category]
+  stats = trend[:stats]
+
+  puts "⚠️  #{category} errors are increasing!"
+  puts "   Count: #{stats[:total_count]}"
+  puts "   Rate: #{stats[:error_rate]}/s"
+end
+----
+
+=== Integration Examples
+
+==== With Supervisor
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker, count: 4 }]
+)
+
+reporter = Fractor::ErrorReporter.new
+
+# Record results as they complete
+supervisor.on_result do |result|
+  reporter.record(result)
+end
+----
+
+==== With Workflows
+
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "monitored-workflow" do
+    job "process" do
+      runs_with ProcessWorker
+
+      on_error do |error, context|
+        # Report error
+        reporter.record(
+          Fractor::WorkResult.new(
+            error: error,
+            error_context: context
+          ),
+          job_name: "process"
+        )
+      end
+    end
+  end
+end
+----
+
+==== Periodic Reporting
+
+[source,ruby]
+----
+# Report every 5 minutes
+Thread.new do
+  loop do
+    sleep 300 # 5 minutes
+
+    # Log summary
+    Logger.info("Error Summary: #{reporter.overall_error_rate}% error rate")
+
+    # Alert on high error rates
+    if reporter.overall_error_rate > 10.0
+      AlertService.notify("High error rate detected!")
+    end
+
+    # Check for trending errors
+    reporter.trending_errors.each do |trend|
+      AlertService.notify("Trending: #{trend[:category]}")
+    end
+  end
+end
+----
+
+=== Production Best Practices
+
+==== 1. Set Up Monitoring
+
+[source,ruby]
+----
+# Configure Prometheus scraping
+# In config/prometheus.yml:
+# scrape_configs:
+#   - job_name: 'fractor'
+#     static_configs:
+#       - targets: ['localhost:9090']
+
+# Serve metrics endpoint
+require 'sinatra'
+
+get '/metrics' do
+  content_type 'text/plain'
+  $error_reporter.to_prometheus
+end
+----
+
+==== 2. Configure Alerts
+
+[source,ruby]
+----
+reporter.on_error do |work_result, job_name|
+  case work_result.error_severity
+  when :critical
+    PagerDuty.alert(work_result, job_name)
+  when :error
+    Slack.notify(work_result, job_name) if should_notify?(work_result)
+  when :warning
+    Logger.warn("#{job_name}: #{work_result.error.message}")
+  end
+end
+
+def should_notify?(work_result)
+  # Only notify for non-retriable errors or after multiple failures
+  !work_result.retriable? || failure_count(work_result) > 3
+end
+----
+
+==== 3. Regular Health Checks
+
+[source,ruby]
+----
+# Run health checks every minute
+Thread.new do
+  loop do
+    sleep 60
+
+    # Check critical errors
+    critical = reporter.critical_errors
+    if critical.any?
+      PagerDuty.alert("Critical errors detected: #{critical.size}")
+    end
+
+    # Check error rate
+    if reporter.overall_error_rate > 25.0
+      Slack.notify("High error rate: #{reporter.overall_error_rate}%")
+    end
+
+    # Check trending
+    if reporter.trending_errors.any?
+      Slack.notify("Trending errors detected")
+    end
+  end
+end
+----
+
+==== 4. Data Retention
+
+[source,ruby]
+----
+# Reset statistics daily to prevent unbounded memory growth
+Thread.new do
+  loop do
+    sleep 86400 # 24 hours
+
+    # Archive current stats
+    File.write(
+      "error_report_#{Date.today}.json",
+      reporter.to_json
+    )
+
+    # Reset for new day
+    reporter.reset
+    Logger.info("Error reporter statistics reset")
+  end
+end
+----
+
+=== Advanced Features
+
+==== Custom Error Categorization
+
+Override the default categorization:
+
+[source,ruby]
+----
+class MyCustomError < StandardError; end
+
+# In your worker
+def process(work)
+  raise MyCustomError, "Custom error"
+rescue MyCustomError => e
+  Fractor::WorkResult.new(
+    error: e,
+    error_category: :business,  # Custom category
+    error_code: :custom_failure,
+    error_severity: :error,
+    work: work
+  )
+end
+----
+
+==== Error Context Enrichment
+
+Add contextual information to errors:
+
+[source,ruby]
+----
+def process(work)
+  start_time = Time.now
+  # ... processing ...
+rescue => e
+  Fractor::WorkResult.new(
+    error: e,
+    error_context: {
+      duration: Time.now - start_time,
+      input_size: work.input.size,
+      memory_used: get_memory_usage,
+      retry_count: work.retry_count,
+      worker_id: Thread.current.object_id
+    },
+    work: work
+  )
+end
+----
+
+==== Filtering and Analysis
+
+[source,ruby]
+----
+# Get errors by specific criteria
+report = reporter.report
+
+# High-severity errors
+high_severity = report[:category_breakdown].select do |category, stats|
+  stats[:highest_severity] == :critical ||
+  stats[:highest_severity] == :error
+end
+
+# Categories with high error rates
+high_rate = report[:category_breakdown].select do |category, stats|
+  stats[:error_rate] > 1.0  # More than 1 error per second
+end
+
+# Recent spikes
+recent_spikes = report[:trending_errors].select do |trend|
+  trend[:stats][:trending] == "increasing"
+end
+----
+
+=== Troubleshooting
+
+==== Memory Usage
+
+The ErrorReporter keeps the last 100 errors per category. For high-volume applications:
+
+[source,ruby]
+----
+# Reset periodically
+reporter.reset
+
+# Or implement custom cleanup
+class CustomErrorReporter < Fractor::ErrorReporter
+  def record(work_result, job_name: nil)
+    super
+    cleanup_if_needed
+  end
+
+  private
+
+  def cleanup_if_needed
+    # Custom cleanup logic
+    if total_errors > 10_000
+      @mutex.synchronize do
+        # Keep only recent categories
+        @by_category.select! do |_, stats|
+          stats.recent_errors.any? { |e| e[:timestamp] > 1.hour.ago }
+        end
+      end
+    end
+  end
+end
+----
+
+==== Thread Safety
+
+All ErrorReporter operations are thread-safe. No additional synchronization needed:
+
+[source,ruby]
+----
+# Safe to use from multiple threads
+threads = 10.times.map do
+  Thread.new do
+    100.times do |i|
+      result = process_work(i)
+      reporter.record(result)  # Thread-safe
+    end
+  end
+end
+
+threads.each(&:join)
+----
+
+=== See Also
+
+* link:api[API Reference] - Complete API documentation
+* link:../guides/core-concepts[Core Concepts] - Understanding WorkResult
+* link:../guides/workflows[Workflows] - Workflow error handling

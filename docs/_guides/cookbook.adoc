@@ -1,0 +1,1133 @@
+---
+layout: default
+title: Cookbook
+nav_order: 7
+---
+
+== Cookbook
+
+=== Overview
+
+This cookbook provides ready-to-use patterns and recipes for common Fractor use cases. Each pattern includes complete code examples, when to use it, and best practices.
+
+=== Pattern Index
+
+1. <<batch-processing,Batch Processing>>
+2. <<file-processing,File Processing>>
+3. <<api-rate-limiting,API Rate Limiting>>
+4. <<producer-consumer,Producer-Consumer>>
+5. <<fan-out-fan-in,Fan-Out/Fan-In>>
+6. <<retry-with-backoff,Retry with Backoff>>
+7. <<circuit-breaker-pattern,Circuit Breaker>>
+8. <<dead-letter-queue,Dead Letter Queue>>
+9. <<priority-queues,Priority Queues>>
+10. <<streaming-data,Streaming Data Processing>>
+11. <<parallel-aggregation,Parallel Aggregation>>
+12. <<worker-pools,Multi-Type Worker Pools>>
+
+---
+
+[[batch-processing]]
+=== Pattern 1: Batch Processing
+
+Process large batches of items in parallel.
+
+==== When to Use
+
+* Processing large datasets
+* Batch ETL operations
+* Bulk data transformations
+* Report generation
+
+==== Example
+
+[source,ruby]
+----
+require 'fractor'
+
+class BatchWork < Fractor::Work
+  def initialize(items)
+    super(items: items)
+  end
+end
+
+class BatchWorker < Fractor::Worker
+  def process(work)
+    results = work.input[:items].map { |item| transform(item) }
+    Fractor::WorkResult.new(result: results, work: work)
+  end
+
+  private
+
+  def transform(item)
+    # Your transformation logic
+    item.upcase
+  end
+end
+
+# Process in batches
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: BatchWorker, num_workers: 4 }]
+)
+
+# Split large dataset into batches
+data = (1..10000).to_a
+batch_size = 100
+
+batches = data.each_slice(batch_size).map { |batch| BatchWork.new(batch) }
+supervisor.add_work_items(batches)
+supervisor.run
+
+# Collect results
+results = supervisor.results.results.flat_map(&:result)
+puts "Processed #{results.size} items"
+----
+
+==== Best Practices
+
+* Choose batch size based on memory constraints (100-1000 items typical)
+* Monitor memory usage for large batches
+* Use appropriate worker count for your CPU cores
+* Consider checkpointing for very large datasets
+
+---
+
+[[file-processing]]
+=== Pattern 2: File Processing
+
+Process multiple files in parallel.
+
+==== When to Use
+
+* Log file analysis
+* Image processing
+* Document conversion
+* File validation
+
+==== Example
+
+[source,ruby]
+----
+class FileWork < Fractor::Work
+  def initialize(filepath)
+    super(filepath: filepath)
+  end
+end
+
+class FileProcessor < Fractor::Worker
+  def process(work)
+    filepath = work.input[:filepath]
+
+    # Read and process file
+    content = File.read(filepath)
+    result = process_content(content)
+
+    Fractor::WorkResult.new(
+      result: {
+        filepath: filepath,
+        size: content.size,
+        processed: result
+      },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :file_processing_failed,
+      error_context: { filepath: filepath },
+      work: work
+    )
+  end
+
+  private
+
+  def process_content(content)
+    # Your processing logic
+    content.lines.count
+  end
+end
+
+# Process all files in directory
+files = Dir.glob('data/**/*.txt')
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: FileProcessor, num_workers: 4 }]
+)
+
+work_items = files.map { |file| FileWork.new(file) }
+supervisor.add_work_items(work_items)
+supervisor.run
+
+# Report results
+supervisor.results.results.each do |result|
+  puts "#{result.result[:filepath]}: #{result.result[:processed]} lines"
+end
+----
+
+==== Best Practices
+
+* Handle missing files gracefully
+* Use appropriate worker count for I/O-bound operations (higher than CPU cores)
+* Consider file size when setting worker count
+* Implement progress tracking for large file sets
+
+---
+
+[[api-rate-limiting]]
+=== Pattern 3: API Rate Limiting
+
+Make API calls while respecting rate limits.
+
+==== When to Use
+
+* External API integration
+* Web scraping
+* Data aggregation from APIs
+* Bulk data sync
+
+==== Example
+
+[source,ruby]
+----
+class ApiWork < Fractor::Work
+  def initialize(endpoint, params = {})
+    super(endpoint: endpoint, params: params)
+  end
+end
+
+class RateLimitedApiWorker < Fractor::Worker
+  # Class-level rate limiting
+  @last_call = Time.now
+  @calls_in_window = 0
+  @mutex = Mutex.new
+
+  MAX_CALLS_PER_MINUTE = 60
+
+  def process(work)
+    endpoint = work.input[:endpoint]
+    params = work.input[:params]
+
+    # Rate limit before making call
+    rate_limit
+
+    # Make API call
+    response = make_api_call(endpoint, params)
+
+    Fractor::WorkResult.new(
+      result: { endpoint: endpoint, data: response },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :api_call_failed,
+      error_context: { endpoint: endpoint },
+      work: work
+    )
+  end
+
+  private
+
+  def rate_limit
+    self.class.class_variable_get(:@@mutex).synchronize do
+      now = Time.now
+      last_call = self.class.class_variable_get(:@@last_call)
+      calls = self.class.class_variable_get(:@@calls_in_window)
+
+      # Reset window if minute has passed
+      if now - last_call >= 60
+        self.class.class_variable_set(:@@calls_in_window, 0)
+        self.class.class_variable_set(:@@last_call, now)
+      end
+
+      # Wait if limit reached
+      if calls >= MAX_CALLS_PER_MINUTE
+        sleep_time = 60 - (now - last_call)
+        sleep(sleep_time) if sleep_time > 0
+        self.class.class_variable_set(:@@calls_in_window, 0)
+        self.class.class_variable_set(:@@last_call, Time.now)
+      end
+
+      self.class.class_variable_set(:@@calls_in_window, calls + 1)
+    end
+  end
+
+  def make_api_call(endpoint, params)
+    # Simulate API call
+    sleep(0.1)
+    { status: 'success', data: params }
+  end
+end
+
+# Make multiple API calls with rate limiting
+endpoints = Array.new(100) { |i| "/api/endpoint/#{i}" }
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: RateLimitedApiWorker, num_workers: 5 }]
+)
+
+work_items = endpoints.map { |ep| ApiWork.new(ep) }
+supervisor.add_work_items(work_items)
+supervisor.run
+----
+
+==== Best Practices
+
+* Implement rate limiting at the worker level
+* Use class variables with mutex for thread safety
+* Add retry logic for rate limit errors (429 status)
+* Monitor API usage and adjust worker count accordingly
+* Consider exponential backoff for failed requests
+
+---
+
+[[producer-consumer]]
+=== Pattern 4: Producer-Consumer
+
+One worker produces items for other workers to consume.
+
+==== When to Use
+
+* Hierarchical data processing
+* Tree traversal
+* Recursive operations
+* Dynamic work generation
+
+==== Example
+
+[source,ruby]
+----
+class ProducerWork < Fractor::Work
+  def initialize(data, supervisor)
+    super(data: data, supervisor: supervisor)
+  end
+end
+
+class ProducerWorker < Fractor::Worker
+  def process(work)
+    data = work.input[:data]
+    supervisor = work.input[:supervisor]
+
+    # Generate new work items
+    children = generate_children(data)
+
+    # Add work for consumers
+    children.each do |child|
+      supervisor.add_work(ConsumerWork.new(child))
+    end
+
+    Fractor::WorkResult.new(
+      result: { produced: children.size },
+      work: work
+    )
+  end
+
+  private
+
+  def generate_children(data)
+    # Generate child items
+    (1..5).map { |i| "#{data}-child-#{i}" }
+  end
+end
+
+class ConsumerWork < Fractor::Work
+  def initialize(data)
+    super(data: data)
+  end
+end
+
+class ConsumerWorker < Fractor::Worker
+  def process(work)
+    data = work.input[:data]
+    result = consume(data)
+
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+
+  private
+
+  def consume(data)
+    # Process the data
+    data.upcase
+  end
+end
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ProducerWorker, num_workers: 2 },
+    { worker_class: ConsumerWorker, num_workers: 4 }
+  ]
+)
+
+# Start with initial producer work
+supervisor.add_work(ProducerWork.new('root', supervisor))
+supervisor.run
+----
+
+==== Best Practices
+
+* Balance producer and consumer worker counts
+* Prevent infinite loops in work generation
+* Monitor queue depth to avoid memory issues
+* Consider max depth for recursive operations
+
+---
+
+[[fan-out-fan-in]]
+=== Pattern 5: Fan-Out/Fan-In
+
+Distribute work to multiple workers, then aggregate results.
+
+==== When to Use
+
+* Parallel data transformation
+* Multi-source data aggregation
+* Distributed computation
+* Map-reduce operations
+
+==== Example
+
+[source,ruby]
+----
+class FanOutWork < Fractor::Work
+  def initialize(id, data)
+    super(id: id, data: data)
+  end
+end
+
+class FanOutWorker < Fractor::Worker
+  def process(work)
+    # Process partition
+    result = work.input[:data].map { |item| item * 2 }
+
+    Fractor::WorkResult.new(
+      result: { id: work.input[:id], data: result },
+      work: work
+    )
+  end
+end
+
+# Fan-out: Split data into partitions
+data = (1..1000).to_a
+partitions = data.each_slice(100).to_a
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: FanOutWorker, num_workers: 10 }]
+)
+
+work_items = partitions.each_with_index.map do |partition, i|
+  FanOutWork.new(i, partition)
+end
+
+supervisor.add_work_items(work_items)
+supervisor.run
+
+# Fan-in: Aggregate results
+all_results = supervisor.results.results
+  .sort_by { |r| r.result[:id] }
+  .flat_map { |r| r.result[:data] }
+
+puts "Processed #{all_results.size} items"
+----
+
+==== Best Practices
+
+* Choose partition size based on work complexity
+* Ensure deterministic ordering if needed
+* Use appropriate aggregation strategy
+* Monitor memory for large result sets
+
+---
+
+[[retry-with-backoff]]
+=== Pattern 6: Retry with Backoff
+
+Automatically retry failed operations with increasing delays.
+
+==== When to Use
+
+* External service calls
+* Network operations
+* Transient failures
+* Resource contention
+
+==== Example
+
+[source,ruby]
+----
+class RetryableWork < Fractor::Work
+  def initialize(url, max_attempts: 3)
+    super(url: url, max_attempts: max_attempts, attempt: 0)
+  end
+end
+
+class RetryableWorker < Fractor::Worker
+  def process(work)
+    url = work.input[:url]
+
+    # Attempt operation
+    result = fetch_data(url)
+
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    attempt = work.input[:attempt] + 1
+    max_attempts = work.input[:max_attempts]
+
+    if attempt < max_attempts
+      # Calculate backoff delay (exponential)
+      delay = 2 ** attempt
+      puts "Attempt #{attempt} failed, retrying in #{delay}s..."
+      sleep(delay)
+
+      # Retry by creating new work
+      work.input[:attempt] = attempt
+      process(work)
+    else
+      Fractor::WorkResult.new(
+        error: e,
+        error_code: :max_retries_exceeded,
+        work: work
+      )
+    end
+  end
+
+  private
+
+  def fetch_data(url)
+    # Simulate fetch with occasional failures
+    raise "Connection timeout" if rand < 0.3
+    { url: url, data: 'success' }
+  end
+end
+----
+
+==== Best Practices
+
+* Use exponential backoff to avoid hammering failing services
+* Set maximum retry count to prevent infinite loops
+* Add jitter to prevent thundering herd
+* Log retry attempts for debugging
+* Consider different strategies for different error types
+
+---
+
+[[circuit-breaker-pattern]]
+=== Pattern 7: Circuit Breaker
+
+Prevent cascading failures by failing fast when a service is down.
+
+==== When to Use
+
+* External service dependencies
+* Microservice communication
+* Database connections
+* Third-party APIs
+
+==== Example
+
+[source,ruby]
+----
+class CircuitBreaker
+  attr_reader :failure_threshold, :timeout, :failures, :last_failure_time, :state
+
+  def initialize(failure_threshold: 5, timeout: 60)
+    @failure_threshold = failure_threshold
+    @timeout = timeout
+    @failures = 0
+    @last_failure_time = nil
+    @state = :closed # :closed, :open, :half_open
+    @mutex = Mutex.new
+  end
+
+  def call
+    @mutex.synchronize do
+      case @state
+      when :open
+        if Time.now - @last_failure_time >= @timeout
+          @state = :half_open
+        else
+          raise CircuitOpenError, "Circuit breaker is open"
+        end
+      end
+    end
+
+    begin
+      result = yield
+      on_success
+      result
+    rescue => e
+      on_failure
+      raise e
+    end
+  end
+
+  private
+
+  def on_success
+    @mutex.synchronize do
+      @failures = 0
+      @state = :closed
+    end
+  end
+
+  def on_failure
+    @mutex.synchronize do
+      @failures += 1
+      @last_failure_time = Time.now
+
+      if @failures >= @failure_threshold
+        @state = :open
+      end
+    end
+  end
+end
+
+class CircuitOpenError < StandardError; end
+
+class ProtectedWorker < Fractor::Worker
+  @@circuit_breaker = CircuitBreaker.new(failure_threshold: 3, timeout: 30)
+
+  def process(work)
+    result = @@circuit_breaker.call do
+      call_external_service(work.input[:data])
+    end
+
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue CircuitOpenError => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :circuit_open,
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :service_failed,
+      work: work
+    )
+  end
+
+  private
+
+  def call_external_service(data)
+    # Simulate service call
+    raise "Service unavailable" if rand < 0.4
+    { data: data, status: 'success' }
+  end
+end
+----
+
+==== Best Practices
+
+* Set appropriate threshold based on error rate
+* Use timeout to allow recovery
+* Implement half-open state for testing recovery
+* Monitor circuit breaker state
+* Provide fallback behavior when circuit is open
+
+---
+
+[[dead-letter-queue]]
+=== Pattern 8: Dead Letter Queue
+
+Capture permanently failed work for manual inspection and retry.
+
+==== When to Use
+
+* Critical operations that cannot be lost
+* Complex error scenarios requiring human intervention
+* Compliance and audit requirements
+* Debugging production issues
+
+==== Example
+
+[source,ruby]
+----
+class DeadLetterQueue
+  def initialize
+    @entries = []
+    @mutex = Mutex.new
+  end
+
+  def add(work, error, context = {})
+    @mutex.synchronize do
+      @entries << {
+        work: work,
+        error: error,
+        context: context,
+        timestamp: Time.now
+      }
+    end
+  end
+
+  def all
+    @mutex.synchronize { @entries.dup }
+  end
+
+  def size
+    @mutex.synchronize { @entries.size }
+  end
+
+  def retry_all(&block)
+    entries = all
+    entries.each do |entry|
+      begin
+        yield entry[:work]
+        remove(entry)
+      rescue => e
+        puts "Retry failed: #{e.message}"
+      end
+    end
+  end
+
+  private
+
+  def remove(entry)
+    @mutex.synchronize { @entries.delete(entry) }
+  end
+end
+
+class DLQWorker < Fractor::Worker
+  @@dlq = DeadLetterQueue.new
+
+  def self.dead_letter_queue
+    @@dlq
+  end
+
+  def process(work)
+    result = perform_operation(work.input[:data])
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    # Add to DLQ if not retriable
+    unless retriable?(e)
+      self.class.dead_letter_queue.add(work, e)
+    end
+
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: error_code_for(e),
+      work: work
+    )
+  end
+
+  private
+
+  def perform_operation(data)
+    # Simulate operation
+    raise ArgumentError, "Invalid data" if data.nil?
+    { processed: data }
+  end
+
+  def retriable?(error)
+    error.is_a?(IOError) || error.is_a?(Timeout::Error)
+  end
+
+  def error_code_for(error)
+    case error
+    when ArgumentError then :validation_error
+    when IOError then :io_error
+    else :unknown_error
+    end
+  end
+end
+
+# After processing, check DLQ
+dlq = DLQWorker.dead_letter_queue
+puts "DLQ has #{dlq.size} failed items"
+
+# Manual retry
+dlq.retry_all do |work|
+  # Fix the issue and retry
+  puts "Retrying work: #{work.input}"
+end
+----
+
+==== Best Practices
+
+* Persist DLQ to disk or database for durability
+* Set max size to prevent memory issues
+* Implement DLQ monitoring and alerting
+* Provide tools for DLQ inspection and retry
+* Archive old DLQ entries
+
+---
+
+[[priority-queues]]
+=== Pattern 9: Priority Queues
+
+Process high-priority work before low-priority work.
+
+==== When to Use
+
+* SLA-based processing
+* VIP customer handling
+* Time-sensitive operations
+* Mixed workload types
+
+==== Example
+
+[source,ruby]
+----
+class PriorityWork < Fractor::Work
+  attr_reader :priority
+
+  def initialize(data, priority: 0)
+    @priority = priority
+    super(data: data, priority: priority)
+  end
+
+  def <=>(other)
+    # Higher priority first
+    other.priority <=> self.priority
+  end
+end
+
+class PriorityQueue
+  def initialize
+    @queue = []
+    @mutex = Mutex.new
+  end
+
+  def <<(work)
+    @mutex.synchronize do
+      @queue << work
+      @queue.sort!
+    end
+  end
+
+  def pop
+    @mutex.synchronize { @queue.shift }
+  end
+
+  def size
+    @mutex.synchronize { @queue.size }
+  end
+
+  def empty?
+    @mutex.synchronize { @queue.empty? }
+  end
+end
+
+# Usage
+priority_queue = PriorityQueue.new
+
+# Add work with different priorities
+priority_queue << PriorityWork.new('low priority', priority: 1)
+priority_queue << PriorityWork.new('high priority', priority: 10)
+priority_queue << PriorityWork.new('medium priority', priority: 5)
+
+# Work is processed in priority order: 10, 5, 1
+----
+
+==== Best Practices
+
+* Define clear priority levels (e.g., 1-10)
+* Prevent starvation of low-priority work
+* Monitor queue distribution by priority
+* Consider aging to increase priority over time
+* Use separate queues for vastly different priorities
+
+---
+
+[[streaming-data]]
+=== Pattern 10: Streaming Data Processing
+
+Process continuous streams of data in real-time.
+
+==== When to Use
+
+* Real-time analytics
+* Event processing
+* Log aggregation
+* Sensor data processing
+
+==== Example
+
+[source,ruby]
+----
+class StreamProcessor
+  def initialize(worker_class, num_workers: 4)
+    @work_queue = Fractor::WorkQueue.new
+    @server = Fractor::ContinuousServer.new(
+      worker_pools: [{ worker_class: worker_class, num_workers: num_workers }],
+      work_queue: @work_queue
+    )
+
+    setup_handlers
+  end
+
+  def start
+    Thread.new { @server.run }
+  end
+
+  def process(event)
+    @work_queue << EventWork.new(event)
+  end
+
+  def stop
+    @server.stop
+  end
+
+  private
+
+  def setup_handlers
+    @server.on_result do |result|
+      # Handle processed event
+      publish_result(result)
+    end
+
+    @server.on_error do |error|
+      # Handle errors
+      log_error(error)
+    end
+  end
+
+  def publish_result(result)
+    # Publish to downstream systems
+    puts "Processed event: #{result.result}"
+  end
+
+  def log_error(error)
+    puts "Error: #{error.error}"
+  end
+end
+
+class EventWork < Fractor::Work
+  def initialize(event)
+    super(event: event, timestamp: Time.now)
+  end
+end
+
+class EventWorker < Fractor::Worker
+  def process(work)
+    event = work.input[:event]
+
+    # Process event
+    result = analyze_event(event)
+
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+
+  private
+
+  def analyze_event(event)
+    # Event processing logic
+    {
+      type: event[:type],
+      count: event[:data]&.size || 0,
+      processed_at: Time.now
+    }
+  end
+end
+
+# Usage
+processor = StreamProcessor.new(EventWorker, num_workers: 8)
+processor.start
+
+# Stream events
+loop do
+  event = { type: 'click', data: [1, 2, 3] }
+  processor.process(event)
+  sleep(0.1)
+end
+----
+
+==== Best Practices
+
+* Use continuous mode for indefinite operation
+* Implement backpressure to handle load spikes
+* Monitor queue depth and processing latency
+* Add checkpointing for exactly-once processing
+* Consider time-based windows for aggregation
+
+---
+
+[[parallel-aggregation]]
+=== Pattern 11: Parallel Aggregation
+
+Aggregate results from parallel operations efficiently.
+
+==== When to Use
+
+* Statistical analysis
+* Report generation
+* Data summarization
+* Metrics collection
+
+==== Example
+
+[source,ruby]
+----
+class AggregationWork < Fractor::Work
+  def initialize(partition_id, data)
+    super(partition_id: partition_id, data: data)
+  end
+end
+
+class AggregationWorker < Fractor::Worker
+  def process(work)
+    data = work.input[:data]
+
+    # Compute local aggregates
+    local_sum = data.sum
+    local_count = data.size
+    local_min = data.min
+    local_max = data.max
+
+    Fractor::WorkResult.new(
+      result: {
+        partition: work.input[:partition_id],
+        sum: local_sum,
+        count: local_count,
+        min: local_min,
+        max: local_max
+      },
+      work: work
+    )
+  end
+end
+
+# Parallel aggregation
+data = (1..10000).to_a
+partitions = data.each_slice(1000).to_a
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: AggregationWorker, num_workers: 8 }]
+)
+
+work_items = partitions.each_with_index.map do |partition, i|
+  AggregationWork.new(i, partition)
+end
+
+supervisor.add_work_items(work_items)
+supervisor.run
+
+# Final aggregation
+results = supervisor.results.results.map(&:result)
+
+final_sum = results.sum { |r| r[:sum] }
+final_count = results.sum { |r| r[:count] }
+final_min = results.map { |r| r[:min] }.min
+final_max = results.map { |r| r[:max] }.max
+final_avg = final_sum.to_f / final_count
+
+puts "Sum: #{final_sum}"
+puts "Count: #{final_count}"
+puts "Min: #{final_min}"
+puts "Max: #{final_max}"
+puts "Average: #{final_avg}"
+----
+
+==== Best Practices
+
+* Use commutative and associative operations when possible
+* Partition data evenly for balanced load
+* Keep intermediate results small
+* Consider hierarchical aggregation for very large datasets
+
+---
+
+[[worker-pools]]
+=== Pattern 12: Multi-Type Worker Pools
+
+Run different worker types with optimal resource allocation.
+
+==== When to Use
+
+* Mixed workload types
+* Different resource requirements
+* Priority-based processing
+* Specialized processing
+
+==== Example
+
+[source,ruby]
+----
+# CPU-intensive worker
+class CPUWorker < Fractor::Worker
+  def process(work)
+    # CPU-bound computation
+    result = expensive_computation(work.input[:data])
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+
+  private
+
+  def expensive_computation(data)
+    # Simulate CPU work
+    sleep(0.5)
+    data.map { |x| x ** 2 }.sum
+  end
+end
+
+# I/O-intensive worker
+class IOWorker < Fractor::Worker
+  def process(work)
+    # I/O-bound operation
+    result = fetch_from_network(work.input[:url])
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+
+  private
+
+  def fetch_from_network(url)
+    # Simulate I/O work
+    sleep(1)
+    { url: url, data: 'fetched' }
+  end
+end
+
+# Memory-intensive worker
+class MemoryWorker < Fractor::Worker
+  def process(work)
+    # Memory-bound operation
+    result = process_large_dataset(work.input[:dataset])
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+
+  private
+
+  def process_large_dataset(dataset)
+    # Simulate memory work
+    large_array = Array.new(1000000) { rand }
+    large_array.sum
+  end
+end
+
+# Configure pools based on resource characteristics
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: CPUWorker, num_workers: 4 },      # CPU cores
+    { worker_class: IOWorker, num_workers: 20 },      # High for I/O
+    { worker_class: MemoryWorker, num_workers: 2 }    # Limited for memory
+  ]
+)
+----
+
+==== Best Practices
+
+* Tune worker counts based on resource type:
+  ** CPU-bound: Number of cores
+  ** I/O-bound: 2-4x number of cores
+  ** Memory-bound: Based on available RAM
+* Monitor resource utilization
+* Use separate supervisors for vastly different workloads
+* Consider dynamic worker scaling for variable loads
+
+---
+
+=== Summary
+
+These patterns provide a solid foundation for building robust Fractor applications. Combine patterns as needed for your specific use case, and always:
+
+* Monitor performance and resource usage
+* Implement proper error handling
+* Add logging and observability
+* Test with production-like data
+* Document your pattern choices
+
+=== See Also
+
+* link:../tutorials/data-processing-pipeline[Data Processing Pipeline Tutorial]
+* link:../tutorials/long-running-services[Long-Running Services Tutorial]
+* link:../tutorials/complex-workflows[Complex Workflows Tutorial]
+* link:../reference/api[API Reference]
+* link:../reference/examples[Examples]

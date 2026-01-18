@@ -1,0 +1,1392 @@
+---
+layout: default
+title: Core concepts
+nav_order: 1
+---
+= Core concepts
+
+== Overview
+
+Fractor consists of several core components that work together to provide parallel processing capabilities. Understanding these components and their interactions is essential for effective use of the framework.
+
+.Fractor architecture
+[source]
+----
+┌─────────────────────────────────────────────────────────┐
+│                    Client Application                   │
+│  ┌───────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │  Work Items   │  │   Workers    │  │  Supervisor  │  │
+│  │  (Your Data)  │  │ (Your Logic) │  │  (Manages)   │  │
+│  └───────────────┘  └──────────────┘  └──────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│                   Fractor Framework                     │
+│                                                         │
+│  ┌────────────────────────────────────────────────┐    │
+│  │              Supervisor                        │    │
+│  │  - Manages worker pool                         │    │
+│  │  - Distributes work                            │    │
+│  │  - Collects results                            │    │
+│  └────────────────────────────────────────────────┘    │
+│           │                                             │
+│           ▼                                             │
+│  ┌────────────────────────────────────────────────┐    │
+│  │           WrappedRactors (Pool)                │    │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐     │    │
+│  │  │ Ractor 1 │  │ Ractor 2 │  │ Ractor N │     │    │
+│  │  │  Worker  │  │  Worker  │  │  Worker  │     │    │
+│  │  └──────────┘  └──────────┘  └──────────┘     │    │
+│  └────────────────────────────────────────────────┘    │
+│           │                                             │
+│           ▼                                             │
+│  ┌────────────────────────────────────────────────┐    │
+│  │         ResultAggregator                       │    │
+│  │  - Successful results                          │    │
+│  │  - Error results                               │    │
+│  └────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+----
+
+== Core components
+
+=== Fractor::Work
+
+The `Fractor::Work` class is an abstract base class that represents a unit of work to be processed.
+
+==== Purpose
+
+* Encapsulates input data needed for processing
+* Provides a standard interface for work items
+* Can be subclassed to create specific work types
+
+==== Implementation
+
+[source,ruby]
+----
+class Fractor::Work
+  attr_reader :input
+
+  def initialize(input)
+    @input = input
+  end
+end
+----
+
+==== Usage
+
+Subclass `Fractor::Work` to define your work items:
+
+[source,ruby]
+----
+class MyWork < Fractor::Work
+  def initialize(data)
+    super(data)
+  end
+
+  # Add convenience methods
+  def value
+    input[:value]
+  end
+
+  def to_s
+    "MyWork(#{value})"
+  end
+end
+
+# Create work items
+work = MyWork.new({ value: 42 })
+----
+
+=== Fractor::Worker
+
+The `Fractor::Worker` class is an abstract base class that defines processing logic.
+
+==== Purpose
+
+* Implements the `process(work)` method that performs the actual work
+* Runs inside a Ractor for parallel execution
+* Returns `WorkResult` objects
+
+==== Implementation
+
+[source,ruby]
+----
+class Fractor::Worker
+  def process(work)
+    raise NotImplementedError, "Subclasses must implement process(work)"
+  end
+end
+----
+
+==== Usage
+
+Subclass `Fractor::Worker` and implement `process`:
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def process(work)
+    # Perform processing
+    result = work.value * 2
+
+    # Return success
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    # Return error
+    Fractor::WorkResult.new(error: e.message, work: work)
+  end
+end
+----
+
+==== Best practices
+
+* Keep `process` focused on a single responsibility
+* Handle both success and error cases
+* Return valid `WorkResult` objects for all code paths
+* Avoid side effects outside the `process` method
+* Use meaningful error messages
+
+=== Fractor::WorkResult
+
+The `Fractor::WorkResult` class represents the outcome of processing a work item with rich error context.
+
+==== Purpose
+
+* Contains either a successful result or an error with metadata
+* Links back to the original work item
+* Provides error categorization and severity levels
+* Enables intelligent error handling and retry logic
+
+==== Basic usage
+
+Create results in your worker:
+
+[source,ruby]
+----
+# Success result
+Fractor::WorkResult.new(
+  result: computed_value,
+  work: work
+)
+
+# Simple error result
+Fractor::WorkResult.new(
+  error: StandardError.new("Something went wrong"),
+  work: work
+)
+
+# Check result status
+if work_result.success?
+  puts work_result.result
+else
+  puts work_result.error
+end
+----
+
+==== Enhanced error context
+
+WorkResult supports rich error metadata for production systems:
+
+[source,ruby]
+----
+# Error with full context
+Fractor::WorkResult.new(
+  error: Timeout::Error.new("API timeout"),
+  work: work,
+  error_code: :api_timeout,
+  error_context: {
+    endpoint: "https://api.example.com/data",
+    timeout_seconds: 30,
+    attempt: 3
+  },
+  error_category: :network,  # Optional, auto-inferred if not provided
+  error_severity: :error     # Optional, auto-inferred if not provided
+)
+----
+
+==== Error categories
+
+WorkResult automatically categorizes errors to enable intelligent error handling:
+
+[cols="1,2,3"]
+|===
+|Category |Error Types |Examples
+
+|`:validation`
+|Input validation errors
+|`ArgumentError`, `TypeError`
+
+|`:timeout`
+|Timeout errors
+|`Timeout::Error`
+
+|`:network`
+|Network-related errors
+|`SocketError`, `Errno::ECONNREFUSED`, `Errno::ETIMEDOUT`
+
+|`:resource`
+|Resource exhaustion
+|`Errno::ENOMEM`, `Errno::ENOSPC`
+
+|`:business`
+|Business logic errors
+|Custom domain errors (manual categorization)
+
+|`:system`
+|System errors
+|`SystemCallError`, `SystemStackError`
+
+|`:unknown`
+|Uncategorized errors
+|Other exceptions
+|===
+
+==== Error severity levels
+
+Severity levels help prioritize error handling:
+
+[cols="1,3"]
+|===
+|Severity |Description
+
+|`:critical`
+|System-breaking errors requiring immediate attention
+
+|`:error`
+|Standard errors that prevent operation completion
+
+|`:warning`
+|Non-fatal issues that may affect quality
+
+|`:info`
+|Informational messages
+|===
+
+==== Helper methods
+
+WorkResult provides convenient methods for error inspection:
+
+[source,ruby]
+----
+work_result = Fractor::WorkResult.new(
+  error: Timeout::Error.new("API timeout"),
+  work: work
+)
+
+# Status checks
+work_result.success?    # => false
+work_result.failure?    # => true
+work_result.critical?   # => false
+work_result.retriable?  # => true (timeout/network/resource errors are retriable)
+
+# Get comprehensive error information
+error_info = work_result.error_info
+# => {
+#   error: #<Timeout::Error>,
+#   error_class: "Timeout::Error",
+#   error_message: "API timeout",
+#   error_code: nil,
+#   error_category: :timeout,
+#   error_severity: :error,
+#   error_context: {}
+# }
+----
+
+==== Automatic categorization
+
+Errors are automatically categorized based on their type:
+
+[source,ruby]
+----
+# Validation error
+result = Fractor::WorkResult.new(error: ArgumentError.new("Invalid input"))
+result.error_category  # => :validation
+result.retriable?      # => false
+
+# Network error
+result = Fractor::WorkResult.new(error: SocketError.new("Connection refused"))
+result.error_category  # => :network
+result.retriable?      # => true
+
+# Critical system error
+result = Fractor::WorkResult.new(error: SystemStackError.new)
+result.error_severity  # => :critical
+result.critical?       # => true
+----
+
+==== Best practices
+
+* Use `error_code` for machine-readable error identification
+* Include relevant context in `error_context` (endpoint URLs, timing, attempts, etc.)
+* Let auto-categorization work for standard errors
+* Manually set `error_category` for domain-specific errors
+* Use `retriable?` to determine if retry logic should apply
+* Check `critical?` for errors requiring immediate escalation
+
+=== Fractor::WrappedRactor
+
+The `Fractor::WrappedRactor` class manages individual Ruby Ractors.
+
+==== Purpose
+
+* Encapsulates a single Ractor instance
+* Creates and manages a Worker instance within the Ractor
+* Handles communication between the Supervisor and Worker
+* Manages Ractor lifecycle
+
+==== Implementation details
+
+Each `WrappedRactor`:
+
+* Creates a new Ruby Ractor
+* Instantiates the Worker class inside the Ractor
+* Receives Work items from the Supervisor
+* Calls the Worker's `process` method
+* Returns WorkResult objects to the Supervisor
+* Handles errors and ensures proper cleanup
+
+==== Internal usage
+
+You typically don't interact with `WrappedRactor` directly. The Supervisor manages these for you:
+
+[source,ruby]
+----
+# Created internally by Supervisor
+wrapped_ractor = Fractor::WrappedRactor.new(MyWorker)
+
+# Supervisor sends work
+wrapped_ractor.send_work(work_item)
+
+# Supervisor receives results via Ractor.select
+----
+
+=== Fractor::Supervisor
+
+The `Fractor::Supervisor` class orchestrates the entire framework.
+
+==== Purpose
+
+* Manages the pool of WrappedRactor instances
+* Distributes work items to available workers
+* Collects results from workers using `Ractor.select`
+* Handles graceful shutdown
+* Provides access to aggregated results
+
+==== Key responsibilities
+
+. *Worker pool management*: Creates and manages WrappedRactor instances
+. *Work distribution*: Routes work items to available workers
+. *Result collection*: Gathers WorkResult objects from workers
+. *Error handling*: Captures and stores errors
+. *Signal handling*: Responds to SIGINT, SIGTERM, SIGUSR1/SIGBREAK
+
+==== Configuration
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    {
+      worker_class: MyWorker,     # Required
+      num_workers: 4              # Optional, auto-detected if omitted
+    },
+    {
+      worker_class: OtherWorker,  # Can have multiple pools
+      num_workers: 2
+    }
+  ],
+  continuous_mode: false  # Default: false for pipeline mode
+)
+----
+
+==== Usage patterns
+
+Pipeline mode:
+
+[source,ruby]
+----
+# Create supervisor
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker }]
+)
+
+# Add work
+supervisor.add_work_items([work1, work2, work3])
+
+# Run
+supervisor.run
+
+# Access results
+supervisor.results.results  # Successful results
+supervisor.results.errors   # Error results
+----
+
+Continuous mode:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker }],
+  continuous_mode: true
+)
+
+# Register work source
+supervisor.register_work_source do
+  # Return work items or nil
+  fetch_next_work_items
+end
+
+# Run (blocks until shutdown signal)
+supervisor.run
+----
+
+=== Fractor::ResultAggregator
+
+The `Fractor::ResultAggregator` class collects and organizes processing results.
+
+==== Purpose
+
+* Separates successful results from errors
+* Provides convenient access to results
+* Thread-safe result collection
+
+==== Implementation
+
+[source,ruby]
+----
+class Fractor::ResultAggregator
+  attr_reader :results, :errors
+
+  def initialize
+    @results = []
+    @errors = []
+    @mutex = Mutex.new
+  end
+
+  def add_result(work_result)
+    @mutex.synchronize do
+      if work_result.success?
+        @results << work_result
+      else
+        @errors << work_result
+      end
+    end
+  end
+end
+----
+
+==== Usage
+
+Access results after processing:
+
+[source,ruby]
+----
+aggregator = supervisor.results
+
+# Get counts
+puts "Processed: #{aggregator.results.size}"
+puts "Failed: #{aggregator.errors.size}"
+
+# Iterate successful results
+aggregator.results.each do |result|
+  puts "Result: #{result.result}"
+  puts "Original work: #{result.work}"
+end
+
+# Iterate errors
+aggregator.errors.each do |error_result|
+  puts "Error: #{error_result.error}"
+  puts "Failed work: #{error_result.work}"
+end
+
+# Extract values
+values = aggregator.results.map(&:result)
+error_messages = aggregator.errors.map(&:error)
+----
+
+== Component interactions
+
+=== Pipeline mode flow
+
+[source]
+----
+1. Client creates Supervisor with Worker class(es)
+2. Client adds Work items to Supervisor
+3. Client calls supervisor.run
+4. Supervisor creates WrappedRactor instances
+5. Each WrappedRactor starts a Ractor with a Worker
+6. Supervisor distributes Work to available Ractors
+7. Workers process Work and return WorkResult
+8. Supervisor collects results via Ractor.select
+9. ResultAggregator stores results/errors
+10. Supervisor completes when all work done
+11. Client accesses aggregated results
+----
+
+=== Continuous mode flow
+
+[source]
+----
+1. Client creates Supervisor in continuous mode
+2. Client registers work source callback
+3. Client calls supervisor.run
+4. Supervisor creates WrappedRactor instances
+5. Supervisor enters event loop
+6. Work source callback provides new work
+7. Supervisor distributes work to available Ractors
+8. Workers process and return results
+9. ResultAggregator stores results/errors
+10. Loop continues until shutdown signal
+11. Graceful shutdown completes in-progress work
+----
+
+== System architecture
+
+=== Layered architecture
+
+Fractor employs a layered architecture that separates concerns and provides clear boundaries between components:
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────┐
+│                     Application Layer                       │
+│  ┌────────────┐  ┌────────────┐  ┌─────────────────────┐   │
+│  │  Workflow  │  │  Business  │  │  Work/Worker        │   │
+│  │    DSL     │  │   Logic    │  │  Definitions        │   │
+│  └────────────┘  └────────────┘  └─────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Orchestration Layer                        │
+│  ┌────────────┐  ┌──────────────┐  ┌──────────────────┐    │
+│  │ Supervisor │  │   Workflow   │  │  Continuous      │    │
+│  │            │  │   Executor   │  │  Server          │    │
+│  └────────────┘  └──────────────┘  └──────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Concurrency Layer                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐   │
+│  │ Wrapped      │  │  Work Queue  │  │  Result         │   │
+│  │ Ractors      │  │  Management  │  │  Aggregator     │   │
+│  └──────────────┘  └──────────────┘  └─────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     Ruby Ractor Layer                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ Ractor 1 │  │ Ractor 2 │  │ Ractor 3 │  │ Ractor N │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+└─────────────────────────────────────────────────────────────┘
+----
+
+Where,
+
+Application Layer:: Contains user-defined business logic, workflows, and work/worker definitions
+Orchestration Layer:: Manages execution flow, work distribution, and lifecycle
+Concurrency Layer:: Handles parallel execution, queue management, and result collection
+Ruby Ractor Layer:: Provides true parallelism through Ruby's Ractor primitive
+
+=== Component responsibilities
+
+[cols="2,3,3"]
+|===
+|Component |Responsibility |Key Features
+
+|Supervisor
+|Orchestrates work distribution and collection
+|Worker pool management, signal handling, graceful shutdown
+
+|WrappedRactor
+|Encapsulates individual Ractor lifecycle
+|Message passing, error handling, cleanup
+
+|Worker
+|Executes business logic
+|Stateless processing, error recovery, type safety
+
+|WorkQueue
+|Manages work item storage
+|Thread-safe operations, batch processing, backpressure
+
+|ResultAggregator
+|Collects processing results
+|Success/error separation, callback support
+
+|Workflow
+|Coordinates multi-step processing
+|Dependency resolution, type checking, visualization
+
+|ContinuousServer
+|Manages long-running applications
+|Threading, logging, graceful shutdown
+|===
+
+== Ractor concurrency model
+
+=== True parallelism
+
+Fractor leverages Ruby's Ractor feature to achieve true parallelism, eliminating the Global Interpreter Lock (GIL) limitations:
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────┐
+│                  Traditional Threading                       │
+│  (Limited by GIL - only one thread executes at a time)      │
+│                                                              │
+│  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐           │
+│  │Thread 1│  │Thread 2│  │Thread 3│  │Thread 4│           │
+│  └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘           │
+│      │           │           │           │                 │
+│      └───────────┴───────────┴───────────┘                 │
+│                     │                                        │
+│              ┌──────▼──────┐                                │
+│              │     GIL      │                                │
+│              │ (Serializes  │                                │
+│              │  execution)  │                                │
+│              └──────────────┘                                │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                  Fractor with Ractors                        │
+│  (True parallelism - all ractors execute simultaneously)    │
+│                                                              │
+│  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐           │
+│  │Ractor 1│  │Ractor 2│  │Ractor 3│  │Ractor 4│           │
+│  └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘           │
+│      │           │           │           │                 │
+│      ▼           ▼           ▼           ▼                 │
+│  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐           │
+│  │ CPU 1  │  │ CPU 2  │  │ CPU 3  │  │ CPU 4  │           │
+│  └────────┘  └────────┘  └────────┘  └────────┘           │
+│                                                              │
+│  Each Ractor runs on its own CPU core in parallel          │
+└─────────────────────────────────────────────────────────────┘
+----
+
+=== Memory isolation
+
+Ractors provide memory isolation to prevent race conditions:
+
+[source]
+----
+┌──────────────────┐        ┌──────────────────┐
+│    Ractor A      │        │    Ractor B      │
+│                  │        │                  │
+│  ┌────────────┐  │        │  ┌────────────┐  │
+│  │   Memory   │  │        │  │   Memory   │  │
+│  │            │  │        │  │            │  │
+│  │ Variables  │  │        │  │ Variables  │  │
+│  │ Objects    │  │        │  │ Objects    │  │
+│  │ State      │  │        │  │ State      │  │
+│  └────────────┘  │        │  └────────────┘  │
+│        │         │        │        │         │
+│        ▼         │        │        ▼         │
+│  Isolated and    │   ❌   │  Cannot access   │
+│  thread-safe     │  ────  │  each other's    │
+│                  │        │  memory          │
+└──────────────────┘        └──────────────────┘
+         │                           │
+         │    Message Passing ✓      │
+         └────────────┬──────────────┘
+                      ▼
+              ┌──────────────┐
+              │  Shareable   │
+              │   Objects    │
+              │ (immutable)  │
+              └──────────────┘
+----
+
+Key benefits:
+
+* *No race conditions*: Each Ractor has isolated memory
+* *No locks needed*: Message passing ensures coordination
+* *Predictable behavior*: No shared mutable state
+* *Crash isolation*: Errors in one Ractor don't affect others
+
+=== Message passing protocol
+
+Fractor uses a structured message passing protocol between Supervisor and Ractors:
+
+[source,ruby]
+----
+# Message types sent from Ractor to Supervisor
+{
+  type: :initialize,     # Ractor ready for work
+  processor: "worker-1"
+}
+
+{
+  type: :result,         # Work completed successfully
+  result: WorkResult,
+  processor: "worker-1"
+}
+
+{
+  type: :error,          # Work failed with error
+  result: WorkResult,    # Contains error details
+  processor: "worker-1"
+}
+
+{
+  type: :shutdown,       # Ractor acknowledging shutdown
+  processor: "worker-1"
+}
+----
+
+Message flow:
+
+[source]
+----
+Supervisor                                    Ractor
+    │                                            │
+    ├─────── Start Ractor ──────────────────────>│
+    │                                            │
+    │<────── :initialize message ────────────────┤
+    │                                            │
+    ├─────── Send Work object ──────────────────>│
+    │                                            │
+    │                                      [Processing]
+    │                                            │
+    │<────── :result message ────────────────────┤
+    │                                            │
+    ├─────── Send next Work ────────────────────>│
+    │                                            │
+    ├─────── :shutdown message ─────────────────>│
+    │                                            │
+    │<────── :shutdown acknowledgment ───────────┤
+    │                                            │
+----
+
+=== Thread safety guarantees
+
+Fractor ensures thread safety through:
+
+. *Immutable work objects*: [`Work`](../../lib/fractor/work.rb) objects are treated as immutable after creation
+. *Copy-on-send*: Messages are copied when sent between Ractors
+. *Shareable objects*: Only shareable objects (immutable or explicitly marked) can cross Ractor boundaries
+. *Isolated state*: Each [`Worker`](../../lib/fractor/worker.rb) instance runs in its own memory space
+
+[example]
+====
+[source,ruby]
+----
+# Work objects must be shareable (immutable or frozen)
+class MyWork < Fractor::Work
+  def initialize(data)
+    super(data.freeze)  # Freeze ensures shareability
+  end
+end
+
+# Workers maintain isolated state
+class MyWorker < Fractor::Worker
+  def initialize(name: nil, **options)
+    super
+    @counter = 0  # Isolated per Ractor, no race conditions
+  end
+
+  def process(work)
+    @counter += 1  # Safe to mutate - this is Ractor-local
+    # Process work...
+  end
+end
+----
+====
+
+== Data flow architecture
+
+=== Pipeline mode data flow
+
+In pipeline mode, data flows linearly through the system:
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Work Submission Phase                                    │
+└─────────────────────────────────────────────────────────────┘
+  Client Application
+       │
+       │ add_work_items([work1, work2, ...])
+       ▼
+  ┌──────────────┐
+  │  Supervisor  │
+  │  Work Queue  │
+  └──────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Distribution Phase                                        │
+└─────────────────────────────────────────────────────────────┘
+  ┌──────────────┐
+  │  Supervisor  │
+  │              │─┐
+  └──────────────┘ │ Ractor.select(*ractors)
+                   │ + work distribution
+       ┌───────────┴────────────┬───────────────┐
+       ▼                        ▼               ▼
+  ┌─────────┐             ┌─────────┐     ┌─────────┐
+  │Ractor 1 │             │Ractor 2 │ ... │Ractor N │
+  │Worker 1 │             │Worker 2 │     │Worker N │
+  └─────────┘             └─────────┘     └─────────┘
+       │                        │               │
+       │ Process                │ Process       │ Process
+       ▼                        ▼               ▼
+
+┌─────────────────────────────────────────────────────────────┐
+│ 3. Collection Phase                                          │
+└─────────────────────────────────────────────────────────────┘
+       │                        │               │
+       │ WorkResult             │ WorkResult    │ WorkResult
+       ▼                        ▼               ▼
+  ┌──────────────────────────────────────────────────────┐
+  │              Result Aggregator                       │
+  │  ┌──────────────────┐  ┌──────────────────────────┐  │
+  │  │ Successful       │  │ Failed Results           │  │
+  │  │ Results          │  │ (with error details)     │  │
+  │  └──────────────────┘  └──────────────────────────┘  │
+  └──────────────────────────────────────────────────────┘
+       │
+       │ Access results/errors
+       ▼
+  Client Application
+----
+
+Work distribution algorithm:
+
+. Supervisor waits on `Ractor.select` for available Ractors
+. When a Ractor signals availability (via `:initialize` or `:result`):
+  * Check if work queue is empty
+  * If work available, send next work item to Ractor
+  * If queue empty, mark Ractor as idle
+. Continue until all work processed
+
+=== Continuous mode data flow
+
+In continuous mode, data flows perpetually with dynamic work sources:
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────┐
+│ Continuous Event Loop                                        │
+└─────────────────────────────────────────────────────────────┘
+
+  Work Sources                Timer Thread
+  (Callbacks)                      │
+       │                           │ Periodic wakeup (100ms)
+       ▼                           ▼
+  ┌────────────────────────────────────────┐
+  │        Supervisor Main Loop            │
+  │  while @running do                     │
+  │    1. Poll work sources                │
+  │    2. Distribute to idle workers       │
+  │    3. Wait on Ractor.select            │
+  │    4. Process results                  │
+  │  end                                   │
+  └────────────────────────────────────────┘
+       │                           │
+       │ Work Items                │ Results
+       ▼                           ▼
+  ┌─────────┐                 ┌──────────────┐
+  │ Worker  │                 │   Result     │
+  │ Ractors │                 │  Callbacks   │
+  └─────────┘                 └──────────────┘
+
+  Wakeup Ractor
+       │
+       │ Unblocks Ractor.select
+       │ when work available
+       ▼
+  Main Event Loop
+----
+
+Key differences from pipeline mode:
+
+* *Infinite loop*: Runs until explicitly stopped
+* *Dynamic work*: Work arrives from callbacks, not pre-loaded
+* *Graceful shutdown*: Completes in-progress work before stopping
+* *Real-time processing*: Minimal latency between work arrival and processing
+
+=== Work distribution algorithms
+
+==== Round-robin distribution
+
+Default distribution strategy in pipeline mode:
+
+[source]
+----
+Work Queue: [W1, W2, W3, W4, W5, W6]
+
+Worker 1  Worker 2  Worker 3  Worker 4
+   │         │         │         │
+   │<─ W1    │         │         │
+   │         │<─ W2    │         │
+   │         │         │<─ W3    │
+   │         │         │         │<─ W4
+   │<─ W5    │         │         │
+   │         │<─ W6    │         │
+----
+
+Characteristics:
+
+* Fair distribution across all workers
+* Simple and predictable
+* No work stealing between workers
+* Each worker processes items sequentially
+
+==== Priority-based distribution
+
+Using [`PriorityWorkQueue`](../../lib/fractor/priority_work_queue.rb):
+
+[source]
+----
+Priority Queue:
+  Critical: [W1, W4]
+  High:     [W2, W5]
+  Normal:   [W3]
+  Low:      [W6]
+
+Distribution order: W1 → W4 → W2 → W5 → W3 → W6
+
+With aging (60s threshold):
+  If W6 waits > 60s, effective priority increases
+  Prevents starvation of low-priority items
+----
+
+=== Result collection strategies
+
+==== Immediate collection
+
+Results collected as they arrive via `Ractor.select`:
+
+[source,ruby]
+----
+loop do
+  ractor, message = Ractor.select(*active_ractors)
+
+  case message[:type]
+  when :result
+    results.add_result(message[:result])
+    send_next_work_if_available(ractor)
+  end
+end
+----
+
+Benefits:
+
+* Low memory usage (results processed immediately)
+* Real-time progress tracking
+* Enables streaming results
+
+==== Callback-based collection
+
+In continuous mode with [`ContinuousServer`](../../lib/fractor/continuous_server.rb):
+
+[source,ruby]
+----
+server.on_result do |work_result|
+  # Process successful result immediately
+  puts "Processed: #{work_result.result}"
+end
+
+server.on_error do |error_result|
+  # Handle error immediately
+  log_error(error_result.error)
+end
+----
+
+Benefits:
+
+* Decouples result processing from work execution
+* Enables real-time notifications
+* Supports multiple result handlers
+
+=== Error propagation paths
+
+[source]
+----
+┌──────────────────────────────────────────────────────────┐
+│ Error Origin: Worker.process(work)                       │
+└──────────────────────────────────────────────────────────┘
+                      │
+                      │ raise StandardError
+                      ▼
+┌──────────────────────────────────────────────────────────┐
+│ Ractor Rescue Block                                      │
+│  rescue StandardError => e                               │
+│    error_result = WorkResult.new(                        │
+│      error: e.message,                                   │
+│      work: work,                                         │
+│      error_category: :auto_detected,                     │
+│      error_severity: :error                              │
+│    )                                                     │
+│    Ractor.yield({ type: :error, result: error_result }) │
+└──────────────────────────────────────────────────────────┘
+                      │
+                      ▼
+┌──────────────────────────────────────────────────────────┐
+│ Supervisor.run Event Loop                                │
+│  when :error                                             │
+│    results.add_result(error_result)                      │
+│    send_next_work_if_available(ractor)                   │
+└──────────────────────────────────────────────────────────┘
+                      │
+                      ▼
+┌──────────────────────────────────────────────────────────┐
+│ ResultAggregator                                         │
+│  @errors << error_result                                 │
+│  call error callbacks                                    │
+└──────────────────────────────────────────────────────────┘
+                      │
+                      ▼
+┌──────────────────────────────────────────────────────────┐
+│ Client / Error Handlers                                  │
+│  - Log errors                                            │
+│  - Retry logic                                           │
+│  - Dead letter queue                                     │
+│  - Monitoring/alerting                                   │
+└──────────────────────────────────────────────────────────┘
+----
+
+Error handling guarantees:
+
+* Errors never crash Ractors (isolated)
+* All errors captured in [`WorkResult`](../../lib/fractor/work_result.rb)
+* Original work preserved for retry
+* Error categorization enables smart handling
+* No silent failures
+
+== Design patterns
+
+=== Actor model
+
+Fractor implements the Actor model for concurrent computation:
+
+[source]
+----
+Actor = WrappedRactor + Worker
+
+┌────────────────────────────────────────┐
+│              Actor (Ractor)            │
+│  ┌──────────────────────────────────┐  │
+│  │      Isolated State              │  │
+│  │  - Worker instance               │  │
+│  │  - Local variables               │  │
+│  │  - No shared memory              │  │
+│  └──────────────────────────────────┘  │
+│                 │                      │
+│                 ▼                      │
+│  ┌──────────────────────────────────┐  │
+│  │     Message Processing           │  │
+│  │  - Receive work                  │  │
+│  │  - Process sequentially          │  │
+│  │  - Send results                  │  │
+│  └──────────────────────────────────┘  │
+│                 │                      │
+│                 ▼                      │
+│  ┌──────────────────────────────────┐  │
+│  │     Behavior (process method)    │  │
+│  │  - User-defined logic            │  │
+│  │  - Stateless or stateful         │  │
+│  └──────────────────────────────────┘  │
+└────────────────────────────────────────┘
+----
+
+Actor model benefits in Fractor:
+
+* *Encapsulation*: Each actor maintains its own state
+* *Location transparency*: Actors communicate only via messages
+* *Fault isolation*: Failures contained within actors
+* *Scalability*: Easy to add more actors
+
+=== Producer-consumer pattern
+
+The [`Supervisor`](../../lib/fractor/supervisor.rb) acts as a producer-consumer coordinator:
+
+[source]
+----
+Producers                    Queue                 Consumers
+(Work Sources)                                     (Workers)
+
+   Work 1 ────────┐
+   Work 2 ────────┤         ┌──────┐         ┌─────────┐
+   Work 3 ────────┼────────>│ Work │────────>│Worker 1 │
+   Work N ────────┘         │ Queue│         ├─────────┤
+                            └──────┘         │Worker 2 │
+Callbacks ──────────────────────────────────>├─────────┤
+  - register_work_source()                   │Worker N │
+  - Continuous polling                       └─────────┘
+----
+
+Implementation:
+
+[source,ruby]
+----
+# Producer: Add work to queue
+supervisor.add_work_items([work1, work2, work3])
+
+# Or register dynamic producer
+supervisor.register_work_source do
+  fetch_new_work_from_api  # Returns work array or nil
+end
+
+# Consumers: Workers automatically pull from queue
+# Supervisor coordinates distribution via Ractor.select
+----
+
+=== Supervisor pattern
+
+The supervisor pattern manages worker lifecycle and fault tolerance:
+
+[source]
+----
+                    Supervisor
+                        │
+          ┌─────────────┼─────────────┐
+          │             │             │
+      Manages       Monitors      Restarts
+          │             │             │
+          ▼             ▼             ▼
+    ┌─────────┐   ┌─────────┐   ┌─────────┐
+    │Worker 1 │   │Worker 2 │   │Worker 3 │
+    └─────────┘   └─────────┘   └─────────┘
+          │             │             │
+      Isolated      Isolated      Isolated
+       State         State         State
+----
+
+Supervisor responsibilities:
+
+. *Lifecycle management*: Start, stop, monitor workers
+. *Work distribution*: Route work to available workers
+. *Result collection*: Aggregate results from all workers
+. *Signal handling*: Graceful shutdown on SIGINT/SIGTERM
+. *Error recovery*: Isolate failures, continue processing
+
+.Supervisor pattern in action
+[example]
+====
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: ProcessWorker, num_workers: 4 }
+  ]
+)
+
+# Supervisor handles:
+# - Starting 4 worker Ractors
+# - Distributing work across them
+# - Collecting results
+# - Graceful shutdown on Ctrl+C
+
+supervisor.run
+----
+====
+
+=== Pipeline pattern
+
+Workflows implement the pipeline pattern for multi-stage processing:
+
+[source]
+----
+Stage 1      Stage 2       Stage 3      Stage 4
+   │            │             │            │
+   ▼            ▼             ▼            ▼
+┌──────┐    ┌──────┐      ┌──────┐    ┌──────┐
+│Parse │───>│Valid.│─────>│Trans.│───>│Store │
+└──────┘    └──────┘      └──────┘    └──────┘
+   │            │             │            │
+Workers:     Workers:      Workers:     Workers:
+   3            2             4            2
+
+Each stage processes output from previous stage
+Data flows left-to-right through pipeline
+Parallel workers within each stage
+----
+
+Implementation with workflows:
+
+[source,ruby]
+----
+class DataPipeline < Fractor::Workflow
+  workflow "data-pipeline" do
+    job "parse",     ParseWorker
+    job "validate",  ValidateWorker,  needs: "parse"
+    job "transform", TransformWorker, needs: "validate"
+    job "store",     StoreWorker,     needs: "transform"
+  end
+end
+----
+
+== Performance characteristics
+
+=== Parallelization overhead
+
+Ractor creation and message passing have overhead:
+
+[source]
+----
+Time per work item vs. number of workers:
+
+Small tasks (< 1ms each):
+  1 worker:   100 items in  100ms (no overhead)
+  4 workers:  100 items in  35ms  (overhead ~15ms)
+  8 workers:  100 items in  25ms  (overhead ~20ms)
+
+Medium tasks (~10ms each):
+  1 worker:   100 items in  1000ms
+  4 workers:  100 items in  260ms  (good scaling)
+  8 workers:  100 items in  140ms  (good scaling)
+
+Large tasks (> 100ms each):
+  1 worker:   100 items in  10000ms
+  4 workers:  100 items in  2510ms  (near-linear scaling)
+  8 workers:  100 items in  1260ms  (near-linear scaling)
+----
+
+*Guideline*: Use Fractor when work items take > 5ms each
+
+=== Optimal worker count
+
+Optimal worker count depends on workload type:
+
+[cols="2,2,3"]
+|===
+|Workload Type |Recommended Workers |Reasoning
+
+|CPU-bound
+|Number of CPU cores
+|Avoids CPU oversubscription
+
+|I/O-bound
+|2-4× CPU cores
+|Workers block on I/O, can handle more
+
+|Mixed workload
+|1.5-2× CPU cores
+|Balance between CPU and I/O
+
+|Memory-intensive
+|< Number of cores
+|Prevent memory exhaustion
+|===
+
+Auto-detection (default):
+
+[source,ruby]
+----
+# Fractor auto-detects CPU cores using Etc.nprocessors
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker }]
+  # Defaults to Etc.nprocessors workers
+)
+----
+
+Manual configuration:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: CPUWorker, num_workers: 4 },     # CPU-bound
+    { worker_class: IOWorker, num_workers: 16 },     # I/O-bound
+    { worker_class: MixedWorker, num_workers: 8 }    # Mixed
+  ]
+)
+----
+
+=== Scalability limits
+
+Factors limiting scalability:
+
+. *Hardware constraints*
+   * Number of CPU cores
+   * Available memory per Ractor
+   * Memory bandwidth
+
+. *Ractor limits*
+   * Each Ractor requires ~1MB base memory
+   * Theoretical limit: thousands of Ractors
+   * Practical limit: hundreds of Ractors
+
+. *Work queue contention*
+   * Queue operations are thread-safe (mutex)
+   * High contention with many workers
+   * Solution: Batch work distribution
+
+. *Result aggregation overhead*
+   * Results collected in main thread
+   * Can become bottleneck with high throughput
+   * Solution: Use callbacks for immediate processing
+
+=== Memory usage patterns
+
+Memory usage per component:
+
+[source]
+----
+Per Ractor:
+  Base overhead:           ~1 MB
+  Worker instance:         ~10 KB - 1 MB (depends on worker)
+  Work object:             Varies (should be small)
+  Total per Ractor:        ~1-2 MB typical
+
+Per Supervisor:
+  Work queue:              ~8 bytes × queue size
+  Result aggregator:       ~sizeof(WorkResult) × results
+  Ractor management:       ~1 KB × num_ractors
+
+Example with 8 workers, 1000 items:
+  8 Ractors:               8-16 MB
+  Work queue (empty):      ~8 KB
+  Results (1000 items):    ~100 KB - 1 MB
+  Total:                   ~9-18 MB
+----
+
+Memory optimization strategies:
+
+. *Process results immediately*: Don't accumulate results
+. *Use streaming*: Process data in chunks
+. *Limit queue size*: Prevent memory exhaustion
+. *Clean up after processing*: Remove references to allow GC
+
+=== GC implications
+
+Ractor's isolated memory affects garbage collection:
+
+. *Per-Ractor GC*: Each Ractor has independent GC
+   * Parallel GC across Ractors
+   * No global GC pause
+   * Better responsiveness
+
+. *Message copying*: Objects copied between Ractors
+   * Creates garbage in both Ractors
+   * Keep messages small and simple
+   * Prefer immutable objects
+
+. *GC tuning*: Ruby GC environment variables apply per-Ractor
+   * `RUBY_GC_HEAP_GROWTH_FACTOR`
+   * `RUBY_GC_HEAP_GROWTH_MAX_SLOTS`
+   * `RUBY_GC_MALLOC_LIMIT`
+
+Best practices:
+
+* Minimize object allocations in hot paths
+* Reuse objects where possible (within Ractor)
+* Keep work objects small and simple
+* Monitor memory usage in production
+
+== Next steps
+
+* Learn about link:../guides/pipeline-mode.adoc[Pipeline Mode] patterns and best practices
+* Learn about link:../guides/continuous-mode.adoc[Continuous Mode] for long-running applications
+* Read link:architecture.adoc[Architecture Guide] for detailed system design
+* Read link:design-principles.adoc[Design Principles] for philosophy and decisions
+* Try link:../features/workflows.adoc[Workflows] for complex processing graphs
+* Monitor errors with link:../features/error-handling.adoc[Error Handling] and analytics
+* Explore link:../reference/examples.adoc[Examples] for real-world use cases
+* Reference link:../reference/api.adoc[API Reference] for complete documentation

@@ -1,0 +1,862 @@
+---
+layout: default
+title: Troubleshooting
+nav_order: 5
+---
+
+== Troubleshooting Guide
+
+=== Overview
+
+This guide provides solutions to common issues and errors you may encounter when using Fractor. Each entry includes the problem description, common causes, and step-by-step solutions.
+
+=== Quick Diagnosis
+
+[cols="1,3"]
+|===
+|Symptom |Likely Cause
+
+|Workers not processing work
+|<<workers-idle,Workers idle>> or <<supervisor-not-running,Supervisor not running>>
+
+|High memory usage
+|<<memory-issues,Memory leak>> or <<large-work-items,Work items too large>>
+
+|Slow processing
+|<<bottlenecks,Worker bottleneck>> or <<io-bound,I/O bound operations>>
+
+|Errors not being caught
+|<<error-handling,Improper error handling>> in workers
+
+|Ractor errors
+|<<ractor-shareability,Shareable object issues>>
+
+|Process hangs
+|<<deadlock,Deadlock>> or <<infinite-loop,Infinite work generation>>
+
+|Signal handling not working
+|<<signals-not-working,Signal handler conflicts>>
+|===
+
+---
+
+=== Common Issues
+
+[[workers-idle]]
+==== Workers Stay Idle / No Work Processing
+
+**Symptoms:**
+
+* Supervisor starts but workers don't process work
+* Queue has items but nothing happens
+* No results returned
+
+**Common Causes:**
+
+1. Work not added before `run()` in pipeline mode
+2. Work source not registered in continuous mode
+3. Work items not shareable between Ractors
+
+**Solutions:**
+
+===== Pipeline Mode
+
+[source,ruby]
+----
+# ✗ Wrong: run() called before adding work
+supervisor.run
+supervisor.add_work_items(work_items) # Too late!
+
+# ✓ Correct: add work before run()
+supervisor.add_work_items(work_items)
+supervisor.run
+----
+
+===== Continuous Mode
+
+[source,ruby]
+----
+# ✗ Wrong: No work source registered
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker }],
+  continuous_mode: true
+)
+supervisor.run # Nothing will happen
+
+# ✓ Correct: Register work source
+supervisor.register_work_source do
+  # Return work items
+  get_next_work
+end
+supervisor.run
+
+# Or use WorkQueue + ContinuousServer
+work_queue = Fractor::WorkQueue.new
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: MyWorker }],
+  work_queue: work_queue
+)
+----
+
+===== Shareable Objects
+
+[source,ruby]
+----
+# ✗ Wrong: Mutable objects aren't automatically shareable
+work = Fractor::Work.new({ mutable: [1, 2, 3] })
+
+# ✓ Correct: Freeze objects
+work = Fractor::Work.new({ mutable: [1, 2, 3].freeze }.freeze)
+
+# ✓ Better: Use immutable data
+work = Fractor::Work.new({ value: 42, name: "item" })
+----
+
+---
+
+[[supervisor-not-running]]
+==== Supervisor Doesn't Start
+
+**Symptoms:**
+
+* `run()` returns immediately
+* No workers created
+* Silent failure
+
+**Common Causes:**
+
+1. No workers configured
+2. Invalid worker class
+3. Exception during initialization
+
+**Solutions:**
+
+[source,ruby]
+----
+# ✗ Wrong: Empty worker pools
+supervisor = Fractor::Supervisor.new(worker_pools: [])
+
+# ✓ Correct: At least one worker pool
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker, num_workers: 4 }]
+)
+
+# Check for initialization errors
+begin
+  supervisor = Fractor::Supervisor.new(
+    worker_pools: [{ worker_class: MyWorker }]
+  )
+rescue => e
+  puts "Failed to create supervisor: #{e.message}"
+  puts e.backtrace
+end
+----
+
+---
+
+[[memory-issues]]
+==== High Memory Usage / Memory Leaks
+
+**Symptoms:**
+
+* Memory grows continuously
+* Out of memory errors
+* Slow performance over time
+
+**Common Causes:**
+
+1. Large result accumulation
+2. Not clearing processed results
+3. Infinite work generation
+4. Large work item payloads
+
+**Solutions:**
+
+===== Clear Results Periodically
+
+[source,ruby]
+----
+# ✗ Wrong: Results accumulate indefinitely
+loop do
+  supervisor.add_work(work)
+  supervisor.run
+  # Results never cleared
+end
+
+# ✓ Correct: Process and clear results
+loop do
+  supervisor.add_work(work)
+  supervisor.run
+
+  # Process results
+  supervisor.results.results.each { |r| process_result(r) }
+
+  # Clear for next batch
+  supervisor.results.results.clear
+  supervisor.results.errors.clear
+end
+----
+
+===== Use Streaming for Large Datasets
+
+[source,ruby]
+----
+# ✗ Wrong: Load entire dataset into memory
+all_data = File.readlines('huge_file.txt')
+work_items = all_data.map { |line| MyWork.new(line) }
+
+# ✓ Correct: Process in batches
+File.foreach('huge_file.txt').each_slice(1000) do |batch|
+  work_items = batch.map { |line| MyWork.new(line) }
+  supervisor.add_work_items(work_items)
+  supervisor.run
+
+  # Process and clear results
+  handle_results(supervisor.results)
+  supervisor.results.results.clear
+  supervisor.results.errors.clear
+end
+----
+
+===== Monitor Memory
+
+[source,ruby]
+----
+require 'fractor/performance_monitor'
+
+monitor = Fractor::PerformanceMonitor.new(supervisor)
+monitor.start
+
+# Check memory periodically
+snapshot = monitor.snapshot
+if snapshot[:memory_mb] > 500
+  puts "Warning: High memory usage (#{snapshot[:memory_mb]} MB)"
+  # Take action: clear caches, reduce batch size, etc.
+end
+----
+
+---
+
+[[large-work-items]]
+==== Work Items Too Large
+
+**Symptoms:**
+
+* Slow work distribution
+* High memory usage
+* Ractor creation failures
+
+**Common Causes:**
+
+1. Including large data in work items
+2. Embedding entire files/datasets
+3. Not using references
+
+**Solutions:**
+
+[source,ruby]
+----
+# ✗ Wrong: Embed large data
+file_content = File.read('10GB_file.dat')
+work = Fractor::Work.new(content: file_content)
+
+# ✓ Correct: Use file paths or references
+work = Fractor::Work.new(filepath: '10GB_file.dat')
+
+# Worker reads file when needed
+class FileWorker < Fractor::Worker
+  def process(work)
+    # Read file in worker context
+    content = File.read(work.input[:filepath])
+    result = process_content(content)
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+end
+----
+
+---
+
+[[bottlenecks]]
+==== Performance Bottlenecks
+
+**Symptoms:**
+
+* Slow processing despite multiple workers
+* Low CPU utilization
+* Queue always full or always empty
+
+**Diagnosis:**
+
+[source,ruby]
+----
+monitor = Fractor::PerformanceMonitor.new(supervisor)
+monitor.start
+
+# Run for a while
+sleep 60
+
+# Check metrics
+snapshot = monitor.snapshot
+puts monitor.report
+
+# Key indicators:
+# - Low worker_utilization: Not enough work
+# - High queue_depth: Workers too slow
+# - Low throughput: Bottleneck somewhere
+----
+
+**Solutions:**
+
+===== Balance Worker Count
+
+[source,ruby]
+----
+# CPU-bound work
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    # Use number of CPU cores
+    { worker_class: CPUWorker, num_workers: 4 }
+  ]
+)
+
+# I/O-bound work
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    # Use more workers (2-4x CPU cores)
+    { worker_class: IOWorker, num_workers: 16 }
+  ]
+)
+----
+
+===== Optimize Work Distribution
+
+[source,ruby]
+----
+# ✗ Wrong: Very small work items (high overhead)
+(1..10000).each do |i|
+  supervisor.add_work(TinyWork.new(i))
+end
+
+# ✓ Correct: Batch small items
+(1..10000).each_slice(100) do |batch|
+  supervisor.add_work(BatchWork.new(batch))
+end
+----
+
+---
+
+[[io-bound]]
+==== I/O Bound Operations
+
+**Symptoms:**
+
+* Workers idle waiting for I/O
+* Low CPU usage
+* High latency
+
+**Solutions:**
+
+[source,ruby]
+----
+# Increase worker count for I/O-bound work
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: DatabaseWorker, num_workers: 20 },  # High for I/O
+    { worker_class: APIWorker, num_workers: 30 }        # Even higher
+  ]
+)
+
+# Use connection pooling
+class DatabaseWorker < Fractor::Worker
+  @@pool = ConnectionPool.new(size: 20) { Database.connect }
+
+  def process(work)
+    @@pool.with do |conn|
+      result = conn.query(work.input[:query])
+      Fractor::WorkResult.new(result: result, work: work)
+    end
+  end
+end
+----
+
+---
+
+[[error-handling]]
+==== Errors Not Being Caught
+
+**Symptoms:**
+
+* Worker crashes
+* No error results returned
+* Silent failures
+
+**Solutions:**
+
+===== Always Wrap in WorkResult
+
+[source,ruby]
+----
+# ✗ Wrong: Unhandled exceptions
+class BadWorker < Fractor::Worker
+  def process(work)
+    result = risky_operation(work.input)
+    Fractor::WorkResult.new(result: result, work: work)
+    # Exception crashes the worker!
+  end
+end
+
+# ✓ Correct: Rescue and return error result
+class GoodWorker < Fractor::Worker
+  def process(work)
+    result = risky_operation(work.input)
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :operation_failed,
+      error_context: { input: work.input },
+      work: work
+    )
+  end
+end
+----
+
+===== Check for Errors
+
+[source,ruby]
+----
+supervisor.run
+
+# ✗ Wrong: Ignore errors
+results = supervisor.results.results
+
+# ✓ Correct: Handle both results and errors
+results = supervisor.results.results
+errors = supervisor.results.errors
+
+puts "Succeeded: #{results.size}"
+puts "Failed: #{errors.size}"
+
+errors.each do |error_result|
+  puts "Error: #{error_result.error}"
+  puts "Code: #{error_result.error_code}"
+  puts "Context: #{error_result.error_context}"
+end
+----
+
+---
+
+[[ractor-shareability]]
+==== Ractor Shareability Issues
+
+**Symptoms:**
+
+* `Ractor::IsolationError`
+* "can not make shareable" errors
+* Objects can't be sent to workers
+
+**Common Causes:**
+
+1. Mutable objects (arrays, hashes)
+2. Objects with instance variables
+3. Procs/lambdas
+4. Class instances with state
+
+**Solutions:**
+
+===== Freeze Mutable Objects
+
+[source,ruby]
+----
+# ✗ Wrong: Mutable arrays/hashes
+work = Fractor::Work.new({
+  items: [1, 2, 3],
+  config: { timeout: 30 }
+})
+
+# ✓ Correct: Freeze everything
+work = Fractor::Work.new({
+  items: [1, 2, 3].freeze,
+  config: { timeout: 30 }.freeze
+}.freeze)
+----
+
+===== Use Ractor.make_shareable
+
+[source,ruby]
+----
+# For complex objects
+data = {
+  users: [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }],
+  settings: { timeout: 30, retries: 3 }
+}
+
+shareable_data = Ractor.make_shareable(data)
+work = Fractor::Work.new(shareable_data)
+----
+
+===== Avoid Non-Shareable Objects
+
+[source,ruby]
+----
+# ✗ Wrong: Procs aren't shareable
+work = Fractor::Work.new({
+  callback: -> { puts "done" }  # Error!
+})
+
+# ✓ Correct: Use symbols or serializable data
+work = Fractor::Work.new({
+  callback_name: :handle_completion
+})
+
+# Worker looks up callback by name
+class Worker < Fractor::Worker
+  CALLBACKS = {
+    handle_completion: -> { puts "done" }
+  }
+
+  def process(work)
+    callback = CALLBACKS[work.input[:callback_name]]
+    # ...
+  end
+end
+----
+
+---
+
+[[deadlock]]
+==== Deadlock or Process Hangs
+
+**Symptoms:**
+
+* Process stops responding
+* Workers stuck waiting
+* No progress made
+
+**Common Causes:**
+
+1. Circular dependencies
+2. All workers waiting for resources
+3. Queue is full and workers are blocked
+
+**Solutions:**
+
+===== Check for Circular Dependencies
+
+[source,ruby]
+----
+# ✗ Wrong: Circular work generation
+class ProducerWorker < Fractor::Worker
+  def process(work)
+    # Producer creates work that needs itself!
+    supervisor.add_work(ProducerWork.new(supervisor))
+  end
+end
+----
+
+===== Use Timeouts
+
+[source,ruby]
+----
+class TimeoutWorker < Fractor::Worker
+  def process(work)
+    Timeout.timeout(30) do
+      # Operation that might hang
+      risky_operation(work.input)
+    end
+
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue Timeout::Error => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :timeout,
+      work: work
+    )
+  end
+end
+----
+
+===== Monitor for Hangs
+
+[source,ruby]
+----
+# Watchdog thread
+watchdog = Thread.new do
+  last_progress = 0
+  loop do
+    sleep 30
+    current_progress = supervisor.results.results.size
+
+    if current_progress == last_progress
+      puts "Warning: No progress in 30 seconds!"
+      puts "Queue size: #{work_queue.size}"
+      puts "Active workers: #{supervisor.active_workers}"
+    end
+
+    last_progress = current_progress
+  end
+end
+----
+
+---
+
+[[infinite-loop]]
+==== Infinite Work Generation
+
+**Symptoms:**
+
+* Work queue grows indefinitely
+* Memory usage climbs continuously
+* Process never completes
+
+**Solutions:**
+
+===== Add Depth Limits
+
+[source,ruby]
+----
+class RecursiveWork < Fractor::Work
+  MAX_DEPTH = 10
+
+  def initialize(data, depth: 0)
+    raise "Max depth exceeded" if depth > MAX_DEPTH
+    super(data: data, depth: depth)
+  end
+end
+
+class RecursiveWorker < Fractor::Worker
+  def process(work)
+    data = work.input[:data]
+    depth = work.input[:depth]
+
+    # Only generate more work if under limit
+    if depth < RecursiveWork::MAX_DEPTH
+      children = generate_children(data)
+      children.each do |child|
+        supervisor.add_work(RecursiveWork.new(child, depth: depth + 1))
+      end
+    end
+
+    Fractor::WorkResult.new(result: data, work: work)
+  end
+end
+----
+
+===== Monitor Queue Size
+
+[source,ruby]
+----
+MAX_QUEUE_SIZE = 10000
+
+loop do
+  if work_queue.size > MAX_QUEUE_SIZE
+    puts "Error: Queue size exceeded limit!"
+    break
+  end
+
+  # Add work...
+  sleep 0.1
+end
+----
+
+---
+
+[[signals-not-working]]
+==== Signal Handling Not Working
+
+**Symptoms:**
+
+* Ctrl+C doesn't stop process
+* SIGUSR1 doesn't print status
+* Process can't be killed gracefully
+
+**Common Causes:**
+
+1. Signal handlers overridden
+2. Running in thread without signal handling
+3. Platform differences (Windows vs Unix)
+
+**Solutions:**
+
+===== Use ContinuousServer
+
+[source,ruby]
+----
+# ✓ Automatic signal handling
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: MyWorker }],
+  work_queue: work_queue
+)
+
+# Handles SIGINT, SIGTERM, SIGUSR1/SIGBREAK automatically
+server.run
+----
+
+===== Manual Signal Handling
+
+[source,ruby]
+----
+# For custom implementations
+trap('INT') do
+  puts "\nShutting down gracefully..."
+  supervisor.stop
+  exit
+end
+
+trap('TERM') do
+  supervisor.stop
+  exit
+end
+
+# Unix only
+if Signal.list.key?('USR1')
+  trap('USR1') do
+    puts supervisor.status
+  end
+end
+
+# Windows
+if Signal.list.key?('BREAK')
+  trap('BREAK') do
+    puts supervisor.status
+  end
+end
+----
+
+---
+
+=== FAQ
+
+==== How many workers should I use?
+
+**CPU-bound work:**
+
+* Start with number of CPU cores
+* Test with: `(1..4).each { |n| test_with_n_workers(n * CPU_count) }`
+
+**I/O-bound work:**
+
+* Start with 2-4x CPU cores
+* Monitor utilization and increase if workers are idle
+
+**Mixed workload:**
+
+* Use separate worker pools with different counts
+* Example:
+[source,ruby]
+----
+worker_pools: [
+  { worker_class: CPUWorker, num_workers: 4 },
+  { worker_class: IOWorker, num_workers: 16 }
+]
+----
+
+==== Should I use pipeline or continuous mode?
+
+**Use pipeline mode when:**
+
+* Processing a finite batch of work
+* Work items known upfront
+* Need to collect all results
+* One-time operations
+
+**Use continuous mode when:**
+
+* Running indefinitely (servers, daemons)
+* Work arrives dynamically
+* Results processed via callbacks
+* Long-running services
+
+==== How do I debug worker issues?
+
+1. Add logging to worker's `process` method
+2. Use smaller batch for testing
+3. Run with single worker initially
+4. Check error results for details
+5. Use PerformanceMonitor for metrics
+
+[source,ruby]
+----
+class DebugWorker < Fractor::Worker
+  def process(work)
+    puts "Processing: #{work.input.inspect}"
+
+    result = perform_work(work.input)
+
+    puts "Result: #{result.inspect}"
+
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    puts "Error: #{e.class.name}: #{e.message}"
+    puts e.backtrace.first(5)
+
+    Fractor::WorkResult.new(error: e, work: work)
+  end
+end
+----
+
+==== How do I handle worker crashes?
+
+Ractors that crash are automatically restarted by the Supervisor. However:
+
+1. Fix the root cause in your worker code
+2. Add proper error handling (rescue blocks)
+3. Return error WorkResults instead of raising
+4. Log crashes for investigation
+
+==== Can I use threads instead of Ractors?
+
+Fractor is built on Ractors for true parallelism. If you need threads:
+
+* Consider using standard thread pools
+* Fractor's value is in Ractor-based parallelism
+* For I/O-bound work, threads may work, but Ractors provide isolation
+
+==== How do I test Fractor code?
+
+[source,ruby]
+----
+require 'rspec'
+
+RSpec.describe MyWorker do
+  it "processes work correctly" do
+    work = MyWork.new(data: 'test')
+    worker = MyWorker.new
+
+    result = worker.process(work)
+
+    expect(result).to be_success
+    expect(result.result).to eq(expected_value)
+  end
+
+  it "handles errors" do
+    work = MyWork.new(data: nil)
+    worker = MyWorker.new
+
+    result = worker.process(work)
+
+    expect(result).to be_error
+    expect(result.error_code).to eq(:validation_error)
+  end
+end
+----
+
+---
+
+=== Getting Help
+
+If you can't find a solution here:
+
+1. **Check Examples**: link:examples[Real-world examples] often show solutions
+2. **Read API Docs**: link:api[API Reference] for detailed method documentation
+3. **Review Guides**: link:../guides/core-concepts[Core Concepts] for fundamentals
+4. **GitHub Issues**: Search existing issues or create a new one
+5. **Enable Debug Logging**: Set `FRACTOR_LOG_FILE` environment variable
+
+=== See Also
+
+* link:../guides/core-concepts[Core Concepts]
+* link:../guides/cookbook[Cookbook] - Common patterns
+* link:api[API Reference]
+* link:error-reporting[Error Reporting]
+* link:examples[Examples]

@@ -1,0 +1,1081 @@
+---
+layout: default
+title: API Reference
+parent: Reference
+nav_order: 1
+---
+= API Reference
+
+This document provides a comprehensive reference for the Fractor API, including all public classes, methods, and their usage.
+
+== Core Classes
+
+=== Fractor::Work
+
+Represents a unit of work to be processed by workers.
+
+==== Class Methods
+
+===== `new(payload)`
+
+Creates a new Work instance.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`payload`
+|Hash or Any
+|The data to be processed by the worker
+|===
+
+**Example:**
+
+[source,ruby]
+----
+work = Fractor::Work.new(value: 42, operation: :double)
+----
+
+==== Instance Methods
+
+===== `input`
+
+Returns the work payload.
+
+**Returns:** The payload passed during initialization
+
+**Example:**
+
+[source,ruby]
+----
+work = Fractor::Work.new(value: 42)
+work.input  # => { value: 42 }
+----
+
+=== Fractor::Worker
+
+Base class for all workers. Workers process Work objects and return WorkResult objects.
+
+==== Class Methods
+
+===== `perform(work)`
+
+Main entry point for processing work. Handles error catching and result wrapping.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`work`
+|Fractor::Work
+|The work item to process
+|===
+
+**Returns:** Fractor::WorkResult
+
+**Example:**
+
+[source,ruby]
+----
+class DoubleWorker < Fractor::Worker
+  def process(work)
+    result = work.input[:value] * 2
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+end
+
+work = Fractor::Work.new(value: 21)
+result = DoubleWorker.perform(work)
+result.result  # => 42
+----
+
+==== Instance Methods
+
+===== `process(work)` (abstract)
+
+Process the work and return a result. Must be implemented by subclasses.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`work`
+|Fractor::Work
+|The work item to process
+|===
+
+**Returns:** Fractor::WorkResult
+
+**Raises:** NotImplementedError if not overridden
+
+**Example:**
+
+[source,ruby]
+----
+class CustomWorker < Fractor::Worker
+  def process(work)
+    # Your processing logic here
+    result = perform_computation(work.input)
+    Fractor::WorkResult.new(result: result, work: work)
+  end
+end
+----
+
+=== Fractor::WorkResult
+
+Encapsulates the result of work processing, including success/failure status and error information.
+
+==== Class Methods
+
+===== `new(result: nil, error: nil, work: nil, error_code: nil, error_context: {})`
+
+Creates a new WorkResult instance.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`result`
+|Any
+|The successful result value (optional)
+
+|`error`
+|String or Exception
+|Error message or exception (optional)
+
+|`work`
+|Fractor::Work
+|The original work item (optional)
+
+|`error_code`
+|Symbol
+|Categorized error code (optional)
+
+|`error_context`
+|Hash
+|Additional error context (optional)
+|===
+
+**Example:**
+
+[source,ruby]
+----
+# Success result
+Fractor::WorkResult.new(
+  result: { status: "completed" },
+  work: work
+)
+
+# Error result with context
+Fractor::WorkResult.new(
+  error: "Connection timeout",
+  error_code: :timeout,
+  error_context: {
+    endpoint: "https://api.example.com",
+    attempt: 3,
+    duration: 30.5
+  },
+  work: work
+)
+----
+
+==== Instance Methods
+
+===== `success?`
+
+Returns whether the work completed successfully.
+
+**Returns:** Boolean
+
+**Example:**
+
+[source,ruby]
+----
+result.success?  # => true or false
+----
+
+===== `error?`
+
+Returns whether the work encountered an error.
+
+**Returns:** Boolean
+
+**Example:**
+
+[source,ruby]
+----
+result.error?  # => true or false
+----
+
+===== `result`
+
+Returns the result value.
+
+**Returns:** The result value or nil
+
+===== `error`
+
+Returns the error message or exception.
+
+**Returns:** String, Exception, or nil
+
+===== `work`
+
+Returns the original work item.
+
+**Returns:** Fractor::Work or nil
+
+===== `error_code`
+
+Returns the categorized error code.
+
+**Returns:** Symbol or nil
+
+===== `error_context`
+
+Returns additional error context.
+
+**Returns:** Hash
+
+=== Fractor::Supervisor
+
+Manages worker pools and distributes work across workers.
+
+==== Class Methods
+
+===== `new(worker_pools: [], work_queue: nil, max_queue_size: nil)`
+
+Creates a new Supervisor instance.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`worker_pools`
+|Array<Hash>
+|Array of worker pool configurations
+
+|`work_queue`
+|Fractor::WorkQueue
+|Custom work queue (optional)
+
+|`max_queue_size`
+|Integer
+|Maximum queue size (optional)
+|===
+
+**Worker Pool Configuration:**
+
+[cols="1,1,3"]
+|===
+|Key |Type |Description
+
+|`worker_class`
+|Class
+|The worker class to instantiate
+
+|`num_workers`
+|Integer
+|Number of workers in the pool (default: 1)
+|===
+
+**Example:**
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: FastWorker, num_workers: 4 },
+    { worker_class: SlowWorker, num_workers: 2 }
+  ],
+  max_queue_size: 1000
+)
+----
+
+==== Instance Methods
+
+===== `add_work(work)`
+
+Adds a single work item to the queue.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`work`
+|Fractor::Work
+|Work item to add
+|===
+
+**Example:**
+
+[source,ruby]
+----
+supervisor.add_work(Fractor::Work.new(value: 42))
+----
+
+===== `add_work_items(work_items)`
+
+Adds multiple work items to the queue.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`work_items`
+|Array<Fractor::Work>
+|Array of work items to add
+|===
+
+**Example:**
+
+[source,ruby]
+----
+items = (1..100).map { |i| Fractor::Work.new(value: i) }
+supervisor.add_work_items(items)
+----
+
+===== `run`
+
+Starts processing work. Blocks until all work is complete.
+
+**Example:**
+
+[source,ruby]
+----
+supervisor.add_work_items(work_items)
+supervisor.run
+puts "All work completed!"
+----
+
+===== `stop`
+
+Stops the supervisor and all workers gracefully.
+
+**Example:**
+
+[source,ruby]
+----
+supervisor.stop
+----
+
+===== `results`
+
+Returns the result aggregator containing all work results.
+
+**Returns:** Fractor::ResultAggregator
+
+**Example:**
+
+[source,ruby]
+----
+supervisor.run
+aggregator = supervisor.results
+puts "Success: #{aggregator.results.size}"
+puts "Errors: #{aggregator.errors.size}"
+----
+
+=== Fractor::WorkQueue
+
+Thread-safe queue for managing work items.
+
+==== Class Methods
+
+===== `new(max_size: nil)`
+
+Creates a new WorkQueue instance.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`max_size`
+|Integer
+|Maximum queue size (optional, unlimited by default)
+|===
+
+**Example:**
+
+[source,ruby]
+----
+queue = Fractor::WorkQueue.new(max_size: 100)
+----
+
+==== Instance Methods
+
+===== `<<(work)` or `push(work)`
+
+Adds work to the queue.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`work`
+|Fractor::Work
+|Work item to add
+|===
+
+**Example:**
+
+[source,ruby]
+----
+queue << Fractor::Work.new(value: 42)
+queue.push(Fractor::Work.new(value: 43))
+----
+
+===== `pop`
+
+Retrieves and removes the next work item from the queue. Blocks if queue is empty.
+
+**Returns:** Fractor::Work
+
+**Example:**
+
+[source,ruby]
+----
+work = queue.pop
+----
+
+===== `size`
+
+Returns the current number of items in the queue.
+
+**Returns:** Integer
+
+**Example:**
+
+[source,ruby]
+----
+queue.size  # => 5
+----
+
+===== `empty?`
+
+Returns whether the queue is empty.
+
+**Returns:** Boolean
+
+**Example:**
+
+[source,ruby]
+----
+queue.empty?  # => false
+----
+
+=== Fractor::ResultAggregator
+
+Collects and organizes work results.
+
+==== Instance Methods
+
+===== `add_result(result)`
+
+Adds a work result.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`result`
+|Fractor::WorkResult
+|Result to add
+|===
+
+===== `results`
+
+Returns all successful results.
+
+**Returns:** Array<Fractor::WorkResult>
+
+**Example:**
+
+[source,ruby]
+----
+aggregator.results.each do |result|
+  puts result.result
+end
+----
+
+===== `errors`
+
+Returns all error results.
+
+**Returns:** Array<Fractor::WorkResult>
+
+**Example:**
+
+[source,ruby]
+----
+aggregator.errors.each do |result|
+  puts "Error: #{result.error}"
+end
+----
+
+===== `all`
+
+Returns all results (both successful and failed).
+
+**Returns:** Array<Fractor::WorkResult>
+
+=== Fractor::PerformanceMonitor
+
+Monitors and tracks performance metrics for supervisors and workers.
+
+==== Class Methods
+
+===== `new(supervisor, sample_interval: 1.0)`
+
+Creates a new PerformanceMonitor instance.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`supervisor`
+|Fractor::Supervisor
+|The supervisor to monitor
+
+|`sample_interval`
+|Float
+|Sampling interval in seconds (default: 1.0)
+|===
+
+**Example:**
+
+[source,ruby]
+----
+monitor = Fractor::PerformanceMonitor.new(
+  supervisor,
+  sample_interval: 0.5
+)
+----
+
+==== Instance Methods
+
+===== `start`
+
+Starts monitoring in a background thread.
+
+**Example:**
+
+[source,ruby]
+----
+monitor.start
+----
+
+===== `stop`
+
+Stops monitoring and waits for background thread to finish.
+
+**Example:**
+
+[source,ruby]
+----
+monitor.stop
+----
+
+===== `snapshot`
+
+Returns current metrics snapshot.
+
+**Returns:** Hash containing all current metrics
+
+**Example:**
+
+[source,ruby]
+----
+stats = monitor.snapshot
+puts "Jobs processed: #{stats[:jobs_processed]}"
+puts "Throughput: #{stats[:throughput]} jobs/sec"
+puts "Queue depth: #{stats[:queue_depth]}"
+----
+
+===== `report`
+
+Generates a human-readable performance report.
+
+**Returns:** String
+
+**Example:**
+
+[source,ruby]
+----
+puts monitor.report
+----
+
+===== `to_json`
+
+Exports metrics in JSON format.
+
+**Returns:** String (JSON)
+
+**Example:**
+
+[source,ruby]
+----
+json_metrics = monitor.to_json
+----
+
+===== `to_prometheus`
+
+Exports metrics in Prometheus text format.
+
+**Returns:** String (Prometheus format)
+
+**Example:**
+
+[source,ruby]
+----
+prometheus_metrics = monitor.to_prometheus
+----
+
+===== `record_job(latency, success: true)`
+
+Manually records a job completion.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`latency`
+|Float
+|Job latency in seconds
+
+|`success`
+|Boolean
+|Whether job succeeded (default: true)
+|===
+
+**Example:**
+
+[source,ruby]
+----
+start_time = Time.now
+# ... perform work ...
+latency = Time.now - start_time
+monitor.record_job(latency, success: true)
+----
+
+== Workflow Classes
+
+=== Fractor::Workflow
+
+Base class for declarative workflows.
+
+==== Class Methods
+
+===== `workflow(name, &block)`
+
+Defines a workflow with the given name.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`name`
+|String
+|Workflow name
+
+|`block`
+|Proc
+|Workflow definition block
+|===
+
+**Example:**
+
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "data-pipeline" do
+    input_type InputData
+    output_type OutputData
+
+    job "extract" do
+      runs_with ExtractWorker
+      inputs_from_workflow
+    end
+
+    job "transform" do
+      needs "extract"
+      runs_with TransformWorker
+      inputs_from_job "extract"
+    end
+
+    job "load" do
+      needs "transform"
+      runs_with LoadWorker
+      inputs_from_job "transform"
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+----
+
+===== `define(name, &block)`
+
+Creates a workflow class dynamically.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`name`
+|String
+|Workflow name
+
+|`block`
+|Proc
+|Workflow definition block
+|===
+
+**Returns:** Class (anonymous workflow class)
+
+**Example:**
+
+[source,ruby]
+----
+workflow_class = Fractor::Workflow.define("simple") do
+  job :process, ProcessWorker
+  job :finalize, FinalizeWorker, needs: :process
+end
+
+workflow = workflow_class.new
+result = workflow.execute(input_data)
+----
+
+===== `chain(name)`
+
+Creates a linear workflow builder.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`name`
+|String
+|Workflow name
+|===
+
+**Returns:** Fractor::Workflow::ChainBuilder
+
+**Example:**
+
+[source,ruby]
+----
+workflow = Fractor::Workflow.chain("linear")
+  .step(:extract, ExtractWorker)
+  .step(:transform, TransformWorker)
+  .step(:load, LoadWorker)
+  .build
+
+result = workflow.new.execute(input_data)
+----
+
+==== Instance Methods
+
+===== `execute(input)`
+
+Executes the workflow with the given input.
+
+[cols="1,1,3"]
+|===
+|Parameter |Type |Description
+
+|`input`
+|Any
+|Workflow input data
+|===
+
+**Returns:** Workflow output data
+
+**Raises:** Fractor::Workflow::WorkflowExecutionError on failure
+
+**Example:**
+
+[source,ruby]
+----
+workflow = MyWorkflow.new
+begin
+  result = workflow.execute(input_data)
+  puts "Success: #{result}"
+rescue Fractor::Workflow::WorkflowExecutionError => e
+  puts "Failed: #{e.message}"
+end
+----
+
+===== `dead_letter_queue`
+
+Returns the workflow's dead letter queue.
+
+**Returns:** Fractor::Workflow::DeadLetterQueue or nil
+
+**Example:**
+
+[source,ruby]
+----
+dlq = workflow.dead_letter_queue
+if dlq
+  puts "Failed items: #{dlq.size}"
+end
+----
+
+== Workflow DSL Reference
+
+=== Job Configuration
+
+==== `runs_with(worker_class)`
+
+Specifies the worker class for the job.
+
+**Example:**
+
+[source,ruby]
+----
+job "process" do
+  runs_with ProcessWorker
+end
+----
+
+==== `needs(job_ids...)`
+
+Specifies job dependencies.
+
+**Example:**
+
+[source,ruby]
+----
+job "aggregate" do
+  needs "job1", "job2", "job3"
+  runs_with AggregateWorker
+end
+----
+
+==== `inputs_from_workflow`
+
+Job receives input from workflow input.
+
+**Example:**
+
+[source,ruby]
+----
+job "first" do
+  runs_with FirstWorker
+  inputs_from_workflow
+end
+----
+
+==== `inputs_from_job(job_id)`
+
+Job receives input from another job's output.
+
+**Example:**
+
+[source,ruby]
+----
+job "second" do
+  needs "first"
+  runs_with SecondWorker
+  inputs_from_job "first"
+end
+----
+
+==== `outputs_to_workflow`
+
+Job's output becomes the workflow output.
+
+**Example:**
+
+[source,ruby]
+----
+job "final" do
+  runs_with FinalWorker
+  outputs_to_workflow
+end
+----
+
+==== `terminates_workflow`
+
+Job completion terminates the workflow.
+
+**Example:**
+
+[source,ruby]
+----
+job "final" do
+  runs_with FinalWorker
+  outputs_to_workflow
+  terminates_workflow
+end
+----
+
+=== Error Handling
+
+==== `retry_on_error(options)`
+
+Configures automatic retry for the job.
+
+[cols="1,1,3"]
+|===
+|Option |Type |Description
+
+|`max_attempts`
+|Integer
+|Maximum retry attempts (default: 3)
+
+|`backoff`
+|Symbol
+|Backoff strategy: `:exponential`, `:linear`, `:constant`, `:none`
+
+|`initial_delay`
+|Float
+|Initial delay in seconds (default: 1)
+
+|`max_delay`
+|Float
+|Maximum delay cap in seconds
+
+|`multiplier`
+|Float
+|Exponential backoff multiplier (default: 2)
+
+|`increment`
+|Float
+|Linear backoff increment (default: 1)
+
+|`delay`
+|Float
+|Constant backoff delay (default: 1)
+
+|`retryable_errors`
+|Array<Class>
+|Error classes to retry (default: [StandardError])
+|===
+
+**Example:**
+
+[source,ruby]
+----
+job "fetch_data" do
+  runs_with ApiWorker
+  retry_on_error max_attempts: 5,
+                 backoff: :exponential,
+                 initial_delay: 1,
+                 max_delay: 60
+end
+----
+
+==== `on_error(&block)`
+
+Registers an error handler for the job.
+
+**Example:**
+
+[source,ruby]
+----
+job "process" do
+  runs_with ProcessWorker
+  on_error do |error, context|
+    Logger.error("Job failed: #{error.message}")
+    AlertService.notify(error)
+  end
+end
+----
+
+==== `fallback_to(job_id)`
+
+Specifies a fallback job if this job fails.
+
+**Example:**
+
+[source,ruby]
+----
+job "fetch_live" do
+  runs_with LiveDataWorker
+  retry_on_error max_attempts: 3
+  fallback_to "fetch_cached"
+end
+
+job "fetch_cached" do
+  runs_with CachedDataWorker
+end
+----
+
+==== `circuit_breaker(options)`
+
+Configures circuit breaker for the job.
+
+[cols="1,1,3"]
+|===
+|Option |Type |Description
+
+|`threshold`
+|Integer
+|Failure threshold to open circuit (default: 5)
+
+|`timeout`
+|Integer
+|Seconds to wait before half-open (default: 60)
+
+|`half_open_calls`
+|Integer
+|Test calls in half-open state (default: 3)
+
+|`shared_key`
+|String
+|Key for sharing circuit across jobs
+|===
+
+**Example:**
+
+[source,ruby]
+----
+job "external_api" do
+  runs_with ApiWorker
+  circuit_breaker threshold: 5,
+                  timeout: 60,
+                  half_open_calls: 3
+end
+----
+
+=== Dead Letter Queue
+
+==== `configure_dead_letter_queue(options)`
+
+Configures the dead letter queue for the workflow.
+
+[cols="1,1,3"]
+|===
+|Option |Type |Description
+
+|`max_size`
+|Integer
+|Maximum DLQ size (default: 1000)
+
+|`persister`
+|Object
+|Persistence strategy (optional)
+
+|`on_add`
+|Proc
+|Callback when item added (optional)
+|===
+
+**Example:**
+
+[source,ruby]
+----
+workflow "my-workflow" do
+  configure_dead_letter_queue(
+    max_size: 500,
+    on_add: ->(entry) { Logger.error("DLQ: #{entry.error}") }
+  )
+end
+----
+
+== See Also
+
+* link:../pages/core-concepts.adoc[Core Concepts] - Understanding Fractor components
+* link:../features/workflows.adoc[Workflows] - Complete workflow documentation
+* link:examples.adoc[Examples] - Usage examples

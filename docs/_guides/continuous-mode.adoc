@@ -1,0 +1,737 @@
+---
+layout: default
+title: Continuous mode (long-running servers)
+parent: Guides
+nav_order: 2
+---
+= Continuous mode (long-running servers)
+
+== General
+
+Continuous mode is designed for applications that need to run indefinitely, processing work items as they arrive.
+
+Characteristics:
+
+* Runs continuously without a predetermined end
+* Processes work items dynamically as they become available
+* Workers idle efficiently when no work is available
+* Results are processed via callbacks, not batch collection
+* Supports graceful shutdown and runtime monitoring
+
+Common use cases:
+
+* Chat servers and messaging systems
+* Background job processors
+* Real-time data stream processing
+* Web servers handling concurrent requests
+* Monitoring and alerting systems
+* Event-driven architectures
+
+== Quick start
+
+=== General
+
+This quick start guide shows how to build a long-running server using Fractor's high-level primitives for continuous mode. These primitives eliminate boilerplate code for thread management, queuing, and results processing.
+
+=== Step 1: Create Work and Worker classes
+
+Just like pipeline mode, you need Work and Worker classes:
+
+[source,ruby]
+----
+require 'fractor'
+
+class MessageWork < Fractor::Work
+  def initialize(client_id, message)
+    super({ client_id: client_id, message: message })
+  end
+
+  def client_id
+    input[:client_id]
+  end
+
+  def message
+    input[:message]
+  end
+end
+
+class MessageWorker < Fractor::Worker
+  def process(work)
+    # Process the message
+    processed = "Echo: #{work.message}"
+
+    Fractor::WorkResult.new(
+      result: { client_id: work.client_id, response: processed },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(error: e.message, work: work)
+  end
+end
+----
+
+=== Step 2: Set up WorkQueue
+
+Create a thread-safe work queue that will hold incoming work items:
+
+[source,ruby]
+----
+# Create a thread-safe work queue
+work_queue = Fractor::WorkQueue.new
+----
+
+=== Step 3: Set up ContinuousServer with callbacks
+
+The ContinuousServer handles all the boilerplate: thread management, signal handling, and results processing.
+
+[source,ruby]
+----
+# Create the continuous server
+server = Fractor::ContinuousServer.new(
+  worker_pools: [
+    { worker_class: MessageWorker, num_workers: 4 }
+  ],
+  work_queue: work_queue,  # Auto-registers as work source
+  log_file: 'logs/server.log'  # Optional logging
+)
+
+# Define how to handle successful results
+server.on_result do |result|
+  client_id = result.result[:client_id]
+  response = result.result[:response]
+  puts "Sending to client #{client_id}: #{response}"
+  # Send response to client here
+end
+
+# Define how to handle errors
+server.on_error do |error_result|
+  puts "Error processing work: #{error_result.error}"
+end
+----
+
+=== Step 4: Run and add work dynamically
+
+Start the server and add work items as they arrive:
+
+[source,ruby]
+----
+# Start the server in a background thread
+server_thread = Thread.new { server.run }
+
+# Your application can now push work items dynamically
+# For example, when a client sends a message:
+work_queue << MessageWork.new(client_id: 1, message: "Hello")
+work_queue << MessageWork.new(client_id: 2, message: "World")
+
+# The server runs indefinitely, processing work as it arrives
+# Use Ctrl+C or send SIGTERM for graceful shutdown
+
+# Or stop programmatically
+sleep 10
+server.stop
+server_thread.join
+----
+
+That's it! The ContinuousServer handles all thread management, signal handling, and graceful shutdown automatically.
+
+== Continuous mode components
+
+=== General
+
+This section describes the components and their detailed usage specifically for continuous mode (long-running servers). For pipeline mode, see the link:pipeline-mode.adoc[Pipeline Mode] documentation.
+
+Continuous mode offers two approaches: a low-level API for manual control, and high-level primitives that eliminate boilerplate code.
+
+=== Low-level components
+
+==== General
+
+The low-level API provides manual control over continuous mode operation. This approach is useful when you need fine-grained control over threading, work sources, or results processing.
+
+Use the low-level API when:
+
+* You need custom thread management
+* Your work source logic is complex
+* You require precise control over the supervisor lifecycle
+* You're integrating with existing thread pools or event loops
+
+For most applications, the high-level primitives (described in the next section) are recommended as they eliminate significant boilerplate code.
+
+==== Supervisor with continuous_mode: true
+
+To enable continuous mode, set the `continuous_mode` option:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 2 }
+  ],
+  continuous_mode: true  # Enable continuous mode
+)
+----
+
+==== Work source callbacks
+
+Register a callback that provides new work on demand:
+
+[source,ruby]
+----
+supervisor.register_work_source do
+  # Return nil or empty array if no work is available
+  # Return a work item or array of work items when available
+  items = get_next_work_items
+  if items && !items.empty?
+    # Convert to Work objects if needed
+    items.map { |item| MyWork.new(item) }
+  else
+    nil
+  end
+end
+----
+
+The callback is polled every 100ms by an internal timer thread.
+
+==== Manual thread management
+
+You must manually manage threads and results processing:
+
+[source,ruby]
+----
+# Start supervisor in a background thread
+supervisor_thread = Thread.new { supervisor.run }
+
+# Start results processing thread
+results_thread = Thread.new do
+  loop do
+    # Process results
+    while (result = supervisor.results.results.shift)
+      handle_result(result)
+    end
+
+    # Process errors
+    while (error = supervisor.results.errors.shift)
+      handle_error(error)
+    end
+
+    sleep 0.1
+  end
+end
+
+# Ensure cleanup on shutdown
+begin
+  supervisor_thread.join
+rescue Interrupt
+  supervisor.stop
+ensure
+  results_thread.kill
+  supervisor_thread.join
+end
+----
+
+=== High-level components
+
+==== General
+
+Fractor provides high-level primitives that dramatically simplify continuous mode applications by eliminating boilerplate code.
+
+These primitives solve common problems:
+
+* *Thread management*: Automatic supervisor and results processing threads
+* *Queue synchronization*: Thread-safe work queue with automatic integration
+* *Results processing*: Callback-based handling instead of manual loops
+* *Signal handling*: Built-in support for SIGINT, SIGTERM, SIGUSR1/SIGBREAK
+* *Graceful shutdown*: Coordinated cleanup across all threads
+
+Real-world benefits:
+
+* The chat server example reduced from 279 lines to 167 lines (40% reduction)
+* Eliminates ~112 lines of thread, queue, and signal handling boilerplate
+* Simpler, more maintainable code with fewer error-prone details
+
+==== Fractor::WorkQueue
+
+===== Purpose and responsibilities
+
+`Fractor::WorkQueue` provides a thread-safe queue for continuous mode applications. It handles work item storage and integrates automatically with the supervisor's work source mechanism.
+
+===== Thread-safety
+
+The WorkQueue is *thread-safe* but not *Ractor-safe*:
+
+* *Thread-safe*: Multiple threads can safely push work items concurrently
+* *Not Ractor-safe*: The queue lives in the main process and cannot be shared across Ractor boundaries
+
+This design is intentional. The WorkQueue operates in the main process where your application code runs. Work items are retrieved by the Supervisor (also in the main process) and then sent to worker Ractors.
+
+.WorkQueue architecture
+[source]
+----
+Main Process
+├─→ Your application threads (push to WorkQueue)
+├─→ WorkQueue (thread-safe, lives here)
+├─→ Supervisor (polls WorkQueue)
+│   └─→ Sends work to Worker Ractors
+└─→ Worker Ractors (receive frozen/shareable work items)
+----
+
+===== Creating a WorkQueue
+
+[source,ruby]
+----
+work_queue = Fractor::WorkQueue.new
+----
+
+===== Adding work items
+
+Use the `<<` operator for thread-safe push operations:
+
+[source,ruby]
+----
+# From any thread in your application
+work_queue << MyWork.new(data)
+
+# Thread-safe even from multiple threads
+threads = 10.times.map do |i|
+  Thread.new do
+    100.times do |j|
+      work_queue << MyWork.new("thread-#{i}-item-#{j}")
+    end
+  end
+end
+threads.each(&:join)
+----
+
+===== Checking queue status
+
+[source,ruby]
+----
+# Check if queue is empty
+if work_queue.empty?
+  puts "No work available"
+end
+
+# Get current queue size
+puts "Queue has #{work_queue.size} items"
+----
+
+===== Integration with Supervisor
+
+The WorkQueue integrates automatically with ContinuousServer (see next section). For manual integration with a Supervisor:
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker }],
+  continuous_mode: true
+)
+
+# Register the work queue as a work source
+work_queue.register_with_supervisor(supervisor)
+
+# Now the supervisor will automatically poll the queue for work
+----
+
+==== Fractor::ContinuousServer
+
+===== Purpose and responsibilities
+
+`Fractor::ContinuousServer` is a high-level wrapper that handles all the complexity of running a continuous mode application. It manages:
+
+* Supervisor thread lifecycle
+* Results processing thread with callback system
+* Signal handling (SIGINT, SIGTERM, SIGUSR1/SIGBREAK)
+* Graceful shutdown coordination
+* Optional logging
+
+===== Creating a ContinuousServer
+
+[source,ruby]
+----
+server = Fractor::ContinuousServer.new(
+  worker_pools: [
+    { worker_class: MessageWorker, num_workers: 4 }
+  ],
+  work_queue: work_queue,  # Optional, auto-registers if provided
+  log_file: 'logs/server.log'  # Optional
+)
+----
+
+Parameters:
+
+* `worker_pools` (required): Array of worker pool configurations
+* `work_queue` (optional): A Fractor::WorkQueue instance to auto-register
+* `log_file` (optional): Path for log output
+
+===== Registering callbacks
+
+Define how to handle results and errors:
+
+[source,ruby]
+----
+# Handle successful results
+server.on_result do |result|
+  # result is a Fractor::WorkResult with result.result containing your data
+  puts "Success: #{result.result}"
+  # Send response to client, update database, etc.
+end
+
+# Handle errors
+server.on_error do |error_result|
+  # error_result is a Fractor::WorkResult with error_result.error containing the message
+  puts "Error: #{error_result.error}"
+  # Log error, send notification, etc.
+end
+----
+
+===== Running the server
+
+[source,ruby]
+----
+# Blocking: Run the server (blocks until shutdown signal)
+server.run
+
+# Non-blocking: Run in background thread
+server_thread = Thread.new { server.run }
+
+# Your application continues here...
+# Add work to queue as needed
+work_queue << MyWork.new(data)
+
+# Later, stop the server
+server.stop
+server_thread.join
+----
+
+===== Signal handling
+
+The ContinuousServer automatically handles:
+
+* *SIGINT* (Ctrl+C): Graceful shutdown
+* *SIGTERM*: Graceful shutdown (production deployment)
+* *SIGUSR1* (Unix) / *SIGBREAK* (Windows): Status output
+
+No additional code needed - signals work automatically.
+
+===== Graceful shutdown
+
+When a shutdown signal is received:
+
+. Stops accepting new work from the work queue
+. Allows in-progress work to complete (within ~2 seconds)
+. Processes remaining results through callbacks
+. Cleans up all threads and resources
+. Returns from the `run` method
+
+===== Programmatic shutdown
+
+[source,ruby]
+----
+# Stop the server programmatically
+server.stop
+
+# The run method will return shortly after
+----
+
+==== Integration architecture
+
+The high-level components work together seamlessly:
+
+.Complete architecture diagram
+[source]
+----
+┌───────────────────────────────────────────────────────────┐
+│                     Main Process                          │
+│                                                           │
+│  ┌──────────────┐     ┌──────────────────────────────┐    │
+│  │ Your App     │────>│ WorkQueue (thread-safe)      │    │
+│  │ (any thread) │     │ - Thread::Queue internally   │    │
+│  └──────────────┘     └──────────────────────────────┘    │
+│                                 │                         │
+│                                 │ polled every 100ms      │
+│                                 ▼                         │
+│  ┌────────────────────────────────────────────────────┐   │
+│  │         ContinuousServer                           │   │
+│  │  ┌─────────────────────────────────────────────┐   │   │
+│  │  │  Supervisor Thread                          │   │   │
+│  │  │  - Manages worker Ractors                   │   │   │
+│  │  │  - Distributes work                         │   │   │
+│  │  │  - Coordinates shutdown                     │   │   │
+│  │  └─────────────────────────────────────────────┘   │   │
+│  │          │                                         │   │
+│  │          ▼                                         │   │
+│  │  ┌─────────────────────────────────────────────┐   │   │
+│  │  │  Worker Ractors (parallel execution)        │   │   │
+│  │  │  - Ractor 1: WorkerInstance.process(work)   │   │   │
+│  │  │  - Ractor 2: WorkerInstance.process(work)   │   │   │
+│  │  │  - Ractor N: WorkerInstance.process(work)   │   │   │
+│  │  └─────────────────────────────────────────────┘   │   │
+│  │          │                                         │   │
+│  │          ▼ (WorkResults)                           │   │
+│  │  ┌─────────────────────────────────────────────┐   │   │
+│  │  │  Results Processing Thread                  │   │   │
+│  │  │  - on_result callback for successes         │   │   │
+│  │  │  - on_error callback for failures           │   │   │
+│  │  └─────────────────────────────────────────────┘   │   │
+│  │                                                    │   │
+│  │  ┌─────────────────────────────────────────────┐   │   │
+│  │  │  Signal Handler Thread                      │   │   │
+│  │  │  - SIGINT/SIGTERM: Shutdown                 │   │   │
+│  │  │  - SIGUSR1/SIGBREAK: Status                 │   │   │
+│  │  └─────────────────────────────────────────────┘   │   │
+│  └────────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────┘
+----
+
+Key points:
+
+* WorkQueue lives in main process (thread-safe, not Ractor-safe)
+* Supervisor polls WorkQueue and distributes to Ractors
+* Work items must be frozen/shareable to cross Ractor boundary
+* Results come back through callbacks, not batch collection
+* All thread management is automatic
+
+== Continuous mode patterns
+
+=== Basic server with callbacks
+
+The most common pattern uses WorkQueue + ContinuousServer:
+
+[source,ruby]
+----
+require 'fractor'
+
+# Define work and worker
+class RequestWork < Fractor::Work
+  def initialize(request_id, data)
+    super({ request_id: request_id, data: data })
+  end
+end
+
+class RequestWorker < Fractor::Worker
+  def process(work)
+    # Process the request
+    result = perform_computation(work.input[:data])
+
+    Fractor::WorkResult.new(
+      result: { request_id: work.input[:request_id], response: result },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(error: e.message, work: work)
+  end
+
+  private
+
+  def perform_computation(data)
+    # Your business logic here
+    data.upcase
+  end
+end
+
+# Set up server
+work_queue = Fractor::WorkQueue.new
+
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: RequestWorker, num_workers: 4 }],
+  work_queue: work_queue
+)
+
+server.on_result { |result| puts "Success: #{result.result}" }
+server.on_error { |error| puts "Error: #{error.error}" }
+
+# Run server (blocks until shutdown)
+Thread.new { server.run }
+
+# Application logic adds work as needed
+work_queue << RequestWork.new(1, "hello")
+work_queue << RequestWork.new(2, "world")
+
+sleep # Keep main thread alive
+----
+
+=== Event-driven processing
+
+Process events from external sources as they arrive:
+
+[source,ruby]
+----
+# Event source (could be webhooks, message queue, etc.)
+event_source = EventSource.new
+
+# Set up work queue and server
+work_queue = Fractor::WorkQueue.new
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: EventWorker, num_workers: 8 }],
+  work_queue: work_queue
+)
+
+server.on_result do |result|
+  # Publish result to subscribers
+  publish_event(result.result)
+end
+
+# Event loop adds work to queue
+event_source.on_event do |event|
+  work_queue << EventWork.new(event)
+end
+
+# Start server
+server.run
+----
+
+=== Dynamic work sources
+
+Combine multiple work sources:
+
+[source,ruby]
+----
+work_queue = Fractor::WorkQueue.new
+
+# Source 1: HTTP requests
+http_server.on_request do |request|
+  work_queue << HttpWork.new(request)
+end
+
+# Source 2: Message queue
+message_queue.subscribe do |message|
+  work_queue << MessageWork.new(message)
+end
+
+# Source 3: Scheduled tasks
+scheduler.every('1m') do
+  work_queue << ScheduledWork.new(Time.now)
+end
+
+# Single server processes all work types
+server = Fractor::ContinuousServer.new(
+  worker_pools: [
+    { worker_class: HttpWorker, num_workers: 4 },
+    { worker_class: MessageWorker, num_workers: 2 },
+    { worker_class: ScheduledWorker, num_workers: 1 }
+  ],
+  work_queue: work_queue
+)
+
+server.run
+----
+
+=== Graceful shutdown strategies
+
+==== Signal-based shutdown (production)
+
+[source,ruby]
+----
+# Server automatically handles SIGTERM
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: MyWorker }],
+  work_queue: work_queue,
+  log_file: '/var/log/myapp/server.log'
+)
+
+# Just run the server - signals handled automatically
+server.run
+
+# In production:
+# systemctl stop myapp  # Sends SIGTERM
+# docker stop container # Sends SIGTERM
+# kill -TERM <pid>      # Manual SIGTERM
+----
+
+==== Time-based shutdown
+
+[source,ruby]
+----
+server_thread = Thread.new { server.run }
+
+# Run for specific duration
+sleep 3600  # Run for 1 hour
+server.stop
+server_thread.join
+----
+
+==== Condition-based shutdown
+
+[source,ruby]
+----
+server_thread = Thread.new { server.run }
+
+# Monitor thread checks conditions
+monitor = Thread.new do
+  loop do
+    if should_shutdown?
+      server.stop
+      break
+    end
+    sleep 10
+  end
+end
+
+server_thread.join
+monitor.kill
+----
+
+=== Before/after comparison
+
+The chat server example demonstrates the real-world impact of using the high-level primitives.
+
+==== Before: Low-level API (279 lines)
+
+Required manual management of:
+
+* Supervisor thread creation and lifecycle (~15 lines)
+* Results processing thread with loops (~50 lines)
+* Queue creation and synchronization (~10 lines)
+* Signal handling setup (~15 lines)
+* Thread coordination and shutdown (~20 lines)
+* IO.select event loop (~110 lines)
+* Manual error handling throughout (~59 lines)
+
+==== After: High-level primitives (167 lines)
+
+Eliminated boilerplate:
+
+* WorkQueue handles queue and synchronization (automatic)
+* ContinuousServer manages all threads (automatic)
+* Callbacks replace manual results loops (automatic)
+* Signal handling built-in (automatic)
+* Graceful shutdown coordinated (automatic)
+
+Result: *40% code reduction* (112 fewer lines), simpler architecture, fewer error-prone details.
+
+See link:../examples/continuous_chat_fractor/chat_server.rb[the refactored chat server] for the complete example.
+
+== Continuous mode examples
+
+=== Plain socket implementation
+
+The plain socket implementation (link:../examples/continuous_chat_server/[examples/continuous_chat_server/]) provides a baseline chat server using plain TCP sockets without Fractor. This serves as a comparison point to understand the benefits of using Fractor for continuous processing.
+
+=== Fractor-based implementation
+
+The Fractor-based implementation (link:../examples/continuous_chat_fractor/[examples/continuous_chat_fractor/]) demonstrates how to build a production-ready chat server using Fractor's continuous mode with high-level primitives.
+
+Key features:
+
+* *Continuous mode operation*: Server runs indefinitely processing messages as they arrive
+* *High-level primitives*: Uses WorkQueue and ContinuousServer to eliminate boilerplate
+* *Graceful shutdown*: Production-ready signal handling (SIGINT, SIGTERM, SIGUSR1/SIGBREAK)
+* *Callback-based results*: Clean separation of concerns with on_result and on_error callbacks
+* *Cross-platform support*: Works on Unix/Linux/macOS and Windows
+* *Process monitoring*: Runtime status checking via signals
+* *40% code reduction*: 167 lines vs 279 lines with low-level API
+
+The implementation includes:
+
+* `chat_common.rb`: Work and Worker class definitions for chat message processing
+* `chat_server.rb`: Main server using high-level primitives
+* `simulate.rb`: Test client simulator
+
+This example demonstrates production deployment patterns including:
+
+* Systemd service integration
+* Docker container deployment
+* Process monitoring and health checks
+* Graceful restart procedures
+
+See link:../examples/continuous_chat_fractor/README.adoc[the chat server README] for detailed implementation documentation.

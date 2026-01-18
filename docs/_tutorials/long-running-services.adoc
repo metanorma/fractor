@@ -1,0 +1,931 @@
+---
+layout: default
+title: Creating Long-Running Services
+nav_order: 6
+---
+
+== Creating Long-Running Services
+
+=== Overview
+
+In this 30-minute intermediate tutorial, you'll build a production-ready background job processor that runs continuously, processing jobs as they arrive. This demonstrates how to use Fractor's continuous mode for long-running services.
+
+**What you'll learn:**
+
+* Using continuous mode for indefinite operation
+* Implementing WorkQueue for dynamic work submission
+* Using ContinuousServer for simplified server management
+* Handling graceful shutdown and signals
+* Monitoring server health and performance
+* Production deployment patterns
+
+**Prerequisites:**
+
+* Completed link:getting-started[Getting Started] tutorial
+* Basic understanding of link:../guides/core-concepts[Core Concepts]
+* Familiarity with link:../guides/continuous-mode[Continuous Mode]
+
+=== The Problem
+
+You need to build a background job processor that:
+
+1. Runs continuously as a daemon/service
+2. Accepts job submissions from multiple sources
+3. Processes jobs in parallel
+4. Handles errors gracefully
+5. Provides health monitoring
+6. Supports graceful shutdown
+7. Is production-ready with logging and metrics
+
+=== Step 1: Set Up the Project
+
+Create the project structure:
+
+[source,sh]
+----
+mkdir job_processor
+cd job_processor
+mkdir -p lib logs
+touch lib/job_processor.rb
+touch lib/jobs.rb
+touch lib/workers.rb
+----
+
+Install Fractor:
+
+[source,sh]
+----
+gem install fractor
+----
+
+=== Step 2: Define Job Types
+
+Create `lib/jobs.rb` with different job types:
+
+[source,ruby]
+----
+require 'fractor'
+require 'json'
+require 'net/http'
+
+# Base job class
+class Job < Fractor::Work
+  attr_reader :job_id, :job_type, :created_at
+
+  def initialize(job_id:, job_type:, params: {})
+    @job_id = job_id
+    @job_type = job_type
+    @created_at = Time.now
+    super(job_id: job_id, job_type: job_type, params: params)
+  end
+
+  def params
+    input[:params]
+  end
+
+  def to_s
+    "Job #{job_id} (#{job_type})"
+  end
+end
+
+# Email sending job
+class EmailJob < Job
+  def initialize(job_id:, to:, subject:, body:)
+    super(
+      job_id: job_id,
+      job_type: :email,
+      params: { to: to, subject: subject, body: body }
+    )
+  end
+
+  def to
+    params[:to]
+  end
+
+  def subject
+    params[:subject]
+  end
+
+  def body
+    params[:body]
+  end
+end
+
+# Report generation job
+class ReportJob < Job
+  def initialize(job_id:, report_type:, date_range:)
+    super(
+      job_id: job_id,
+      job_type: :report,
+      params: { report_type: report_type, date_range: date_range }
+    )
+  end
+
+  def report_type
+    params[:report_type]
+  end
+
+  def date_range
+    params[:date_range]
+  end
+end
+
+# Data export job
+class ExportJob < Job
+  def initialize(job_id:, format:, filters:)
+    super(
+      job_id: job_id,
+      job_type: :export,
+      params: { format: format, filters: filters }
+    )
+  end
+
+  def format
+    params[:format]
+  end
+
+  def filters
+    params[:filters]
+  end
+end
+
+# Webhook notification job
+class WebhookJob < Job
+  def initialize(job_id:, url:, payload:)
+    super(
+      job_id: job_id,
+      job_type: :webhook,
+      params: { url: url, payload: payload }
+    )
+  end
+
+  def url
+    params[:url]
+  end
+
+  def payload
+    params[:payload]
+  end
+end
+----
+
+=== Step 3: Create Specialized Workers
+
+Create `lib/workers.rb` with workers for each job type:
+
+[source,ruby]
+----
+require 'fractor'
+require 'net/http'
+require 'json'
+require_relative 'jobs'
+
+# Worker for email jobs
+class EmailWorker < Fractor::Worker
+  def process(work)
+    job = work
+
+    puts "  📧 Sending email to #{job.to}"
+    puts "     Subject: #{job.subject}"
+
+    # Simulate email sending
+    sleep(0.5 + rand * 0.5)
+
+    # Simulate occasional failures
+    if rand < 0.1
+      raise "SMTP connection failed"
+    end
+
+    Fractor::WorkResult.new(
+      result: {
+        job_id: job.job_id,
+        status: 'sent',
+        recipient: job.to,
+        sent_at: Time.now
+      },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :email_failed,
+      error_context: {
+        job_id: job.job_id,
+        recipient: job.to
+      },
+      work: work
+    )
+  end
+end
+
+# Worker for report generation jobs
+class ReportWorker < Fractor::Worker
+  def process(work)
+    job = work
+
+    puts "  📊 Generating #{job.report_type} report"
+    puts "     Date range: #{job.date_range}"
+
+    # Simulate report generation
+    sleep(1.0 + rand * 2.0)
+
+    report_file = "reports/#{job.job_id}_#{job.report_type}.pdf"
+
+    Fractor::WorkResult.new(
+      result: {
+        job_id: job.job_id,
+        status: 'completed',
+        report_file: report_file,
+        generated_at: Time.now
+      },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :report_failed,
+      error_context: {
+        job_id: job.job_id,
+        report_type: job.report_type
+      },
+      work: work
+    )
+  end
+end
+
+# Worker for data export jobs
+class ExportWorker < Fractor::Worker
+  def process(work)
+    job = work
+
+    puts "  💾 Exporting data to #{job.format}"
+    puts "     Filters: #{job.filters.inspect}"
+
+    # Simulate export
+    sleep(0.8 + rand * 1.2)
+
+    export_file = "exports/#{job.job_id}.#{job.format}"
+
+    Fractor::WorkResult.new(
+      result: {
+        job_id: job.job_id,
+        status: 'exported',
+        export_file: export_file,
+        exported_at: Time.now
+      },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :export_failed,
+      error_context: {
+        job_id: job.job_id,
+        format: job.format
+      },
+      work: work
+    )
+  end
+end
+
+# Worker for webhook notifications
+class WebhookWorker < Fractor::Worker
+  def process(work)
+    job = work
+
+    puts "  🔔 Sending webhook to #{job.url}"
+
+    # Simulate webhook call
+    sleep(0.3 + rand * 0.3)
+
+    # In production: send actual HTTP request
+    # uri = URI(job.url)
+    # response = Net::HTTP.post(uri, job.payload.to_json, 'Content-Type' => 'application/json')
+
+    Fractor::WorkResult.new(
+      result: {
+        job_id: job.job_id,
+        status: 'delivered',
+        url: job.url,
+        delivered_at: Time.now
+      },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      error_code: :webhook_failed,
+      error_context: {
+        job_id: job.job_id,
+        url: job.url
+      },
+      work: work
+    )
+  end
+end
+----
+
+=== Step 4: Build the Job Processor Service
+
+Create `lib/job_processor.rb`:
+
+[source,ruby]
+----
+require 'fractor'
+require_relative 'workers'
+require_relative 'jobs'
+
+class JobProcessorService
+  attr_reader :work_queue, :server, :stats
+
+  def initialize
+    @work_queue = Fractor::WorkQueue.new
+    @stats = {
+      jobs_submitted: 0,
+      jobs_completed: 0,
+      jobs_failed: 0,
+      started_at: Time.now
+    }
+
+    setup_server
+  end
+
+  def start
+    puts "=" * 60
+    puts "Job Processor Service Starting"
+    puts "=" * 60
+    puts "Started at: #{@stats[:started_at]}"
+    puts "Workers:"
+    puts "  - Email workers: 2"
+    puts "  - Report workers: 2"
+    puts "  - Export workers: 2"
+    puts "  - Webhook workers: 4"
+    puts ""
+    puts "Press Ctrl+C to gracefully shutdown"
+    puts "=" * 60
+    puts ""
+
+    # Start the server (blocks until shutdown)
+    @server.run
+  end
+
+  def submit_job(job)
+    @work_queue << job
+    @stats[:jobs_submitted] += 1
+    puts "✓ Submitted #{job}"
+  end
+
+  def stop
+    puts "\nInitiating graceful shutdown..."
+    @server.stop
+  end
+
+  private
+
+  def setup_server
+    @server = Fractor::ContinuousServer.new(
+      worker_pools: [
+        { worker_class: EmailWorker, num_workers: 2 },
+        { worker_class: ReportWorker, num_workers: 2 },
+        { worker_class: ExportWorker, num_workers: 2 },
+        { worker_class: WebhookWorker, num_workers: 4 }
+      ],
+      work_queue: @work_queue,
+      log_file: 'logs/job_processor.log'
+    )
+
+    # Handle successful job completions
+    @server.on_result do |result|
+      @stats[:jobs_completed] += 1
+      job_id = result.result[:job_id]
+      status = result.result[:status]
+
+      puts "  ✓ Job #{job_id} completed: #{status}"
+
+      # Send notification, update database, etc.
+      notify_job_completion(result)
+    end
+
+    # Handle job failures
+    @server.on_error do |error_result|
+      @stats[:jobs_failed] += 1
+      job_id = error_result.error_context[:job_id]
+      error_code = error_result.error_code
+
+      puts "  ✗ Job #{job_id} failed: #{error_code}"
+      puts "     Error: #{error_result.error.message}"
+
+      # Log error, send alert, retry logic, etc.
+      handle_job_failure(error_result)
+    end
+  end
+
+  def notify_job_completion(result)
+    # In production: send notification, update database, etc.
+    # Database.update_job_status(result.result[:job_id], 'completed')
+    # NotificationService.send(result.result)
+  end
+
+  def handle_job_failure(error_result)
+    # In production: log to error tracking service, implement retry logic
+    # ErrorTracker.notify(error_result)
+    # RetryQueue.add(error_result.work) if error_result.retriable?
+  end
+
+  def print_stats
+    uptime = Time.now - @stats[:started_at]
+
+    puts "\n" + "=" * 60
+    puts "Service Statistics"
+    puts "=" * 60
+    puts "Uptime:          #{format_duration(uptime)}"
+    puts "Jobs submitted:  #{@stats[:jobs_submitted]}"
+    puts "Jobs completed:  #{@stats[:jobs_completed]}"
+    puts "Jobs failed:     #{@stats[:jobs_failed]}"
+    puts "Queue depth:     #{@work_queue.size}"
+    puts "Success rate:    #{success_rate}%"
+    puts "=" * 60
+  end
+
+  def format_duration(seconds)
+    hours = (seconds / 3600).to_i
+    minutes = ((seconds % 3600) / 60).to_i
+    secs = (seconds % 60).to_i
+    "#{hours}h #{minutes}m #{secs}s"
+  end
+
+  def success_rate
+    total = @stats[:jobs_completed] + @stats[:jobs_failed]
+    return 0 if total == 0
+    ((@stats[:jobs_completed].to_f / total) * 100).round(2)
+  end
+end
+----
+
+=== Step 5: Create the Service Runner
+
+Create `run_service.rb`:
+
+[source,ruby]
+----
+require_relative 'lib/job_processor'
+
+# Create the service
+service = JobProcessorService.new
+
+# Handle shutdown signal
+trap('INT') do
+  service.stop
+end
+
+# Start the service in a background thread
+service_thread = Thread.new do
+  service.start
+end
+
+# Simulate job submissions (in production, this would be an API, queue, etc.)
+job_simulator = Thread.new do
+  sleep 2 # Wait for service to start
+
+  job_id = 1
+
+  loop do
+    sleep(1 + rand * 2) # Random interval between jobs
+
+    # Randomly submit different job types
+    case rand(4)
+    when 0
+      job = EmailJob.new(
+        job_id: job_id,
+        to: "user#{job_id}@example.com",
+        subject: "Test Email #{job_id}",
+        body: "This is a test email"
+      )
+    when 1
+      job = ReportJob.new(
+        job_id: job_id,
+        report_type: %w[sales inventory users].sample,
+        date_range: "#{Date.today - 7} to #{Date.today}"
+      )
+    when 2
+      job = ExportJob.new(
+        job_id: job_id,
+        format: %w[csv json xml].sample,
+        filters: { status: 'active' }
+      )
+    else
+      job = WebhookJob.new(
+        job_id: job_id,
+        url: "https://webhook.site/test",
+        payload: { event: 'test', id: job_id }
+      )
+    end
+
+    service.submit_job(job)
+    job_id += 1
+
+    # Simulate burst traffic occasionally
+    if rand < 0.2
+      5.times do
+        burst_job = EmailJob.new(
+          job_id: job_id,
+          to: "burst#{job_id}@example.com",
+          subject: "Burst Email",
+          body: "Burst traffic test"
+        )
+        service.submit_job(burst_job)
+        job_id += 1
+      end
+    end
+  end
+end
+
+# Wait for service thread
+service_thread.join
+
+# Cleanup
+job_simulator.kill
+puts "\nService stopped."
+----
+
+=== Step 6: Add Health Monitoring
+
+Create `lib/health_monitor.rb`:
+
+[source,ruby]
+----
+require 'fractor'
+
+class HealthMonitor
+  def initialize(service)
+    @service = service
+    @monitor = nil
+  end
+
+  def start
+    return if @monitor
+
+    @monitor = Fractor::PerformanceMonitor.new(
+      @service.server.supervisor,
+      sample_interval: 5.0
+    )
+
+    @monitor.start
+
+    # Start monitoring thread
+    @monitor_thread = Thread.new do
+      loop do
+        sleep 30 # Report every 30 seconds
+
+        print_health_report
+      end
+    end
+  end
+
+  def stop
+    @monitor&.stop
+    @monitor_thread&.kill
+  end
+
+  def print_health_report
+    snapshot = @monitor.snapshot
+
+    puts "\n" + "=" * 60
+    puts "Health Check"
+    puts "=" * 60
+    puts "Time:              #{Time.now}"
+    puts "Jobs processed:    #{snapshot[:jobs_processed]}"
+    puts "Jobs succeeded:    #{snapshot[:jobs_succeeded]}"
+    puts "Jobs failed:       #{snapshot[:jobs_failed]}"
+    puts "Throughput:        #{snapshot[:throughput].round(2)} jobs/sec"
+    puts "Queue depth:       #{snapshot[:queue_depth]}"
+    puts "Worker count:      #{snapshot[:worker_count]}"
+    puts "Active workers:    #{snapshot[:active_workers]}"
+    puts "Utilization:       #{snapshot[:worker_utilization].round(2)}%"
+    puts "Memory:            #{snapshot[:memory_mb].round(2)} MB"
+    puts "=" * 60
+  end
+
+  def export_metrics
+    @monitor.to_prometheus
+  end
+end
+----
+
+=== Step 7: Add HTTP Health Endpoint
+
+Create `lib/http_server.rb` for health checks:
+
+[source,ruby]
+----
+require 'webrick'
+require 'json'
+
+class HealthEndpoint
+  def initialize(service, monitor, port: 9090)
+    @service = service
+    @monitor = monitor
+    @port = port
+  end
+
+  def start
+    @server = WEBrick::HTTPServer.new(Port: @port)
+
+    # Health check endpoint
+    @server.mount_proc '/health' do |req, res|
+      res['Content-Type'] = 'application/json'
+      res.body = health_status.to_json
+    end
+
+    # Metrics endpoint (Prometheus format)
+    @server.mount_proc '/metrics' do |req, res|
+      res['Content-Type'] = 'text/plain; version=0.0.4'
+      res.body = @monitor.export_metrics
+    end
+
+    # Stats endpoint
+    @server.mount_proc '/stats' do |req, res|
+      res['Content-Type'] = 'application/json'
+      res.body = @service.stats.to_json
+    end
+
+    Thread.new { @server.start }
+
+    puts "Health endpoint: http://localhost:#{@port}/health"
+    puts "Metrics endpoint: http://localhost:#{@port}/metrics"
+    puts "Stats endpoint: http://localhost:#{@port}/stats"
+  end
+
+  def stop
+    @server&.shutdown
+  end
+
+  private
+
+  def health_status
+    {
+      status: 'healthy',
+      timestamp: Time.now.iso8601,
+      uptime: Time.now - @service.stats[:started_at],
+      queue_depth: @service.work_queue.size,
+      stats: @service.stats
+    }
+  end
+end
+----
+
+=== Step 8: Run the Service
+
+Run the service:
+
+[source,sh]
+----
+ruby run_service.rb
+----
+
+Expected output:
+
+[source]
+----
+============================================================
+Job Processor Service Starting
+============================================================
+Started at: 2024-01-15 10:30:00 +0000
+Workers:
+  - Email workers: 2
+  - Report workers: 2
+  - Export workers: 2
+  - Webhook workers: 4
+
+Press Ctrl+C to gracefully shutdown
+============================================================
+
+Health endpoint: http://localhost:9090/health
+Metrics endpoint: http://localhost:9090/metrics
+Stats endpoint: http://localhost:9090/stats
+
+✓ Submitted Job 1 (email)
+  📧 Sending email to user1@example.com
+     Subject: Test Email 1
+  ✓ Job 1 completed: sent
+
+✓ Submitted Job 2 (report)
+  📊 Generating sales report
+     Date range: 2024-01-08 to 2024-01-15
+  ✓ Job 2 completed: completed
+
+... (continues running)
+----
+
+In another terminal, check health:
+
+[source,sh]
+----
+curl http://localhost:9090/health
+----
+
+=== Step 9: Production Deployment
+
+==== Systemd Service File
+
+Create `/etc/systemd/system/job-processor.service`:
+
+[source,ini]
+----
+[Unit]
+Description=Job Processor Service
+After=network.target
+
+[Service]
+Type=simple
+User=appuser
+WorkingDirectory=/opt/job_processor
+ExecStart=/usr/bin/ruby /opt/job_processor/run_service.rb
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/job_processor/output.log
+StandardError=append:/var/log/job_processor/error.log
+
+# Graceful shutdown
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+----
+
+Start the service:
+
+[source,sh]
+----
+sudo systemctl daemon-reload
+sudo systemctl start job-processor
+sudo systemctl enable job-processor
+sudo systemctl status job-processor
+----
+
+==== Docker Deployment
+
+Create `Dockerfile`:
+
+[source,dockerfile]
+----
+FROM ruby:3.2-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY Gemfile* ./
+RUN bundle install
+
+# Copy application
+COPY . .
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Expose health check port
+EXPOSE 9090
+
+# Run service
+CMD ["ruby", "run_service.rb"]
+----
+
+Create `docker-compose.yml`:
+
+[source,yaml]
+----
+version: '3.8'
+
+services:
+  job-processor:
+    build: .
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    environment:
+      - FRACTOR_LOG_FILE=/app/logs/job_processor.log
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+----
+
+Run with Docker:
+
+[source,sh]
+----
+docker-compose up -d
+docker-compose logs -f
+----
+
+=== Best Practices Demonstrated
+
+==== 1. Graceful Shutdown
+
+ContinuousServer handles signals automatically:
+
+* **SIGTERM**: Graceful shutdown (completes in-progress work)
+* **SIGINT**: Interactive shutdown (Ctrl+C)
+* **SIGUSR1**: Status output (health check)
+
+==== 2. Health Monitoring
+
+Multiple monitoring approaches:
+
+* Built-in PerformanceMonitor
+* HTTP health endpoints
+* Prometheus metrics export
+
+==== 3. Error Handling
+
+Comprehensive error handling with callbacks:
+
+[source,ruby]
+----
+server.on_error do |error_result|
+  # Log, alert, retry, or add to DLQ
+end
+----
+
+==== 4. Thread Safety
+
+WorkQueue is thread-safe for concurrent job submission:
+
+[source,ruby]
+----
+# Safe from multiple threads
+threads.map do
+  Thread.new { work_queue << job }
+end
+----
+
+=== Production Considerations
+
+==== 1. Logging
+
+Configure structured logging:
+
+[source,ruby]
+----
+server = Fractor::ContinuousServer.new(
+  # ...
+  log_file: '/var/log/job_processor/app.log'
+)
+----
+
+==== 2. Metrics
+
+Export to monitoring systems:
+
+[source,ruby]
+----
+# Prometheus
+File.write('metrics.prom', monitor.to_prometheus)
+
+# JSON for custom systems
+File.write('metrics.json', monitor.to_json)
+----
+
+==== 3. Resource Limits
+
+Configure worker pools based on resources:
+
+[source,ruby]
+----
+worker_pools: [
+  { worker_class: CPUIntensiveWorker, num_workers: 4 },    # CPU-bound
+  { worker_class: IOBoundWorker, num_workers: 10 }         # I/O-bound
+]
+----
+
+=== Summary
+
+You've built a production-ready background job processor with:
+
+✓ Continuous operation with graceful shutdown
+✓ Multiple worker types for different jobs
+✓ Thread-safe job submission
+✓ Health monitoring and metrics
+✓ HTTP endpoints for monitoring
+✓ Production deployment configs
+
+**Key takeaways:**
+
+1. Use ContinuousServer for simplified long-running services
+2. Implement WorkQueue for dynamic job submission
+3. Add health monitoring with PerformanceMonitor
+4. Provide HTTP endpoints for external monitoring
+5. Use proper signal handling for graceful shutdown
+6. Deploy with systemd or Docker for reliability
+
+=== Next Steps
+
+* Try the link:complex-workflows[Implementing Complex Workflows] tutorial
+* Learn about link:../guides/workflows[Workflows] for job dependencies
+* Explore link:../reference/error-reporting[Error Reporting] for production monitoring
+* Check production patterns in link:../guides/continuous-mode[Continuous Mode]

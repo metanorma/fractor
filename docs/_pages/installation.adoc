@@ -1,0 +1,131 @@
+---
+layout: default
+title: Installation
+nav_order: 3
+---
+= Installation
+
+== System requirements
+
+Fractor requires Ruby 3.0 or later. It relies on Ractor, which is available in Ruby 3.0+.
+
+To check your Ruby version:
+
+[source,sh]
+----
+ruby --version
+----
+
+If you need to install or upgrade Ruby, see https://www.ruby-lang.org/en/downloads/.
+
+== Installation methods
+
+=== Using RubyGems
+
+Install Fractor directly from RubyGems:
+
+[source,sh]
+----
+gem install fractor
+----
+
+=== Using Bundler
+
+Add this line to your application's `Gemfile`:
+
+[source,ruby]
+----
+gem 'fractor'
+----
+
+Then execute:
+
+[source,sh]
+----
+bundle install
+----
+
+=== From source
+
+To install Fractor from source:
+
+[source,sh]
+----
+git clone https://github.com/metanorma/fractor.git
+cd fractor
+bundle install
+bundle exec rake install
+----
+
+== Verifying installation
+
+After installation, verify that Fractor is available:
+
+[source,ruby]
+----
+require 'fractor'
+puts Fractor::VERSION
+----
+
+== Troubleshooting
+
+=== Ruby version issues
+
+If you encounter errors about Ractor not being available, ensure you're using Ruby 3.0 or later:
+
+[source,sh]
+----
+ruby --version
+# Should show 3.0.0 or higher
+----
+
+=== Installation errors
+
+If you encounter permission errors during installation:
+
+[source,sh]
+----
+# Use --user-install flag
+gem install fractor --user-install
+
+# Or use a Ruby version manager like rbenv or rvm
+----
+
+=== Platform-specific issues
+
+==== macOS
+
+On macOS, you may need to install Ruby via Homebrew if the system Ruby is too old:
+
+[source,sh]
+----
+brew install ruby
+----
+
+==== Windows
+
+On Windows, use RubyInstaller (https://rubyinstaller.org/) to install Ruby 3.0+.
+
+==== Linux
+
+Most Linux distributions provide Ruby in their package managers:
+
+[source,sh]
+----
+# Ubuntu/Debian
+sudo apt-get install ruby-full
+
+# Fedora/CentOS
+sudo dnf install ruby
+
+# Arch Linux
+sudo pacman -S ruby
+----
+
+=== Getting help
+
+If you encounter issues not covered here:
+
+* Check the https://github.com/metanorma/fractor/issues[GitHub Issues]
+* Open a new issue with details about your environment and error messages
+* Join the discussion in the https://github.com/metanorma/fractor/discussions[GitHub Discussions]

@@ -1,0 +1,290 @@
+---
+layout: default
+title: Getting started
+nav_order: 2
+---
+= Getting started
+
+== Choosing your mode
+
+Fractor supports two operating modes, each optimized for different use cases:
+
+[cols="1,2,2",options="header"]
+|===
+|Mode |Best for |Key characteristics
+
+|Pipeline Mode
+|Batch processing, one-time jobs
+|Finite duration, predefined work, batch result collection
+
+|Continuous Mode
+|Long-running servers, streaming
+|Indefinite duration, dynamic work arrival, callback-based results
+|===
+
+=== When to use Pipeline Mode
+
+Choose Pipeline Mode when:
+
+* You have a complete dataset to process upfront
+* Processing has a clear start and end
+* You need all results aggregated after completion
+* The task is one-time or scheduled periodically
+
+Examples: File processing, data transformations, batch jobs, ETL pipelines
+
+=== When to use Continuous Mode
+
+Choose Continuous Mode when:
+
+* Work arrives over time from external sources
+* Your application runs as a long-lived server
+* You need to process items as they arrive
+* Results should be handled immediately via callbacks
+
+Examples: Chat servers, web servers, background job processors, event streams
+
+== Quick start: Pipeline Mode
+
+=== Step 1: Define your Work class
+
+[source,ruby]
+----
+require 'fractor'
+
+class MyWork < Fractor::Work
+  def initialize(value)
+    super({ value: value })
+  end
+
+  def value
+    input[:value]
+  end
+end
+----
+
+=== Step 2: Define your Worker class
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def process(work)
+    result = work.value * 2
+
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    Fractor::WorkResult.new(error: e.message, work: work)
+  end
+end
+----
+
+=== Step 3: Create and run the Supervisor
+
+The Supervisor class orchestrates the entire framework, managing worker Ractors, distributing work, and collecting results.
+
+[source,ruby]
+----
+# Create supervisor
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }  # Auto-detects number of workers
+  ]
+)
+
+# Add work items
+supervisor.add_work_items([
+  MyWork.new(1),
+  MyWork.new(2),
+  MyWork.new(3)
+])
+
+# Run processing
+supervisor.run
+
+# Access results
+puts "Results: #{supervisor.results.results.map(&:result)}"
+# => Results: [2, 4, 6]
+----
+
+==== Instance-based configuration (for multi-gem usage)
+
+If your application uses Fractor alongside other gems that also use Fractor, you can use instance-based configuration to avoid global state pollution:
+
+[source,ruby]
+----
+# Use instance-specific logger to avoid polluting global state
+my_logger = Logger.new(STDOUT)
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }
+  ],
+  logger: my_logger
+)
+
+# Enable tracing for this specific supervisor
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }
+  ],
+  tracer_enabled: true,
+  tracer_stream: File.open("trace.log", "w")
+)
+----
+
+==== Test isolation
+
+When testing Fractor code, use `Fractor.reset!` before each test to ensure clean state:
+
+[source,ruby]
+----
+RSpec.configure do |config|
+  config.before(:each) do
+    Fractor.reset!  # Resets global logger and tracer state
+  end
+end
+----
+
+That's it! You now have parallel processing working.
+
+== Quick start: Continuous Mode
+
+=== Step 1: Define Work and Worker classes
+
+[source,ruby]
+----
+require 'fractor'
+
+class MessageWork < Fractor::Work
+  def initialize(client_id, message)
+    super({ client_id: client_id, message: message })
+  end
+
+  def client_id
+    input[:client_id]
+  end
+
+  def message
+    input[:message]
+  end
+end
+
+class MessageWorker < Fractor::Worker
+  def process(work)
+    processed = "Echo: #{work.message}"
+
+    Fractor::WorkResult.new(
+      result: { client_id: work.client_id, response: processed },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(error: e.message, work: work)
+  end
+end
+----
+
+=== Step 2: Create WorkQueue and ContinuousServer
+
+[source,ruby]
+----
+# Create thread-safe work queue
+work_queue = Fractor::WorkQueue.new
+
+# Create continuous server with callbacks
+server = Fractor::ContinuousServer.new(
+  worker_pools: [
+    { worker_class: MessageWorker, num_workers: 4 }
+  ],
+  work_queue: work_queue
+)
+
+# Define result handlers
+server.on_result do |result|
+  puts "Response: #{result.result[:response]}"
+end
+
+server.on_error do |error_result|
+  puts "Error: #{error_result.error}"
+end
+----
+
+=== Step 3: Run server and add work
+
+[source,ruby]
+----
+# Start server in background
+server_thread = Thread.new { server.run }
+
+# Add work dynamically
+work_queue << MessageWork.new(1, "Hello")
+work_queue << MessageWork.new(2, "World")
+
+# Server runs indefinitely
+# Use Ctrl+C for graceful shutdown
+----
+
+== Common patterns
+
+=== Auto-detection vs explicit worker count
+
+[source,ruby]
+----
+# Auto-detect (recommended)
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }  # Uses Etc.nprocessors
+  ]
+)
+
+# Explicit count
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 4 }
+  ]
+)
+----
+
+=== Multiple worker pools
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: FastWorker, num_workers: 8 },
+    { worker_class: SlowWorker, num_workers: 2 }
+  ]
+)
+----
+
+=== Error handling
+
+[source,ruby]
+----
+class MyWorker < Fractor::Worker
+  def process(work)
+    # Validate input
+    if work.value < 0
+      return Fractor::WorkResult.new(
+        error: "Negative values not allowed",
+        work: work
+      )
+    end
+
+    # Process
+    result = work.value * 2
+    Fractor::WorkResult.new(result: result, work: work)
+  rescue => e
+    # Catch unexpected errors
+    Fractor::WorkResult.new(error: e.message, work: work)
+  end
+end
+----
+
+== Next steps
+
+* Learn about link:core-concepts.adoc[Core Concepts] - Component details and interactions
+* Read link:architecture.adoc[Architecture Guide] - System design and implementation
+* Read link:design-principles.adoc[Design Principles] - Philosophy and rationale
+* Explore link:../guides/pipeline-mode.adoc[Pipeline Mode] in detail
+* Explore link:../guides/continuous-mode.adoc[Continuous Mode] in detail
+* Try link:../features/workflows.adoc[Workflows] for complex processing
+* See link:../reference/examples.adoc[Examples] for real-world patterns

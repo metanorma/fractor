@@ -1,0 +1,384 @@
+---
+layout: default
+title: Your First Fractor Application
+nav_order: 3
+---
+
+== Your First Fractor Application
+:toc:
+:toclevels: 3
+
+This tutorial walks you through creating your first parallel processing application with Fractor from scratch. By the end, you'll understand the core components and how they work together.
+
+=== What we'll build
+
+We'll create a simple image processor that:
+
+* Takes a list of image filenames
+* Resizes each image in parallel
+* Collects the results
+* Handles errors gracefully
+
+=== Prerequisites
+
+* Ruby 3.0 or later installed
+* Fractor gem installed (`gem install fractor`)
+* Basic Ruby knowledge
+
+=== Step 1: Project setup
+
+Create a new directory for your project:
+
+[source,sh]
+----
+mkdir fractor-tutorial
+cd fractor-tutorial
+----
+
+Create a new file called `image_processor.rb`:
+
+[source,sh]
+----
+touch image_processor.rb
+----
+
+=== Step 2: Define your Work class
+
+The `Work` class represents a single unit of work. For our image processor, each work item contains information about one image to process.
+
+Open `image_processor.rb` and add:
+
+[source,ruby]
+----
+require 'fractor'
+
+# Represents a single image to be processed
+class ImageWork < Fractor::Work
+  def initialize(filename, width, height)
+    super({
+      filename: filename,
+      width: width,
+      height: height
+    })
+  end
+
+  # Convenience methods to access work data
+  def filename
+    input[:filename]
+  end
+
+  def width
+    input[:width]
+  end
+
+  def height
+    input[:height]
+  end
+
+  def to_s
+    "ImageWork(#{filename}, #{width}x#{height})"
+  end
+end
+----
+
+**Key points:**
+
+* Inherit from `Fractor::Work`
+* Call `super()` with a hash of input data
+* Add convenience methods for accessing data
+* The `input` hash is accessible across Ractor boundaries
+
+=== Step 3: Define your Worker class
+
+The `Worker` class contains the processing logic. Each worker runs in its own Ractor for true parallel execution.
+
+Add this to `image_processor.rb`:
+
+[source,ruby]
+----
+# Processes image resize operations
+class ImageWorker < Fractor::Worker
+  def process(work)
+    puts "Processing #{work.filename}..."
+
+    # Simulate image processing
+    # In real code, you'd use ImageMagick, mini_magick, etc.
+    sleep(rand(0.1..0.5))  # Simulate work
+
+    result_filename = "resized_#{work.filename}"
+
+    # Return successful result
+    Fractor::WorkResult.new(
+      result: {
+        original: work.filename,
+        resized: result_filename,
+        dimensions: "#{work.width}x#{work.height}"
+      },
+      work: work
+    )
+  rescue => e
+    # Return error result
+    Fractor::WorkResult.new(
+      error: e,
+      work: work,
+      error_code: :image_processing_failed,
+      error_context: {
+        filename: work.filename,
+        dimensions: "#{work.width}x#{work.height}"
+      }
+    )
+  end
+end
+----
+
+**Key points:**
+
+* Inherit from `Fractor::Worker`
+* Implement the `process(work)` method
+* Always return a `WorkResult` (success or error)
+* Use `rescue` to handle errors gracefully
+* Add error context for debugging
+
+=== Step 4: Create the Supervisor
+
+The Supervisor manages the worker pool and coordinates processing:
+
+[source,ruby]
+----
+# Create sample work items
+work_items = [
+  ImageWork.new("photo1.jpg", 800, 600),
+  ImageWork.new("photo2.jpg", 1024, 768),
+  ImageWork.new("photo3.jpg", 1920, 1080),
+  ImageWork.new("photo4.jpg", 640, 480),
+  ImageWork.new("photo5.jpg", 1280, 720)
+]
+
+# Create supervisor with ImageWorker pool
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    {
+      worker_class: ImageWorker
+      # num_workers is auto-detected based on CPU cores
+    }
+  ]
+)
+
+puts "Starting image processor with #{supervisor.worker_pools.first[:num_workers]} workers"
+
+# Add work items to process
+supervisor.add_work_items(work_items)
+
+# Run processing (blocks until complete)
+supervisor.run
+
+puts "\nProcessing complete!"
+----
+
+=== Step 5: Access results
+
+After processing completes, access the results:
+
+[source,ruby]
+----
+# Get successful results
+results = supervisor.results.results
+puts "\nSuccessfully processed #{results.size} images:"
+results.each do |work_result|
+  data = work_result.result
+  puts "  #{data[:original]} -> #{data[:resized]} (#{data[:dimensions]})"
+end
+
+# Get errors
+errors = supervisor.results.errors
+if errors.any?
+  puts "\nErrors encountered: #{errors.size}"
+  errors.each do |error_result|
+    puts "  #{error_result.work.filename}: #{error_result.error_info[:error_message]}"
+  end
+else
+  puts "\nNo errors!"
+end
+----
+
+=== Step 6: Run your application
+
+Save the file and run it:
+
+[source,sh]
+----
+ruby image_processor.rb
+----
+
+You should see output like:
+
+[source]
+----
+Starting image processor with 8 workers
+Processing photo1.jpg...
+Processing photo2.jpg...
+Processing photo3.jpg...
+Processing photo4.jpg...
+Processing photo5.jpg...
+
+Processing complete!
+
+Successfully processed 5 images:
+  photo1.jpg -> resized_photo1.jpg (800x600)
+  photo2.jpg -> resized_photo2.jpg (1024x768)
+  photo3.jpg -> resized_photo3.jpg (1920x1080)
+  photo4.jpg -> resized_photo4.jpg (640x480)
+  photo5.jpg -> resized_photo5.jpg (1280x720)
+
+No errors!
+----
+
+=== Complete code
+
+Here's the complete `image_processor.rb`:
+
+[source,ruby]
+----
+require 'fractor'
+
+class ImageWork < Fractor::Work
+  def initialize(filename, width, height)
+    super({
+      filename: filename,
+      width: width,
+      height: height
+    })
+  end
+
+  def filename
+    input[:filename]
+  end
+
+  def width
+    input[:width]
+  end
+
+  def height
+    input[:height]
+  end
+
+  def to_s
+    "ImageWork(#{filename}, #{width}x#{height})"
+  end
+end
+
+class ImageWorker < Fractor::Worker
+  def process(work)
+    puts "Processing #{work.filename}..."
+
+    sleep(rand(0.1..0.5))
+
+    result_filename = "resized_#{work.filename}"
+
+    Fractor::WorkResult.new(
+      result: {
+        original: work.filename,
+        resized: result_filename,
+        dimensions: "#{work.width}x#{work.height}"
+      },
+      work: work
+    )
+  rescue => e
+    Fractor::WorkResult.new(
+      error: e,
+      work: work,
+      error_code: :image_processing_failed,
+      error_context: {
+        filename: work.filename,
+        dimensions: "#{work.width}x#{work.height}"
+      }
+    )
+  end
+end
+
+# Create work items
+work_items = [
+  ImageWork.new("photo1.jpg", 800, 600),
+  ImageWork.new("photo2.jpg", 1024, 768),
+  ImageWork.new("photo3.jpg", 1920, 1080),
+  ImageWork.new("photo4.jpg", 640, 480),
+  ImageWork.new("photo5.jpg", 1280, 720)
+]
+
+# Create supervisor
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: ImageWorker }]
+)
+
+puts "Starting image processor with #{supervisor.worker_pools.first[:num_workers]} workers"
+
+# Process
+supervisor.add_work_items(work_items)
+supervisor.run
+
+puts "\nProcessing complete!"
+
+# Results
+results = supervisor.results.results
+puts "\nSuccessfully processed #{results.size} images:"
+results.each do |work_result|
+  data = work_result.result
+  puts "  #{data[:original]} -> #{data[:resized]} (#{data[:dimensions]})"
+end
+
+errors = supervisor.results.errors
+if errors.any?
+  puts "\nErrors encountered: #{errors.size}"
+  errors.each do |error_result|
+    puts "  #{error_result.work.filename}: #{error_result.error_info[:error_message]}"
+  end
+else
+  puts "\nNo errors!"
+end
+----
+
+=== What you learned
+
+Congratulations! You've built your first Fractor application. You now understand:
+
+* How to create `Work` classes to encapsulate input data
+* How to create `Worker` classes with processing logic
+* How to use the `Supervisor` to manage parallel execution
+* How to handle both successful results and errors
+* How Fractor automatically detects optimal worker count
+
+=== Next steps
+
+Now that you understand the basics:
+
+* Learn about link:../getting-started/[different processing modes] (Pipeline vs Continuous)
+* Explore link:../../guides/core-concepts/[core concepts] in depth
+* Try link:../../guides/workflows/[workflows] for complex processing graphs
+* See link:../../reference/examples/[real-world examples]
+
+=== Troubleshooting
+
+==== "Cannot load Ractor"
+
+Ensure you're using Ruby 3.0 or later:
+
+[source,sh]
+----
+ruby --version
+----
+
+==== Workers not running in parallel
+
+Check your CPU core count. Fractor creates one worker per core by default:
+
+[source,ruby]
+----
+require 'etc'
+puts "Available processors: #{Etc.nprocessors}"
+----
+
+==== Need more help?
+
+* Check the link:../../guides/core-concepts/[Core Concepts guide]
+* Browse link:../../reference/api/[API Reference]
+* Open an issue on https://github.com/metanorma/fractor/issues[GitHub]

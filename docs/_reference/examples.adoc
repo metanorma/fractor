@@ -1,0 +1,182 @@
+---
+layout: default
+title: Examples
+parent: Reference
+nav_order: 2
+---
+= Examples
+
+== Running a basic example
+
+. Install the gem as described in the link:installation.adoc[Installation] section.
+
+. Create a new Ruby file (e.g., `my_fractor_example.rb`) with your implementation:
++
+[source,ruby]
+----
+require 'fractor'
+
+# Define your Work class
+class MyWork < Fractor::Work
+  def to_s
+    "MyWork: #{@input}"
+  end
+end
+
+# Define your Worker class
+class MyWorker < Fractor::Worker
+  def process(work)
+    if work.input == 5
+      # Return a Fractor::WorkResult for errors
+      return Fractor::WorkResult.new(
+        error: "Error processing work #{work.input}",
+        work: work
+      )
+    end
+
+    calculated = work.input * 2
+    # Return a Fractor::WorkResult for success
+    Fractor::WorkResult.new(result: calculated, work: work)
+  end
+end
+
+# Create supervisor with a worker pool
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 2 }
+  ]
+)
+
+# Create Work objects
+work_items = (1..10).map { |i| MyWork.new(i) }
+
+# Add work items
+supervisor.add_work_items(work_items)
+
+# Run processing
+supervisor.run
+
+# Display results
+puts "Results: #{supervisor.results.results.map(&:result).join(', ')}"
+puts "Errors: #{supervisor.results.errors.map { |e| e.work.input }.join(', ')}"
+----
+
+. Run the example from your terminal:
++
+[source,sh]
+----
+ruby my_fractor_example.rb
+----
++
+You will see output showing Ractors starting, receiving work, processing it, and the final aggregated results, including any errors encountered. Press `Ctrl+C` during execution to test the graceful shutdown.
+
+== Examples by category
+
+Fractor includes comprehensive examples demonstrating various patterns and use cases:
+
+=== Pipeline mode examples
+
+For batch processing and one-time computations, see:
+
+* link:../guides/pipeline-mode.adoc#pipeline-mode-examples[Pipeline Mode Examples]
+  ** Simple example - Basic framework usage
+  ** Auto-detection example - Worker configuration
+  ** Hierarchical hasher - File chunking and parallel hashing
+  ** Multi-work type - Polymorphic workers
+  ** Pipeline processing - Multi-stage transformations
+  ** Producer/subscriber - Hierarchical processing
+  ** Scatter/gather - Task decomposition
+  ** Specialized workers - Domain-specific workers
+
+=== Continuous mode examples
+
+For long-running servers and stream processing, see:
+
+* link:../guides/continuous-mode.adoc#continuous-mode-examples[Continuous Mode Examples]
+  ** Plain socket implementation - Baseline comparison
+  ** Fractor-based chat server - Production-ready server with high-level primitives
+
+=== Workflow examples
+
+For complex data processing pipelines, see:
+
+* link:../features/workflows.adoc#workflow-examples[Workflow Examples]
+  ** Simple linear workflow - Sequential job pipeline
+  ** Fan-out workflow - Parallel job execution with aggregation
+  ** Conditional workflow - Runtime conditional execution
+  ** Simplified workflow - Reduced-boilerplate syntax
+  ** YAML workflows - Configuration-driven definitions
+  ** Builder API - Programmatic workflow construction
+
+=== Monitoring and analytics examples
+
+For production monitoring and error analysis, see:
+
+* link:../features/error-handling.adoc[Error Handling] - Comprehensive error analytics
+  ** Error aggregation by category and job
+  ** Real-time error handlers and alerts
+  ** Trending error detection
+  ** Multiple export formats (text, Prometheus, JSON)
+  ** Critical error highlighting
+
+The error reporting example demonstrates:
+
+[source,ruby]
+----
+# Set up error reporter
+reporter = Fractor::ErrorReporter.new
+
+# Register critical error alerts
+reporter.on_error do |work_result, job_name|
+  if work_result.critical?
+    PagerDuty.alert(work_result, job_name)
+  end
+end
+
+# Record work results
+reporter.record(work_result, job_name: "process_data")
+
+# Generate reports
+puts reporter.formatted_report
+File.write("metrics.txt", reporter.to_prometheus)
+----
+
+See `examples/error_reporting.rb` for the complete example.
+
+== Example directory structure
+
+All examples are located in the `examples/` directory of the gem repository:
+
+[source]
+----
+examples/
+├── simple/                    # Basic usage
+├── auto_detection/            # Worker auto-detection
+├── hierarchical_hasher/       # File processing
+├── multi_work_type/           # Multiple work types
+├── pipeline_processing/       # Multi-stage pipelines
+├── producer_subscriber/       # Hierarchical processing
+├── scatter_gather/            # Task decomposition
+├── specialized_workers/       # Domain-specific workers
+├── continuous_chat_server/    # Plain socket server
+├── continuous_chat_fractor/   # Fractor-based server
+└── workflow/                  # Workflow examples
+    ├── simple_linear/
+    ├── fan_out/
+    ├── conditional/
+    └── simplified/
+----
+
+Each example directory contains:
+
+* Source code implementing the pattern
+* `README.adoc` with detailed explanation
+* RSpec tests demonstrating usage
+
+== Next steps
+
+* Start with link:../pages/getting-started.adoc[Getting Started] for quick start guides
+* Learn about link:../guides/pipeline-mode.adoc[Pipeline Mode] for batch processing
+* Learn about link:../guides/continuous-mode.adoc[Continuous Mode] for long-running servers
+* Explore link:../features/workflows.adoc[Workflows] for complex processing graphs
+* Understand link:../pages/core-concepts.adoc[Core Concepts] of the framework

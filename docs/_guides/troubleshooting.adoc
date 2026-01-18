@@ -1,0 +1,353 @@
+# Troubleshooting Guide
+
+This guide helps you diagnose and resolve common issues when using Fractor.
+
+== General
+
+=== My application hangs and doesn't respond
+
+This is commonly caused by one of these issues:
+
+* **No work being processed**: Workers are waiting for work but the queue is empty
+* **Worker not returning results**: A worker's `process` method is stuck in an infinite loop
+* **Deadlock**: Multiple workers are waiting on each other
+
+.Diagnosing the issue
+----
+# Enable debug mode to see what's happening
+supervisor.debug!
+
+# Check the current state
+queue_info = supervisor.inspect_queue
+puts "Queue size: #{queue_info[:size]}"
+puts "Total added: #{queue_info[:total_added]}"
+
+# Check worker status
+status = supervisor.workers_status
+puts "Workers: #{status[:total]} total, #{status[:idle]} idle, #{status[:busy]} busy"
+----
+
+.Solutions
+
+* If queue size is 0 but total_added > 0, work was already processed
+* If workers are all idle but queue has items, check for worker errors
+* Use `supervisor.results.errors` to see any errors that occurred
+* Use `supervisor.error_reporter.summary` to get error statistics
+
+=== Workers are not processing all work items
+
+This usually happens when:
+
+* Workers encounter errors and don't continue
+* The work queue contains invalid work items
+* Worker pool configuration is incorrect
+
+.Check error results
+----
+# After supervisor.run finishes
+errors = supervisor.results.errors
+puts "Failed jobs: #{errors.size}"
+
+errors.each do |error_result|
+  puts "Work: #{error_result.work.inspect}"
+  puts "Error: #{error_result.error}"
+  puts "---"
+end
+----
+
+.Check error statistics
+----
+report = supervisor.error_reporter.summary
+puts report
+----
+
+=== I'm getting "worker_class must be a Class" error
+
+This error occurs when you pass a symbol or string instead of the actual class.
+
+.Wrong
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: :MyWorker }  # Wrong - symbol
+    # or
+    { worker_class: "MyWorker" } # Wrong - string
+  ]
+)
+----
+
+.Correct
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }  # Correct - actual class
+  ]
+)
+----
+
+=== I'm getting "must inherit from Fractor::Worker" error
+
+Your worker class must inherit from `Fractor::Worker`.
+
+.Wrong
+----
+class MyWorker
+  def process(work)
+    Fractor::WorkResult.new(result: work.input * 2, work: work)
+  end
+end
+----
+
+.Correct
+----
+class MyWorker < Fractor::Worker
+  def process(work)
+    Fractor::WorkResult.new(result: work.input * 2, work: work)
+  end
+end
+----
+
+=== I'm getting "must be an instance of Fractor::Work" error
+
+Work items must inherit from `Fractor::Work`.
+
+.Wrong
+----
+supervisor.add_work_item(42)  # Wrong - raw value
+supervisor.add_work_item({ value: 42 })  # Wrong - hash
+----
+
+.Correct
+----
+class MyWork < Fractor::Work
+  def initialize(value)
+    super({ value: value })
+  end
+end
+
+supervisor.add_work_item(MyWork.new(42))  # Correct
+----
+
+== Performance Issues
+
+=== Processing is slower than expected
+
+Performance issues can be caused by:
+
+* **Too few workers**: Increase worker count
+* **Heavy work items**: Break work into smaller chunks
+* **Worker bottleneck**: Profile worker code for inefficiencies
+
+.Enable performance monitoring
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 4 }
+  ],
+  enable_performance_monitoring: true
+)
+
+# Run workload...
+
+# Get performance metrics
+metrics = supervisor.performance_metrics
+puts "Throughput: #{metrics[:throughput]} jobs/sec"
+puts "Average latency: #{metrics[:average_latency]}s"
+puts "P95 latency: #{metrics[:p95_latency]}s"
+puts "Worker utilization: #{metrics[:worker_utilization]}"
+----
+
+=== Workers are underutilized
+
+If worker utilization is low, consider:
+
+* **Increasing batch size**: Send more work items
+* **Reducing worker count**: Match workers to workload
+* **Checking I/O**: Workers may be waiting on external resources
+
+.Check worker utilization
+----
+status = supervisor.workers_status
+busy_ratio = status[:busy].to_f / status[:total]
+puts "Worker utilization: #{(busy_ratio * 100).round(2)}%"
+----
+
+== Memory Issues
+
+=== Memory usage grows over time
+
+This can be caused by:
+
+* **Large work items**: Work items are retained in results
+* **Result accumulation**: Clear results periodically
+* **Memory leaks in workers**: Profile worker code
+
+.Monitor memory usage
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }
+  ],
+  enable_performance_monitoring: true
+)
+
+# Check metrics
+metrics = supervisor.performance_metrics
+puts "Memory: #{metrics[:memory_mb]} MB"
+----
+
+.Clear accumulated results
+----
+# Periodically clear results if you don't need them
+supervisor.results.clear
+supervisor.error_reporter.reset
+----
+
+== Continuous Mode Issues
+
+=== Continuous server doesn't process new work
+
+In continuous mode, work sources must be registered.
+
+.Register a work source
+----
+server = Fractor::ContinuousServer.new(
+  worker_pools: [
+    { worker_class: MyWorker }
+  ],
+  continuous_mode: true
+)
+
+# Register a callback that provides new work
+server.register_work_source do
+  # Return new work items or nil/empty array when no work available
+  get_work_from_external_source
+end
+
+server.run
+----
+
+=== Signals aren't being handled correctly
+
+Signal handling varies by platform.
+
+.Platform-specific signals
+----
+# Unix/Linux/macOS: Send SIGUSR1 for status
+kill -USR1 <pid>
+
+# Windows: Try SIGBREAK (Ctrl+Break)
+
+# Both: SIGINT (Ctrl+C) and SIGTERM work everywhere
+----
+
+== Workflow Issues
+
+=== Workflow validation fails
+
+Workflow validation catches configuration errors early.
+
+.Common workflow errors
+----
+# Missing worker class
+Fractor::Workflow.define("my-workflow") do
+  job "process" do
+    # Missing: runs MyWorker
+  end
+end
+
+# Missing job dependencies
+Fractor::Workflow.define("my-workflow") do
+  job "transform" do
+    runs TransformWorker
+    needs "prepare"  # "prepare" job doesn't exist
+  end
+end
+----
+
+.Use the validation error message
+----
+The error message includes:
+* Which job has the problem
+* What's missing or misconfigured
+* Example of correct usage
+----
+
+=== Jobs run in wrong order
+
+Workflow jobs run in dependency order, not declaration order.
+
+.Specify dependencies explicitly
+----
+Fractor::Workflow.define("my-workflow") do
+  job "transform" do
+    runs TransformWorker
+    needs "prepare"  # Will run after "prepare" job
+  end
+
+  job "prepare" do
+    runs PrepareWorker
+  end
+
+  job "save" do
+    runs SaveWorker
+    needs "transform"  # Will run last
+  end
+end
+----
+
+== Error Handling
+
+=== Errors are silently ignored
+
+By default, errors are recorded but don't stop processing.
+
+.Enable error callbacks
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker }
+  ]
+)
+
+# Register error callback
+supervisor.on_error do |error_result, worker_name, worker_class|
+  puts "Error in #{worker_class}: #{error_result.error}"
+  puts "Work item: #{error_result.work.inspect}"
+end
+
+supervisor.run
+----
+
+=== Retry logic isn't working
+
+Retry strategies must be configured correctly.
+
+.Configure retry strategy
+----
+Fractor::Workflow.define("my-workflow") do
+  job "flaky-job" do
+    runs FlakyWorker
+    retry_strategy :exponential_backoff, max_attempts: 3, base_delay: 0.1
+  end
+end
+----
+
+== Getting Help
+
+If you're still stuck:
+
+* **Enable debug mode**: `supervisor.debug!` or `FRACTOR_DEBUG=1`
+* **Check error reports**: `supervisor.error_reporter.summary`
+* **Inspect the queue**: `supervisor.inspect_queue`
+* **Check worker status**: `supervisor.workers_status`
+* **Enable performance monitoring**: `enable_performance_monitoring: true`
+* **Review logs**: Check for warning messages and error context
+
+.Report issues with:
+
+* Error messages and stack traces
+* Worker and Work class definitions
+* Supervisor configuration
+* Debug output with `FRACTOR_DEBUG=1`
+* Performance metrics if relevant

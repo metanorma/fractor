@@ -1,0 +1,16 @@
+# Ignore localhost links (used in examples)
+http://localhost
+https://localhost
+
+# Ignore relative links (checked by Jekyll)
+file://
+
+# Ignore example domains
+https://api.example.com
+http://example.com
+https://example.com
+
+# Ignore GitHub commit/issue placeholders
+https://github.com/*/*/issues/#
+https://github.com/*/*/pull/#
+https://github.com/*/*/commit/#

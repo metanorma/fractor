@@ -1,0 +1,590 @@
+---
+layout: default
+title: Monitoring
+parent: Features
+nav_order: 4
+---
+= Monitoring
+
+Fractor provides comprehensive monitoring capabilities for tracking performance, analyzing errors, and benchmarking your parallel processing applications.
+
+== Overview
+
+The monitoring system helps you:
+
+* **Track Performance Metrics** in real-time
+* **Analyze Error Patterns** across your application
+* **Benchmark Workers** and optimize resource usage
+* **Export Metrics** to monitoring systems
+* **Respond to Issues** proactively
+
+== Performance Monitoring
+
+=== Purpose
+
+The `PerformanceMonitor` class tracks real-time metrics for supervisors and workflows, providing insights into throughput, latency, worker utilization, and system health.
+
+=== Quick Start
+
+[source,ruby]
+----
+require 'fractor/performance_monitor'
+
+# Create a supervisor
+supervisor = Fractor::Supervisor.new(
+  worker_class: DataProcessor,
+  num_workers: 4,
+  max_queue_size: 100
+)
+
+# Attach performance monitor
+monitor = Fractor::PerformanceMonitor.new(
+  supervisor,
+  sample_interval: 1.0  # Sample metrics every second
+)
+
+# Start monitoring
+monitor.start
+
+# Add work to supervisor
+100.times do |i|
+  supervisor.add_work(Fractor::Work.new(payload: { id: i }))
+end
+
+# Wait for completion
+sleep 5
+
+# Get current snapshot
+snapshot = monitor.snapshot
+puts "Jobs processed: #{snapshot[:jobs_processed]}"
+puts "Average latency: #{snapshot[:average_latency]}ms"
+puts "Worker utilization: #{snapshot[:worker_utilization]}%"
+
+# Generate human-readable report
+puts monitor.report
+
+# Stop monitoring
+monitor.stop
+----
+
+=== Available Metrics
+
+[cols="1,3"]
+|===
+|Metric |Description
+
+|`jobs_processed`
+|Total number of jobs completed
+
+|`jobs_succeeded`
+|Number of jobs that completed successfully
+
+|`jobs_failed`
+|Number of jobs that failed
+
+|`average_latency`
+|Mean job execution time in milliseconds
+
+|`p50_latency`
+|50th percentile latency (median) in milliseconds
+
+|`p95_latency`
+|95th percentile latency in milliseconds
+
+|`p99_latency`
+|99th percentile latency in milliseconds
+
+|`throughput`
+|Jobs processed per second
+
+|`queue_depth`
+|Current number of pending jobs in queue
+
+|`worker_count`
+|Total number of workers
+
+|`active_workers`
+|Number of workers currently processing jobs
+
+|`worker_utilization`
+|Percentage of workers actively processing (0-100)
+
+|`memory_mb`
+|Current process memory usage in megabytes
+
+|`uptime`
+|Monitor uptime in seconds
+|===
+
+=== Export Formats
+
+==== Human-Readable Report
+
+[source,ruby]
+----
+puts monitor.report
+
+# Output:
+# === Performance Report ===
+# Uptime: 10.5s
+#
+# Jobs:
+#   Total:     150
+#   Succeeded: 145
+#   Failed:    5
+#   Success Rate: 96.67%
+#
+# Latency (ms):
+#   Average: 23.5
+#   p50:     20.0
+#   p95:     45.0
+#   p99:     67.0
+#
+# Throughput:
+#   Current: 14.3 jobs/sec
+#
+# Queue:
+#   Depth: 25 jobs
+#
+# Workers:
+#   Total:       4
+#   Active:      3
+#   Utilization: 75.00%
+#
+# Memory:
+#   Current: 127.5 MB
+----
+
+==== JSON Export
+
+[source,ruby]
+----
+json_data = monitor.to_json
+puts json_data
+
+# Output:
+# {
+#   "jobs_processed": 150,
+#   "jobs_succeeded": 145,
+#   "jobs_failed": 5,
+#   "average_latency": 23.5,
+#   "p50_latency": 20.0,
+#   "p95_latency": 45.0,
+#   "p99_latency": 67.0,
+#   "throughput": 14.3,
+#   "queue_depth": 25,
+#   "worker_count": 4,
+#   "active_workers": 3,
+#   "worker_utilization": 75.0,
+#   "memory_mb": 127.5,
+#   "uptime": 10.5
+# }
+----
+
+==== Prometheus Format
+
+[source,ruby]
+----
+puts monitor.to_prometheus
+
+# Output:
+# # HELP fractor_jobs_processed Total number of jobs processed
+# # TYPE fractor_jobs_processed counter
+# fractor_jobs_processed 150
+#
+# # HELP fractor_jobs_succeeded Number of jobs that succeeded
+# # TYPE fractor_jobs_succeeded counter
+# fractor_jobs_succeeded 145
+#
+# # HELP fractor_jobs_failed Number of jobs that failed
+# # TYPE fractor_jobs_failed counter
+# fractor_jobs_failed 5
+#
+# # HELP fractor_latency_average Average job latency in milliseconds
+# # TYPE fractor_latency_average gauge
+# fractor_latency_average 23.5
+# ...
+----
+
+=== Integration with Prometheus
+
+[source,ruby]
+----
+require 'webrick'
+
+# Create monitor
+monitor = Fractor::PerformanceMonitor.new(supervisor)
+monitor.start
+
+# Create metrics endpoint
+server = WEBrick::HTTPServer.new(Port: 9090)
+server.mount_proc '/metrics' do |req, res|
+  res['Content-Type'] = 'text/plain; version=0.0.4'
+  res.body = monitor.to_prometheus
+end
+
+# Start server
+trap('INT') { server.shutdown }
+server.start
+----
+
+Configure Prometheus to scrape the endpoint:
+
+[source,yaml]
+----
+scrape_configs:
+  - job_name: 'fractor'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s
+----
+
+== Error Reporting
+
+=== Purpose
+
+The `ErrorReporter` class provides comprehensive error analytics, tracking error patterns, detecting trends, and enabling proactive issue resolution.
+
+=== Quick Start
+
+[source,ruby]
+----
+require 'fractor/error_reporter'
+
+# Create an error reporter
+reporter = Fractor::ErrorReporter.new
+
+# Register critical error alerts
+reporter.on_error do |work_result, job_name|
+  if work_result.critical?
+    PagerDuty.alert(work_result, job_name)
+  end
+end
+
+# Record work results
+reporter.record(work_result, job_name: "process_data")
+
+# Generate reports
+puts reporter.formatted_report
+File.write("metrics.txt", reporter.to_prometheus)
+----
+
+=== Error Categorization
+
+Fractor automatically categorizes errors:
+
+[cols="1,2,3"]
+|===
+|Category |Error Types |Description
+
+|`:validation`
+|`ArgumentError`, `TypeError`
+|Input validation errors
+
+|`:timeout`
+|`Timeout::Error`
+|Operation timeout errors
+
+|`:network`
+|`SocketError`, `Errno::ECONNREFUSED`, `Errno::ETIMEDOUT`
+|Network-related errors
+
+|`:resource`
+|`Errno::ENOMEM`, `Errno::ENOSPC`
+|Resource exhaustion errors
+
+|`:system`
+|`SystemCallError`, `SystemStackError`
+|System-level errors
+
+|`:business`
+|Custom business logic errors
+|Application-specific errors
+
+|`:unknown`
+|Other errors
+|Uncategorized errors
+|===
+
+=== Error Severity Levels
+
+[cols="1,3"]
+|===
+|Severity |Description
+
+|`:critical`
+|System-breaking errors requiring immediate attention
+
+|`:error`
+|Standard errors that prevent operation completion
+
+|`:warning`
+|Non-fatal issues that may need investigation
+
+|`:info`
+|Informational messages
+|===
+
+=== Real-Time Error Handlers
+
+[source,ruby]
+----
+reporter.on_error do |work_result, job_name|
+  case work_result.error_severity
+  when :critical
+    PagerDuty.alert(work_result, job_name)
+  when :error
+    Slack.notify(work_result, job_name)
+  when :warning
+    Logger.warn("#{job_name}: #{work_result.error.message}")
+  end
+end
+----
+
+=== Trend Detection
+
+[source,ruby]
+----
+# Get all trending errors
+trending = reporter.trending_errors
+
+trending.each do |trend|
+  category = trend[:category]
+  stats = trend[:stats]
+
+  puts "⚠️  #{category} errors are increasing!"
+  puts "   Count: #{stats[:total_count]}"
+  puts "   Rate: #{stats[:error_rate]}/s"
+end
+----
+
+== Benchmarking
+
+=== Worker Performance Benchmarking
+
+[source,ruby]
+----
+require 'benchmark'
+
+# Benchmark different worker configurations
+Benchmark.bm(20) do |x|
+  x.report("2 workers:") do
+    supervisor = Fractor::Supervisor.new(
+      worker_pools: [{ worker_class: MyWorker, num_workers: 2 }]
+    )
+    supervisor.add_work_items(work_items)
+    supervisor.run
+  end
+
+  x.report("4 workers:") do
+    supervisor = Fractor::Supervisor.new(
+      worker_pools: [{ worker_class: MyWorker, num_workers: 4 }]
+    )
+    supervisor.add_work_items(work_items)
+    supervisor.run
+  end
+
+  x.report("8 workers:") do
+    supervisor = Fractor::Supervisor.new(
+      worker_pools: [{ worker_class: MyWorker, num_workers: 8 }]
+    )
+    supervisor.add_work_items(work_items)
+    supervisor.run
+  end
+end
+----
+
+=== Memory Profiling
+
+[source,ruby]
+----
+require 'memory_profiler'
+
+report = MemoryProfiler.report do
+  supervisor = Fractor::Supervisor.new(
+    worker_pools: [{ worker_class: MyWorker, num_workers: 4 }]
+  )
+  supervisor.add_work_items(work_items)
+  supervisor.run
+end
+
+report.pretty_print
+----
+
+=== Queue Performance Analysis
+
+[source,ruby]
+----
+# Monitor queue depth over time
+queue_depths = []
+
+Thread.new do
+  loop do
+    queue_depths << supervisor.work_queue.size
+    sleep 0.1
+  end
+end
+
+supervisor.run
+
+# Analyze queue behavior
+puts "Max queue depth: #{queue_depths.max}"
+puts "Average queue depth: #{queue_depths.sum / queue_depths.size}"
+puts "Queue was empty: #{queue_depths.count(0)} times"
+----
+
+== Best Practices
+
+=== Set Appropriate Sample Intervals
+
+[source,ruby]
+----
+# High-frequency monitoring (testing)
+monitor = Fractor::PerformanceMonitor.new(supervisor, sample_interval: 0.1)
+
+# Normal monitoring (production)
+monitor = Fractor::PerformanceMonitor.new(supervisor, sample_interval: 1.0)
+
+# Low-frequency monitoring (low overhead)
+monitor = Fractor::PerformanceMonitor.new(supervisor, sample_interval: 5.0)
+----
+
+=== Monitor Critical Metrics
+
+[source,ruby]
+----
+# Set up alerts for critical thresholds
+Thread.new do
+  loop do
+    sleep 60
+
+    snapshot = monitor.snapshot
+
+    # Alert on high error rate
+    if snapshot[:jobs_failed].to_f / snapshot[:jobs_processed] > 0.1
+      AlertService.notify("High error rate detected!")
+    end
+
+    # Alert on low throughput
+    if snapshot[:throughput] < 10.0
+      AlertService.notify("Low throughput detected!")
+    end
+
+    # Alert on high latency
+    if snapshot[:p95_latency] > 1000.0
+      AlertService.notify("High latency detected!")
+    end
+  end
+end
+----
+
+=== Regular Data Cleanup
+
+[source,ruby]
+----
+# Reset statistics periodically to prevent unbounded growth
+Thread.new do
+  loop do
+    sleep 86400 # 24 hours
+
+    # Archive current stats
+    File.write(
+      "metrics_#{Date.today}.json",
+      monitor.to_json
+    )
+
+    # Reset for new day
+    reporter.reset
+    Logger.info("Monitoring statistics reset")
+  end
+end
+----
+
+=== Use Structured Logging
+
+[source,ruby]
+----
+require 'json'
+require 'logger'
+
+logger = Logger.new(STDOUT)
+logger.formatter = proc do |severity, datetime, progname, msg|
+  JSON.generate({
+    timestamp: datetime.iso8601,
+    severity: severity,
+    message: msg,
+    metrics: monitor.snapshot
+  }) + "\n"
+end
+
+logger.info("Processing batch")
+----
+
+== Production Integration
+
+=== With Supervisors
+
+[source,ruby]
+----
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker, num_workers: 4 }]
+)
+
+monitor = Fractor::PerformanceMonitor.new(supervisor)
+reporter = Fractor::ErrorReporter.new
+
+monitor.start
+
+# Record all results
+supervisor.on_result do |result|
+  reporter.record(result)
+end
+
+supervisor.run
+monitor.stop
+
+# Generate final reports
+puts monitor.report
+puts reporter.formatted_report
+----
+
+=== With Workflows
+
+[source,ruby]
+----
+class MonitoredWorkflow < Fractor::Workflow
+  workflow "monitored" do
+    job "process" do
+      runs_with ProcessWorker
+
+      on_error do |error, context|
+        reporter.record(
+          Fractor::WorkResult.new(
+            error: error,
+            error_context: context
+          ),
+          job_name: "process"
+        )
+      end
+    end
+  end
+end
+
+workflow = MonitoredWorkflow.new(input_data)
+supervisor = workflow.supervisor
+
+monitor = Fractor::PerformanceMonitor.new(supervisor)
+monitor.start
+
+result = workflow.execute
+monitor.stop
+
+puts monitor.report
+----
+
+== See Also
+
+* link:error-handling.adoc[Error Handling] - Comprehensive error analytics
+* link:../guides/pipeline-mode.adoc[Pipeline Mode] - Batch processing patterns
+* link:../guides/continuous-mode.adoc[Continuous Mode] - Long-running servers
+* link:../reference/api.adoc[API Reference] - Complete API documentation

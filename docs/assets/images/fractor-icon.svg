@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
+  <!-- Define gradients -->
+  <defs>
+    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#CC342D;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E74C3C;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#E67E22;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F39C12;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradient3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#C0392B;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E74C3C;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Icon - Parallel flow paths representing Ractors -->
+  <g id="icon">
+    <!-- Top path -->
+    <path d="M 10 15 L 30 15 L 35 20 L 50 20 L 55 15 L 70 15"
+          stroke="url(#gradient1)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="10" cy="15" r="3" fill="#CC342D"/>
+    <circle cx="70" cy="15" r="3" fill="#E74C3C"/>
+
+    <!-- Middle path -->
+    <path d="M 10 40 L 25 40 L 30 35 L 45 35 L 50 40 L 70 40"
+          stroke="url(#gradient2)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="10" cy="40" r="3" fill="#E67E22"/>
+    <circle cx="70" cy="40" r="3" fill="#F39C12"/>
+
+    <!-- Bottom path -->
+    <path d="M 10 65 L 30 65 L 35 60 L 50 60 L 55 65 L 70 65"
+          stroke="url(#gradient3)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="10" cy="65" r="3" fill="#C0392B"/>
+    <circle cx="70" cy="65" r="3" fill="#E74C3C"/>
+
+    <!-- Connection points (representing Ractor communication) -->
+    <line x1="40" y1="20" x2="40" y2="35" stroke="#CC342D" stroke-width="1.5" opacity="0.6"/>
+    <line x1="40" y1="40" x2="40" y2="60" stroke="#E67E22" stroke-width="1.5" opacity="0.6"/>
+    <circle cx="40" cy="27.5" r="2" fill="#CC342D" opacity="0.7"/>
+    <circle cx="40" cy="50" r="2" fill="#E67E22" opacity="0.7"/>
+
+    <!-- Arrow indicators -->
+    <polygon points="67,13 70,15 67,17" fill="#E74C3C"/>
+    <polygon points="67,38 70,40 67,42" fill="#F39C12"/>
+    <polygon points="67,63 70,65 67,67" fill="#E74C3C"/>
+  </g>
+</svg>

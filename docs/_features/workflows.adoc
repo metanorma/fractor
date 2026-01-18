@@ -1,0 +1,1236 @@
+---
+layout: default
+title: Workflows
+parent: Features
+nav_order: 1
+---
+= Workflows
+
+Fractor provides a declarative workflow system for defining complex data processing pipelines.
+
+== Overview
+
+Workflow features:
+
+* GitHub Actions-style declarative DSL
+* Type-safe data flow between jobs
+* Dependency management and topological sorting
+* Multiple execution patterns (linear, fan-out/fan-in, conditional)
+* Simplified syntax with smart defaults
+* Structured logging and execution tracing
+* Workflow visualization (Mermaid, DOT, ASCII)
+
+== Workflow definition approaches
+
+Fractor supports three complementary ways to define workflows:
+
+=== Ruby DSL (recommended)
+
+Define workflows directly in Ruby code:
+
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "my-workflow" do
+    input_type InputData
+    output_type OutputData
+
+    job "process" do
+      runs_with ProcessWorker
+      inputs_from_workflow
+    end
+
+    job "finalize" do
+      needs "process"
+      runs_with FinalizeWorker
+      inputs_from_job "process"
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+----
+
+=== Simplified syntax
+
+70% code reduction using smart defaults:
+
+[source,ruby]
+----
+# Using Workflow.define
+workflow = Fractor::Workflow.define("simple") do
+  job :step1, Step1Worker
+  job :step2, Step2Worker, needs: :step1
+  job :step3, Step3Worker, needs: :step2
+end
+
+# Using Chain API for linear workflows
+workflow = Fractor::Workflow.chain("linear")
+  .step(:step1, Step1Worker)
+  .step(:step2, Step2Worker)
+  .step(:step3, Step3Worker)
+  .build
+----
+
+=== YAML workflows
+
+Configuration-driven workflow definitions.
+
+See link:../examples/workflow/README.adoc[Workflow Examples] for complete documentation.
+
+== Workflow features
+
+=== Error handling and resilience
+
+Fractor workflows support production-ready error handling with automatic retry logic, error handlers, and fallback strategies.
+
+==== Retry with backoff strategies
+
+Jobs can automatically retry on failure with configurable backoff strategies:
+
+[source,ruby]
+----
+job "fetch_api_data" do
+  runs_with ApiWorker
+  inputs_from_workflow
+
+  # Retry up to 3 times with exponential backoff
+  retry_on_error max_attempts: 3,
+                 backoff: :exponential,
+                 initial_delay: 1,
+                 max_delay: 60
+end
+----
+
+Available backoff strategies:
+
+* *Exponential* (default): Delays increase exponentially (1s → 2s → 4s → 8s)
+* *Linear*: Delays increase linearly (1s → 2s → 3s → 4s)
+* *Constant*: Fixed delay between retries (2s → 2s → 2s)
+* *None*: No retry (fail immediately)
+
+Configuration options:
+
+[cols="1,1,3"]
+|===
+|Option |Default |Description
+
+|`max_attempts`
+|3
+|Maximum number of attempts (including initial attempt)
+
+|`backoff`
+|`:exponential`
+|Retry strategy (`:exponential`, `:linear`, `:constant`, `:none`)
+
+|`initial_delay`
+|1
+|Initial delay in seconds
+
+|`max_delay`
+|nil
+|Maximum delay cap in seconds
+
+|`increment`
+|1
+|(Linear only) Delay increment per attempt
+
+|`multiplier`
+|2
+|(Exponential only) Delay multiplier per attempt
+
+|`delay`
+|1
+|(Constant only) Fixed delay in seconds
+
+|`retryable_errors`
+|`[StandardError]`
+|List of error classes that trigger retry
+|===
+
+==== Error handlers
+
+Add custom error handling logic to jobs:
+
+[source,ruby]
+----
+job "process_payment" do
+  runs_with PaymentWorker
+
+  on_error do |error, context|
+    # Log to monitoring service
+    ErrorTracker.notify(error, context: context.to_h)
+
+    # Send alert
+    AlertService.send_alert("Payment failed: #{error.message}")
+
+    # Update metrics
+    Metrics.increment("payment_errors")
+  end
+end
+----
+
+Error handlers receive:
+
+* `error`: The exception that occurred
+* `context`: The workflow execution context
+
+Multiple error handlers can be registered and will execute in order.
+
+==== Fallback jobs
+
+Provide alternative execution paths when retries are exhausted:
+
+[source,ruby]
+----
+job "fetch_live_data" do
+  runs_with LiveDataWorker
+  retry_on_error max_attempts: 3, backoff: :exponential
+  fallback_to "fetch_cached_data"
+end
+
+job "fetch_cached_data" do
+  runs_with CachedDataWorker
+  inputs_from_workflow
+end
+----
+
+If `fetch_live_data` fails after all retry attempts, the workflow automatically executes `fetch_cached_data` instead.
+
+==== Selective error retry
+
+Only retry specific error types:
+
+[source,ruby]
+----
+job "api_call" do
+  runs_with ApiWorker
+  retry_on_error max_attempts: 5,
+                 retryable_errors: [Net::HTTPRetriableError, Timeout::Error]
+end
+----
+
+Errors not in the `retryable_errors` list will fail immediately without retry.
+
+==== Complete error handling example
+
+[source,ruby]
+----
+class ResilientWorkflow < Fractor::Workflow
+  workflow "resilient-api-workflow" do
+    job "fetch_data" do
+      runs_with ExternalApiWorker
+      inputs_from_workflow
+
+      # Retry configuration
+      retry_on_error max_attempts: 5,
+                     backoff: :exponential,
+                     initial_delay: 1,
+                     max_delay: 30,
+                     retryable_errors: [Net::HTTPRetriableError, Timeout::Error]
+
+      # Error handler
+      on_error do |error, context|
+        ErrorLogger.log(
+          job: "fetch_data",
+          error: error.class.name,
+          message: error.message,
+          attempt: context.metadata[:attempt]
+        )
+      end
+
+      # Fallback strategy
+      fallback_to "use_cached_data"
+    end
+
+    job "use_cached_data" do
+      runs_with CachedDataWorker
+      inputs_from_workflow
+    end
+
+    job "process" do
+      runs_with ProcessWorker
+      needs "fetch_data"
+      outputs_to_workflow
+    end
+  end
+end
+----
+
+See link:../examples/workflow/retry/README.adoc[Retry Workflow Example] for complete examples of retry patterns.
+
+==== Circuit breaker
+
+Protect workflows from cascading failures with circuit breaker pattern:
+
+[source,ruby]
+----
+job "external_api_call" do
+  runs_with ExternalApiWorker
+  inputs_from_workflow
+
+  # Circuit breaker configuration
+  circuit_breaker threshold: 5,      # Open after 5 failures
+                  timeout: 60,       # Stay open for 60 seconds
+                  half_open_calls: 3 # Test with 3 calls before closing
+
+  # Use fallback when circuit is open
+  fallback_to "use_cached_data"
+
+  on_error do |error, context|
+    if error.is_a?(Fractor::Workflow::CircuitOpenError)
+      Logger.warn("Circuit breaker open for #{context.job_id}")
+    end
+  end
+end
+
+job "use_cached_data" do
+  runs_with CachedDataWorker
+  inputs_from_workflow
+  outputs_to_workflow
+end
+----
+
+The circuit breaker has three states:
+
+* *Closed*: Normal operation, requests pass through
+* *Open*: Failure threshold exceeded, requests fail fast without calling the service
+* *Half-Open*: Testing if service recovered with limited test calls
+
+Configuration options:
+
+[cols="1,1,3"]
+|===
+|Option |Default |Description
+
+|`threshold`
+|5
+|Number of failures before opening circuit
+
+|`timeout`
+|60
+|Seconds to wait in open state before testing recovery
+
+|`half_open_calls`
+|3
+|Number of successful test calls needed to close circuit
+
+|`shared_key`
+|`nil`
+|Optional key for sharing circuit breaker across jobs
+|===
+
+===== Shared circuit breakers
+
+Multiple jobs can share a circuit breaker using `shared_key`:
+
+[source,ruby]
+----
+job "fetch_user_data" do
+  runs_with UserApiWorker
+  circuit_breaker threshold: 5,
+                  timeout: 60,
+                  shared_key: "user_service" # Same key = shared breaker
+end
+
+job "fetch_profile_data" do
+  runs_with ProfileApiWorker
+  circuit_breaker threshold: 5,
+                  timeout: 60,
+                  shared_key: "user_service" # Same key = shared breaker
+end
+----
+
+When jobs share a circuit breaker:
+
+* Failures from any job contribute to the shared threshold
+* When one job triggers the circuit, all jobs using the same key are protected
+* Prevents multiple jobs from hammering a failing service
+
+===== Circuit breaker with retry
+
+Combine circuit breaker with retry for comprehensive protection:
+
+[source,ruby]
+----
+job "resilient_api_call" do
+  runs_with ApiWorker
+
+  # First: Retry transient failures
+  retry_on_error max_attempts: 3,
+                 backoff: :exponential,
+                 initial_delay: 1
+
+  # Second: Circuit breaker for sustained failures
+  circuit_breaker threshold: 10,
+                  timeout: 60
+
+  # Final: Fallback when circuit opens
+  fallback_to "use_cache"
+end
+----
+
+This layered approach:
+
+1. *Retry* handles transient failures (network blips, temporary unavailability)
+2. *Circuit breaker* protects against sustained failures (service down, timeout)
+3. *Fallback* provides degraded service when all else fails
+
+See link:../examples/workflow/circuit_breaker/README.adoc[Circuit Breaker Example] for complete examples and best practices.
+
+==== Dead Letter Queue
+
+Capture permanently failed work for manual inspection and retry:
+
+[source,ruby]
+----
+class WorkflowWithDLQ < Fractor::Workflow
+  workflow "dlq-workflow" do
+    # Configure Dead Letter Queue
+    configure_dead_letter_queue max_size: 1000
+
+    job "process_data" do
+      runs_with DataProcessor
+      inputs_from_workflow
+
+      # Retry before adding to DLQ
+      retry_on_error max_attempts: 3,
+                     backoff: :exponential,
+                     initial_delay: 1
+    end
+
+    job "finalize" do
+      needs "process_data"
+      runs_with FinalizeWorker
+      outputs_to_workflow
+    end
+  end
+end
+
+# Execute workflow
+workflow = WorkflowWithDLQ.new(input_data)
+begin
+  result = workflow.execute
+rescue Fractor::Workflow::WorkflowExecutionError => e
+  # Check Dead Letter Queue
+  dlq = workflow.dead_letter_queue
+  puts "DLQ has #{dlq.size} failed items"
+
+  # Query failed entries
+  dlq.all.each do |entry|
+    puts "Failed: #{entry.error.message}"
+    puts "Context: #{entry.context.inspect}"
+    puts "Metadata: #{entry.metadata.inspect}"
+  end
+end
+----
+
+The Dead Letter Queue (DLQ) automatically captures work that:
+
+* Fails after retry attempts are exhausted
+* Has non-retryable errors (when using `retryable_errors`)
+* Cannot be processed due to persistent failures
+
+Configuration options:
+
+[cols="1,1,3"]
+|===
+|Option |Default |Description
+
+|`max_size`
+|1000
+|Maximum number of DLQ entries to retain
+
+|`persister`
+|`nil`
+|Optional persistence strategy (file, Redis, database)
+
+|`on_add`
+|`nil`
+|Callback when entry is added to DLQ
+|===
+
+===== DLQ with custom notification
+
+Get notified when work is added to the DLQ:
+
+[source,ruby]
+----
+configure_dead_letter_queue(
+  max_size: 500,
+  on_add: lambda { |entry|
+    # Send alert
+    AlertService.send(
+      "Work failed permanently",
+      error: entry.error.message,
+      job: entry.metadata[:job_name],
+      workflow: entry.metadata[:workflow_name]
+    )
+
+    # Log to monitoring
+    Logger.error(
+      "DLQ entry added",
+      error_class: entry.error.class.name,
+      retry_attempts: entry.metadata[:retry_attempts],
+      timestamp: entry.timestamp
+    )
+  }
+)
+----
+
+===== DLQ with file persistence
+
+Persist failed work to disk for durability:
+
+[source,ruby]
+----
+require 'fractor/workflow/dead_letter_queue'
+
+configure_dead_letter_queue(
+  max_size: 10000,
+  persister: Fractor::Workflow::DeadLetterQueue::FilePersister.new(
+    directory: "tmp/dlq"
+  )
+)
+----
+
+Each failed work item is saved as a JSON file containing:
+
+* Work payload and context
+* Error details and stack trace
+* Retry history and metadata
+* Workflow state at time of failure
+
+===== Querying the DLQ
+
+Filter and inspect failed work:
+
+[source,ruby]
+----
+dlq = workflow.dead_letter_queue
+
+# Get all entries
+all_failures = dlq.all
+
+# Filter by error class
+network_errors = dlq.by_error_class(Net::HTTPError)
+timeout_errors = dlq.by_error_class(Timeout::Error)
+
+# Filter by time range
+recent = dlq.by_time_range(Time.now - 3600, Time.now)
+yesterday = dlq.by_time_range(Time.now - 86400, Time.now - 86400 + 86400)
+
+# Custom filtering
+job_failures = dlq.filter do |entry|
+  entry.metadata[:job_name] == "process_data"
+end
+
+# Get statistics
+stats = dlq.stats
+puts "Total: #{stats[:total]}"
+puts "Error types: #{stats[:error_types]}"
+puts "Jobs: #{stats[:jobs]}"
+----
+
+===== Retrying from the DLQ
+
+Manually retry failed work after fixing issues:
+
+[source,ruby]
+----
+dlq = workflow.dead_letter_queue
+
+# Retry single entry
+entry = dlq.all.first
+dlq.retry_entry(entry) do |work, error, context|
+  # Custom retry logic
+  MyWorker.perform(work)
+end
+
+# Retry all entries
+success_count = 0
+dlq.retry_all do |work, error, context|
+  begin
+    result = MyWorker.perform(work)
+    success_count += 1
+    result
+  rescue StandardError => e
+    Logger.warn("Retry failed: #{e.message}")
+    nil # Don't fail the batch
+  end
+end
+
+puts "Successfully retried #{success_count} items"
+----
+
+===== DLQ entry structure
+
+Each DLQ entry contains:
+
+[source,ruby]
+----
+entry.work         # Original Work object with payload
+entry.error        # Exception that caused failure
+entry.timestamp    # When added to DLQ
+entry.context      # Workflow context at time of failure
+entry.metadata     # Additional information:
+  # - job_name: Name of failed job
+  # - worker_class: Worker class name
+  # - correlation_id: Workflow correlation ID
+  # - workflow_name: Workflow name
+  # - retry_attempts: Number of retry attempts made
+  # - total_retry_time: Total time spent retrying
+  # - all_errors: All errors encountered during retries
+----
+
+===== DLQ best practices
+
+* *Set appropriate max_size*: Based on your error rate and retention needs
+* *Monitor DLQ growth*: Alert when size exceeds thresholds
+* *Regular cleanup*: Review and remove old/resolved entries
+* *Use persistence*: For production systems requiring durability
+* *Implement retry logic*: Have a strategy for re-processing failed work
+* *Integrate with monitoring*: Track DLQ metrics and error patterns
+
+See link:../examples/workflow/dead_letter_queue/README.adoc[Dead Letter Queue Example] for complete examples and best practices.
+
+==== Performance monitoring
+
+Monitor workflow execution metrics in real-time with comprehensive performance tracking:
+
+[source,ruby]
+----
+require 'fractor/performance_monitor'
+
+# Create a supervisor
+supervisor = Fractor::Supervisor.new(
+  worker_class: DataProcessor,
+  num_workers: 4,
+  max_queue_size: 100
+)
+
+# Attach performance monitor
+monitor = Fractor::PerformanceMonitor.new(
+  supervisor,
+  sample_interval: 1.0  # Sample metrics every second
+)
+
+# Start monitoring
+monitor.start
+
+# Add work to supervisor
+100.times do |i|
+  supervisor.add_work(Fractor::Work.new(payload: { id: i }))
+end
+
+# Wait for completion
+sleep 5
+
+# Get current snapshot
+snapshot = monitor.snapshot
+puts "Jobs processed: #{snapshot[:jobs_processed]}"
+puts "Average latency: #{snapshot[:average_latency]}ms"
+puts "Worker utilization: #{snapshot[:worker_utilization]}%"
+
+# Generate human-readable report
+puts monitor.report
+
+# Stop monitoring
+monitor.stop
+----
+
+The Performance Monitor provides comprehensive metrics collection and analysis for Fractor supervisors and workflows.
+
+===== Available metrics
+
+The monitor tracks the following metrics:
+
+[cols="1,3"]
+|===
+|Metric |Description
+
+|`jobs_processed`
+|Total number of jobs completed
+
+|`jobs_succeeded`
+|Number of jobs that completed successfully
+
+|`jobs_failed`
+|Number of jobs that failed
+
+|`average_latency`
+|Mean job execution time in milliseconds
+
+|`p50_latency`
+|50th percentile latency (median) in milliseconds
+
+|`p95_latency`
+|95th percentile latency in milliseconds
+
+|`p99_latency`
+|99th percentile latency in milliseconds
+
+|`throughput`
+|Jobs processed per second
+
+|`queue_depth`
+|Current number of pending jobs in queue
+
+|`worker_count`
+|Total number of workers
+
+|`active_workers`
+|Number of workers currently processing jobs
+
+|`worker_utilization`
+|Percentage of workers actively processing (0-100)
+
+|`memory_mb`
+|Current process memory usage in megabytes
+
+|`uptime`
+|Monitor uptime in seconds
+|===
+
+===== Configuration options
+
+[cols="1,1,3"]
+|===
+|Option |Default |Description
+
+|`sample_interval`
+|1.0
+|How often to sample metrics (in seconds)
+|===
+
+===== Export formats
+
+The Performance Monitor supports multiple export formats for integration with monitoring systems:
+
+====== Human-readable report
+
+[source,ruby]
+----
+puts monitor.report
+
+# Output:
+# === Performance Report ===
+# Uptime: 10.5s
+#
+# Jobs:
+#   Total:     150
+#   Succeeded: 145
+#   Failed:    5
+#   Success Rate: 96.67%
+#
+# Latency (ms):
+#   Average: 23.5
+#   p50:     20.0
+#   p95:     45.0
+#   p99:     67.0
+#
+# Throughput:
+#   Current: 14.3 jobs/sec
+#
+# Queue:
+#   Depth: 25 jobs
+#
+# Workers:
+#   Total:       4
+#   Active:      3
+#   Utilization: 75.00%
+#
+# Memory:
+#   Current: 127.5 MB
+----
+
+====== JSON export
+
+Export metrics as structured JSON for programmatic consumption:
+
+[source,ruby]
+----
+json_data = monitor.to_json
+puts json_data
+
+# Output:
+# {
+#   "jobs_processed": 150,
+#   "jobs_succeeded": 145,
+#   "jobs_failed": 5,
+#   "average_latency": 23.5,
+#   "p50_latency": 20.0,
+#   "p95_latency": 45.0,
+#   "p99_latency": 67.0,
+#   "throughput": 14.3,
+#   "queue_depth": 25,
+#   "worker_count": 4,
+#   "active_workers": 3,
+#   "worker_utilization": 75.0,
+#   "memory_mb": 127.5,
+#   "uptime": 10.5
+# }
+----
+
+====== Prometheus format
+
+Export metrics in Prometheus text format for scraping:
+
+[source,ruby]
+----
+puts monitor.to_prometheus
+
+# Output:
+# # HELP fractor_jobs_processed Total number of jobs processed
+# # TYPE fractor_jobs_processed counter
+# fractor_jobs_processed 150
+#
+# # HELP fractor_jobs_succeeded Number of jobs that succeeded
+# # TYPE fractor_jobs_succeeded counter
+# fractor_jobs_succeeded 145
+#
+# # HELP fractor_jobs_failed Number of jobs that failed
+# # TYPE fractor_jobs_failed counter
+# fractor_jobs_failed 5
+#
+# # HELP fractor_latency_average Average job latency in milliseconds
+# # TYPE fractor_latency_average gauge
+# fractor_latency_average 23.5
+#
+# # HELP fractor_latency_p50 50th percentile latency in milliseconds
+# # TYPE fractor_latency_p50 gauge
+# fractor_latency_p50 20.0
+# ...
+----
+
+===== Integration with Prometheus
+
+Set up an HTTP endpoint for Prometheus scraping:
+
+[source,ruby]
+----
+require 'webrick'
+
+# Create monitor
+monitor = Fractor::PerformanceMonitor.new(supervisor)
+monitor.start
+
+# Create metrics endpoint
+server = WEBrick::HTTPServer.new(Port: 9090)
+server.mount_proc '/metrics' do |req, res|
+  res['Content-Type'] = 'text/plain; version=0.0.4'
+  res.body = monitor.to_prometheus
+end
+
+# Start server
+trap('INT') { server.shutdown }
+server.start
+----
+
+Configure Prometheus to scrape the endpoint:
+
+[source,yaml]
+----
+scrape_configs:
+  - job_name: 'fractor'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s
+----
+
+===== Workflow integration
+
+Monitor workflow execution performance:
+
+[source,ruby]
+----
+class MonitoredWorkflow < Fractor::Workflow
+  workflow "monitored-workflow" do
+    input_type InputData
+    output_type OutputData
+
+    job "process" do
+      runs_with ProcessWorker
+      inputs_from_workflow
+    end
+
+    job "finalize" do
+      needs "process"
+      runs_with FinalizeWorker
+      inputs_from_job "process"
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+
+# Create workflow with monitoring
+workflow = MonitoredWorkflow.new(input_data)
+supervisor = workflow.supervisor  # Get internal supervisor
+
+# Attach monitor
+monitor = Fractor::PerformanceMonitor.new(supervisor)
+monitor.start
+
+# Execute workflow
+result = workflow.execute
+
+# Review metrics
+puts monitor.report
+monitor.stop
+----
+
+===== Custom metrics collection
+
+Record job latency manually for fine-grained tracking:
+
+[source,ruby]
+----
+monitor = Fractor::PerformanceMonitor.new(supervisor)
+monitor.start
+
+# Record job execution
+start_time = Time.now
+begin
+  result = perform_job(work)
+  latency = ((Time.now - start_time) * 1000).round(2)
+  monitor.record_job(latency, success: true)
+rescue StandardError => e
+  latency = ((Time.now - start_time) * 1000).round(2)
+  monitor.record_job(latency, success: false)
+  raise
+end
+----
+
+===== Real-time monitoring
+
+Display live metrics during execution:
+
+[source,ruby]
+----
+monitor = Fractor::PerformanceMonitor.new(supervisor, sample_interval: 1.0)
+monitor.start
+
+# Background thread for live updates
+Thread.new do
+  loop do
+    sleep 5
+    snapshot = monitor.snapshot
+    puts "\nLive Metrics:"
+    puts "  Processed: #{snapshot[:jobs_processed]}"
+    puts "  Throughput: #{snapshot[:throughput]} jobs/sec"
+    puts "  Queue: #{snapshot[:queue_depth]} pending"
+    puts "  Workers: #{snapshot[:active_workers]}/#{snapshot[:worker_count]} active"
+    puts "  Latency (p95): #{snapshot[:p95_latency]}ms"
+  end
+end
+
+# Execute work
+supervisor.add_work(work_items)
+supervisor.wait_for_completion
+monitor.stop
+----
+
+===== Performance monitoring best practices
+
+* *Choose appropriate sample interval*: Balance accuracy with overhead (1-5 seconds recommended)
+* *Monitor in production*: Track real workload performance to identify issues
+* *Set up alerts*: Configure monitoring system alerts for abnormal metrics
+* *Track percentiles*: Use p95/p99 latency to identify outliers and tail latencies
+* *Monitor worker utilization*: Low utilization may indicate queue starvation, high utilization may indicate overload
+* *Export to time-series DB*: Store historical metrics for trend analysis
+* *Correlate with business metrics*: Link performance metrics to business outcomes
+* *Monitor memory usage*: Detect memory leaks and resource exhaustion
+* *Use for capacity planning*: Analyze metrics to determine optimal worker counts and queue sizes
+
+See link:../examples/performance_monitoring.rb[Performance Monitoring Example] for complete examples and integration patterns.
+
+=== Structured logging
+
+Correlation IDs for distributed tracing:
+
+[source,ruby]
+----
+workflow.logger = Fractor::Workflow::WorkflowLogger.new
+workflow.logger = Fractor::Workflow::StructuredLogger.new  # JSON output
+----
+
+=== Execution tracing
+
+Detailed timing and status tracking:
+
+[source,ruby]
+----
+trace = workflow.execution_trace
+trace.jobs.each do |job_id, job_trace|
+  puts "#{job_id}: #{job_trace.duration}s (#{job_trace.status})"
+end
+----
+
+=== Workflow visualization
+
+Generate visual representations:
+
+[source,ruby]
+----
+visualizer = Fractor::Workflow::Visualizer.new(workflow)
+puts visualizer.to_mermaid     # Mermaid flowchart
+puts visualizer.to_dot         # Graphviz DOT
+puts visualizer.to_ascii       # ASCII art
+----
+
+== Workflow examples
+
+The Workflow examples (link:../examples/workflow/[examples/workflow/]) demonstrate how to define and execute complex data processing workflows using a declarative GitHub Actions-style DSL.
+
+Key features:
+
+* *Declarative workflow DSL*: Define workflows similar to GitHub Actions
+* *Type-safe data flow*: Input/output types declared for each job
+* *Dependency management*: Automatic topological sorting and execution ordering
+* *Multiple execution patterns*: Linear pipelines, fan-out/fan-in, conditional execution
+* *Workflow validation*: Cycle detection, reachability checks, type validation
+* *Composable jobs*: Reusable worker definitions with clear interfaces
+
+=== Available examples
+
+==== Simple Linear Workflow
+
+link:../examples/workflow/simple_linear/simple_linear_workflow.rb[Simple Linear Workflow]: Three-job sequential pipeline demonstrating basic workflow concepts.
+
+==== Fan-Out Workflow
+
+link:../examples/workflow/fan_out/fan_out_workflow.rb[Fan-Out Workflow]: One job feeding multiple parallel jobs, then aggregating results.
+
+==== Conditional Workflow
+
+link:../examples/workflow/conditional/conditional_workflow.rb[Conditional Workflow]: Jobs that execute based on runtime conditions.
+
+==== Simplified Workflow
+
+link:../examples/workflow/simplified/simplified_workflow.rb[Simplified Workflow]: Demonstrates the simplified syntax with 70% code reduction.
+
+==== Retry Workflow
+
+link:../examples/workflow/retry/retry_workflow.rb[Retry Workflow]: Demonstrates automatic retry with exponential, linear, and constant backoff strategies, error handlers, and fallback jobs.
+
+==== Circuit Breaker Workflow
+
+link:../examples/workflow/circuit_breaker/circuit_breaker_workflow.rb[Circuit Breaker Workflow]: Demonstrates circuit breaker pattern for protecting against cascading failures, with shared circuit breakers and integration with retry logic.
+
+==== Dead Letter Queue Workflow
+
+link:../examples/workflow/dead_letter_queue/dead_letter_queue_workflow.rb[Dead Letter Queue Workflow]: Demonstrates capturing permanently failed work, custom notification handlers, file persistence, querying and filtering, and manual retry strategies.
+
+=== Alternative workflow definition methods
+
+==== YAML workflows (declarative configuration)
+
+Define workflows in YAML files similar to GitHub Actions syntax. Ideal for:
+
+* Configuration-driven workflows
+* Non-programmer workflow definition
+* CI/CD integration
+* Version-controlled workflow definitions
+
+[source,yaml]
+----
+name: my-workflow
+input_type: SimpleLinearExample::TextData
+output_type: SimpleLinearExample::FinalOutput
+
+jobs:
+  - id: uppercase
+    worker: SimpleLinearExample::UppercaseWorker
+    inputs: workflow
+    outputs_to_workflow: false
+
+  - id: reverse
+    worker: SimpleLinearExample::ReverseWorker
+    needs: uppercase
+    inputs: uppercase
+    outputs_to_workflow: false
+
+  - id: finalize
+    worker: SimpleLinearExample::FinalizeWorker
+    needs: reverse
+    inputs: reverse
+    outputs_to_workflow: true
+    terminates: true
+----
+
+Load and execute YAML workflows:
+
+[source,ruby]
+----
+require 'fractor/workflow/yaml_loader'
+
+# Define worker registry for class name mapping
+worker_registry = {
+  'SimpleLinearExample::UppercaseWorker' => SimpleLinearExample::UppercaseWorker,
+  'SimpleLinearExample::ReverseWorker' => SimpleLinearExample::ReverseWorker,
+  'SimpleLinearExample::FinalizeWorker' => SimpleLinearExample::FinalizeWorker,
+  'SimpleLinearExample::TextData' => SimpleLinearExample::TextData,
+  'SimpleLinearExample::FinalOutput' => SimpleLinearExample::FinalOutput
+}
+
+# Load workflow from YAML file
+workflow_class = Fractor::Workflow::YamlLoader.load_file(
+  'path/to/workflow.yml',
+  worker_registry: worker_registry
+)
+
+# Execute the workflow
+result = workflow_class.new.execute(input_data)
+----
+
+==== Programmatic Builder API (dynamic construction)
+
+Build workflows programmatically using a fluent API. Ideal for:
+
+* Dynamic workflow generation
+* Conditional workflow structures
+* Programmatic workflow templates
+* Runtime workflow modifications
+
+[source,ruby]
+----
+require 'fractor/workflow/builder'
+
+builder = Fractor::Workflow::Builder.new("dynamic-workflow")
+  .input_type(InputData)
+  .output_type(OutputData)
+  .add_job("process", ProcessWorker, inputs: :workflow)
+  .add_job("validate", ValidateWorker,
+           needs: "process",
+           inputs: "process")
+  .add_job("finalize", FinalizeWorker,
+           needs: "validate",
+           inputs: "validate",
+           outputs_to_workflow: true,
+           terminates: true)
+
+# Build and execute
+workflow_class = builder.build!
+result = workflow_class.new.execute(input_data)
+
+# Or clone and modify for variants
+dev_builder = builder.clone
+dev_builder.add_job("debug", DebugWorker, needs: "validate")
+dev_workflow = dev_builder.build!
+----
+
+==== Ruby DSL (embedded workflows)
+
+Define workflows directly in Ruby code using the declarative DSL. Ideal for:
+
+* In-code workflow definitions
+* Strong typing and IDE support
+* Complex workflow logic
+* Integration with application code
+
+[source,ruby]
+----
+class MyWorkflow < Fractor::Workflow
+  workflow "my-workflow" do
+    input_type InputData
+    output_type OutputData
+
+    start_with "process"
+    end_with "finalize"
+
+    job "process" do
+      runs_with ProcessWorker
+      inputs_from_workflow
+    end
+
+    job "finalize" do
+      needs "process"
+      runs_with FinalizeWorker
+      inputs_from_job "process"
+      outputs_to_workflow
+      terminates_workflow
+    end
+  end
+end
+
+result = MyWorkflow.new.execute(input_data)
+----
+
+=== Helper worker base classes
+
+Fractor provides helper base classes that reduce boilerplate for common worker patterns:
+
+[source,ruby]
+----
+require 'fractor/workflow/helpers'
+
+# Simple transformation pattern
+class UppercaseWorker < Fractor::Workflow::SimpleWorker
+  input_type TextData
+  output_type TextResult
+
+  def transform(input)
+    TextResult.new(text: input.text.upcase)
+  end
+end
+
+# Collection mapping pattern
+class ProcessItemsWorker < Fractor::Workflow::MapWorker
+  input_type ItemList
+  output_type ProcessedList
+
+  def map_item(item)
+    # Transform each item
+    ProcessedItem.new(data: item.data.upcase)
+  end
+end
+
+# Collection filtering pattern
+class FilterValidWorker < Fractor::Workflow::FilterWorker
+  input_type ItemList
+  output_type FilteredList
+
+  def filter_item?(item)
+    item.valid? && item.score > 0.5
+  end
+end
+
+# Collection aggregation pattern
+class SummarizeWorker < Fractor::Workflow::ReduceWorker
+  input_type ItemList
+  output_type Summary
+
+  def reduce_items(items)
+    total = items.sum(&:value)
+    Summary.new(total: total, count: items.size)
+  end
+end
+
+# Validation pattern with error collection
+class ValidateDataWorker < Fractor::Workflow::ValidationWorker
+  input_type InputData
+  output_type ValidationResult
+
+  def validate(input)
+    errors = []
+    errors << "Name is required" if input.name.nil?
+    errors << "Age must be positive" if input.age <= 0
+
+    ValidationResult.new(
+      valid: errors.empty?,
+      errors: errors,
+      data: input
+    )
+  end
+end
+----
+
+These helper classes handle the boilerplate of creating WorkResult objects and managing the worker lifecycle, allowing you to focus on the core transformation logic.
+
+== Next steps
+
+* Read link:../examples/workflow/simplified/README.adoc[Simplified Workflows] guide
+* Explore link:../examples/workflow/README.adoc[Workflow Examples]
+* Learn about link:../pages/core-concepts.adoc[Core Concepts]
+* See link:../guides/pipeline-mode.adoc[Pipeline Mode] for batch processing workflows

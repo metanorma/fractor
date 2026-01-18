@@ -1,0 +1,81 @@
+---
+layout: default
+title: Features
+nav_order: 4
+has_children: true
+---
+= Features
+
+Fractor provides a rich set of features for building robust parallel processing systems.
+
+== Available Features
+
+=== Workflows
+
+GitHub Actions-style declarative workflows for complex data processing pipelines.
+
+* link:workflows.adoc[Workflows] - Comprehensive workflow system documentation
+
+=== Error Handling and Resilience
+
+Production-ready error handling with comprehensive analytics and reporting.
+
+* link:error-handling.adoc[Error Handling] - Error reporting and analytics
+
+=== Monitoring
+
+Real-time performance monitoring and metrics collection.
+
+* link:monitoring.adoc[Monitoring] - Performance monitoring and analytics
+
+=== Signal Handling
+
+Production-ready signal handling for process control and monitoring.
+
+* link:signal-handling.adoc[Signal Handling] - Signal handling and process monitoring
+
+== Feature Categories
+
+=== Workflow System
+
+* Declarative DSL for defining workflows
+* Type-safe data flow between jobs
+* Dependency management and topological sorting
+* Multiple execution patterns (linear, fan-out/fan-in, conditional)
+* Simplified syntax with smart defaults
+* Structured logging and execution tracing
+* Workflow visualization (Mermaid, DOT, ASCII)
+
+=== Error Handling
+
+* Automatic retry with backoff strategies
+* Circuit breaker pattern
+* Dead Letter Queue for failed work
+* Error categorization and severity levels
+* Real-time error handlers and alerts
+* Trending error detection
+* Multiple export formats (text, Prometheus, JSON)
+
+=== Monitoring and Analytics
+
+* Real-time performance metrics
+* Throughput and latency tracking
+* Worker utilization monitoring
+* Queue depth tracking
+* Prometheus integration
+* JSON export for programmatic access
+* Human-readable reports
+
+=== Signal Handling
+
+* SIGINT/SIGTERM for graceful shutdown
+* SIGUSR1/SIGBREAK for status monitoring
+* Cross-platform support (Unix/Linux/macOS/Windows)
+* Process monitoring and health checks
+* Logging support
+
+== Next Steps
+
+* Explore link:../guides/[Guides] for task-oriented documentation
+* See link:../tutorials/[Tutorials] for step-by-step learning
+* Reference link:../references/[References] for technical specifications

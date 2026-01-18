@@ -1,0 +1,862 @@
+---
+layout: default
+title: Design principles
+nav_order: 4
+---
+= Design principles
+
+== Overview
+
+This guide explains the design philosophy, core principles, and key decisions that shaped Fractor's architecture. Understanding these principles helps you use Fractor effectively and make informed decisions when building applications.
+
+== Core principles
+
+=== Function-driven architecture
+
+Fractor is built around the concept of functions (workers) operating on data (work items), rather than objects managing state.
+
+.Function-driven vs object-oriented state management
+[source]
+----
+Traditional OOP (Stateful Objects)
+┌────────────────────────────────┐
+│      WorkerObject              │
+│  ┌──────────────────────────┐  │
+│  │  State                   │  │
+│  │  - @counter              │  │
+│  │  - @connections          │  │
+│  │  - @cache                │  │
+│  └──────────────────────────┘  │
+│  │                             │
+│  │  Methods modify state       │
+│  └──────────────────────────── │
+│                                │
+│  Problem: State shared across  │
+│  threads leads to race conditions
+└────────────────────────────────┘
+
+Fractor (Function-Driven)
+┌────────────────────────────────┐
+│      Worker                    │
+│  ┌──────────────────────────┐  │
+│  │  process(work)           │  │
+│  │    └─> Transform input   │  │
+│  │        └─> Return result │  │
+│  └──────────────────────────┘  │
+│                                │
+│  Input → Function → Output     │
+│  No shared state               │
+│  Isolated in Ractor            │
+│                                │
+│  Benefit: True parallelism     │
+│  without race conditions       │
+└────────────────────────────────┘
+----
+
+*Rationale*:
+
+* Functions are naturally parallelizable
+* No shared mutable state eliminates race conditions
+* Easier to reason about and test
+* Maps well to Ractor's isolation model
+
+=== Separation of concerns
+
+Each component has a single, well-defined responsibility:
+
+[cols="2,3,3"]
+|===
+|Component |Concern |What It Doesn't Do
+
+|[`Work`](../../lib/fractor/work.rb)
+|Hold input data
+|Processing logic, validation, transformation
+
+|[`Worker`](../../lib/fractor/worker.rb)
+|Process work items
+|Work distribution, result aggregation, lifecycle management
+
+|[`Supervisor`](../../lib/fractor/supervisor.rb)
+|Orchestrate execution
+|Business logic, data transformation
+
+|[`WrappedRactor`](../../lib/fractor/wrapped_ractor.rb)
+|Manage Ractor lifecycle
+|Work processing, distribution strategy
+
+|[`ResultAggregator`](../../lib/fractor/result_aggregator.rb)
+|Collect results
+|Processing logic, distribution
+|===
+
+*Benefits*:
+
+* Each component can be tested independently
+* Changes are localized to affected components
+* Easy to understand and maintain
+* Clear interfaces between components
+
+=== Composability
+
+Fractor components are designed to work together flexibly:
+
+.Composition examples
+[example]
+====
+[source,ruby]
+----
+# Basic composition: Work + Worker + Supervisor
+class DataWork < Fractor::Work; end
+class DataWorker < Fractor::Worker; end
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: DataWorker }]
+)
+
+# Add queue for continuous processing
+work_queue = Fractor::WorkQueue.new
+work_queue.register_with_supervisor(supervisor)
+
+# Wrap in ContinuousServer for production
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: DataWorker }],
+  work_queue: work_queue
+)
+
+# Add error handling
+server.on_error do |error_result|
+  ErrorReporter.notify(error_result)
+end
+
+# Add result processing
+server.on_result do |result|
+  ResultProcessor.handle(result)
+end
+
+# Compose into Workflow
+class ProcessingPipeline < Fractor::Workflow
+  workflow "pipeline" do
+    job "extract", DataWorker
+    job "transform", TransformWorker, needs: "extract"
+    job "load", LoadWorker, needs: "transform"
+  end
+end
+----
+====
+
+*Design decision*: Components use interface-based composition rather than inheritance-based hierarchies. This makes it easy to combine components in new ways without modifying existing code.
+
+=== Extensibility
+
+Fractor is designed to be extended without modifying core code:
+
+==== Extension points
+
+[cols="2,3,3"]
+|===
+|Extension Point |How to Extend |Example Use Case
+
+|Work classes
+|Subclass `Fractor::Work`
+|Add domain-specific convenience methods
+
+|Worker classes
+|Subclass `Fractor::Worker`
+|Implement custom processing logic
+
+|Result callbacks
+|Register with `ResultAggregator`
+|Custom logging, monitoring, notifications
+
+|Work sources
+|Register with `Supervisor`
+|Pull from external queues, APIs, databases
+
+|Workflow DSL
+|Define jobs and dependencies
+|Custom multi-step processing graphs
+
+|Error handling
+|Use `WorkResult` error metadata
+|Smart retry, circuit breakers, DLQ
+|===
+
+.Extending with custom work source
+[example]
+====
+[source,ruby]
+----
+# Custom work source from external API
+supervisor.register_work_source do
+  # Poll external API
+  response = api_client.poll_for_work
+
+  # Transform to Work objects
+  response.items.map { |item| MyWork.new(item) }
+end
+
+# Or use WorkQueue for thread-safe pushing
+queue = Fractor::WorkQueue.new
+queue.register_with_supervisor(supervisor)
+
+# External thread can push work safely
+Thread.new do
+  loop do
+    item = external_source.next
+    queue << MyWork.new(item)
+  end
+end
+----
+====
+
+*Principle*: Open for extension, closed for modification. Users extend Fractor through well-defined interfaces without touching framework code.
+
+== Design decisions
+
+=== Why Ractors over threads?
+
+[cols="1,2,2"]
+|===
+|Aspect |Threads (with GIL) |Ractors (Fractor)
+
+|Parallelism
+|Pseudo-parallel (GIL limits)
+|True parallel execution
+
+|Memory model
+|Shared mutable state
+|Isolated memory spaces
+
+|Race conditions
+|Possible, requires locks
+|Impossible (no shared state)
+
+|CPU utilization
+|Single core (Ruby GIL)
+|All cores simultaneously
+
+|Complexity
+|Simple API, complex safety
+|Structured messages, guaranteed safety
+|===
+
+.Performance comparison
+[example]
+====
+CPU-bound workload (10,000 calculations):
+
+[source]
+----
+Threads (GIL-limited):
+  4 threads:  ~10 seconds  (no speedup due to GIL)
+  8 threads:  ~10 seconds  (still limited by GIL)
+
+Ractors (Fractor):
+  4 ractors:  ~2.5 seconds (4x speedup)
+  8 ractors:  ~1.25 seconds (8x speedup)
+----
+====
+
+*Decision*: Use Ractors for true parallelism despite:
+
+* Newer feature (Ruby 3.0+)
+* More restrictive sharing rules
+* Less ecosystem maturity
+
+The benefits of true parallelism and guaranteed thread safety outweigh these limitations for Fractor's use cases.
+
+=== Why message passing?
+
+Fractor uses message passing between Supervisor and Ractors instead of shared state.
+
+.Communication approaches
+[source]
+----
+Shared State (Traditional)
+┌──────────┐    ┌──────────┐
+│ Thread 1 │───▶│  Shared  │◀───│ Thread 2 │
+└──────────┘    │  Memory  │    └──────────┘
+                │          │
+                │ Requires │
+                │  Locks   │
+                └──────────┘
+                     ▲
+                Problem: Race conditions,
+                deadlocks, complexity
+
+Message Passing (Fractor)
+┌──────────┐         ┌──────────┐
+│ Ractor 1 │────┐ ┌─▶│ Ractor 2 │
+└──────────┘    │ │  └──────────┘
+                ▼ ▼
+             Message Queue
+            (Copy semantics)
+
+             Benefits: No locks,
+             no race conditions,
+             predictable behavior
+----
+
+*Trade-offs*:
+
+Advantages:
+
+* No race conditions possible
+* No deadlocks or lock contention
+* Predictable, sequential message handling
+* Natural fit for actor model
+
+Disadvantages:
+
+* Messages must be copied or shareable (immutable)
+* Slightly higher memory usage per message
+* Cannot share large mutable structures directly
+
+*Decision*: Message passing selected because:
+
+. Safety guarantees are paramount for parallel processing
+. Message copying overhead is minimal for typical work items
+. Immutability is a best practice anyway
+. Enables reliable distributed systems patterns
+
+=== Why immutable Work objects?
+
+Work objects must be shareable (immutable or frozen) to cross Ractor boundaries.
+
+[source,ruby]
+----
+# Why immutability is required
+class MutableWork < Fractor::Work
+  def initialize(data)
+    @data = data  # Mutable reference
+  end
+end
+
+# This fails - cannot share mutable objects
+work = MutableWork.new({ value: 42 })
+ractor.send(work)  # Ractor::IsolationError
+
+# Solution: Freeze data
+class ImmutableWork < Fractor::Work
+  def initialize(data)
+    super(data.freeze)  # Frozen, thus shareable
+  end
+end
+
+work = ImmutableWork.new({ value: 42 })
+ractor.send(work)  # ✓ Works - frozen data is shareable
+----
+
+*Benefits of immutability*:
+
+. *Thread safety*: Cannot be modified during processing
+. *Predictability*: Input data unchanged throughout pipeline
+. *Debugging*: Work object state never changes
+. *Optimization*: Ruby can optimize frozen objects
+
+*Trade-off*: Must create new objects for mutations instead of modifying in place. This is acceptable because:
+
+* Work items are typically small
+* Functional transformation is clearer
+* Memory overhead is negligible
+* GC handles short-lived objects efficiently
+
+=== API design rationale
+
+Fractor's API follows these design principles:
+
+==== Explicit over implicit
+
+[source,ruby]
+----
+# Explicit: Clear what's happening
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 4 }
+  ],
+  continuous_mode: false
+)
+
+# vs Implicit (rejected design)
+# supervisor = Fractor.auto  # Too much magic
+----
+
+*Rationale*: Explicit configuration makes behavior predictable and debuggable.
+
+==== Sensible defaults with override capability
+
+[source,ruby]
+----
+# Defaults work well
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: MyWorker }]
+  # num_workers: auto-detected from CPU count
+  # continuous_mode: false (pipeline mode)
+)
+
+# But can override when needed
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [
+    { worker_class: MyWorker, num_workers: 16 }
+  ],
+  continuous_mode: true
+)
+----
+
+*Principle*: Optimize for the common case, but allow customization.
+
+==== Consistent naming conventions
+
+[cols="2,3,2"]
+|===
+|Pattern |Examples |Rationale
+
+|Nouns for data
+|`Work`, `WorkResult`, `WorkQueue`
+|Represents state/data
+
+|Verbs for actions
+|`process()`, `execute()`, `run()`
+|Represents operations
+
+|Descriptive adjectives
+|`PriorityWork`, `WrappedRactor`, `ContinuousServer`
+|Clarifies purpose
+
+|`on_*` for callbacks
+|`on_result`, `on_error`, `on_add`
+|Clear callback intent
+|===
+
+==== Progressive disclosure
+
+API complexity reveals itself as needed:
+
+[source]
+----
+Level 1: Simple pipeline
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: Worker }]
+)
+supervisor.add_work_items(work_items)
+supervisor.run
+
+Level 2: Continuous mode
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: Worker }],
+  continuous_mode: true
+)
+supervisor.register_work_source { fetch_work }
+supervisor.run
+
+Level 3: Production with server
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: Worker }],
+  work_queue: queue,
+  log_file: "fractor.log"
+)
+server.on_result { |r| process(r) }
+server.on_error { |e| handle(e) }
+server.run
+
+Level 4: Workflows
+class Pipeline < Fractor::Workflow
+  workflow "pipeline" do
+    job "a", WorkerA
+    job "b", WorkerB, needs: "a"
+    configure_dead_letter_queue(max_size: 1000)
+  end
+end
+result = Pipeline.new.execute(input: data)
+----
+
+*Principle*: Start simple, add complexity only when needed.
+
+== Trade-offs
+
+=== Performance vs simplicity
+
+==== Trade-off: Ractor overhead
+
+*Performance cost*: Creating Ractors has overhead (~1-2ms per Ractor, ~1MB memory)
+
+*Simplicity gain*: Automatic parallelism without manual thread management
+
+*Decision*: Accept overhead because:
+
+* One-time cost at startup
+* Amortized over long-running processing
+* Benefits of parallelism far outweigh cost for work items > 5ms
+
+==== Trade-off: Message copying
+
+*Performance cost*: Objects copied when sent between Ractors
+
+*Simplicity gain*: No shared state, no locks, guaranteed safety
+
+*Decision*: Accept copying because:
+
+* Work items should be small and focused
+* Copying is fast for typical objects
+* Safety guarantees are worth the cost
+* Can use frozen/shareable objects to avoid some copying
+
+=== Flexibility vs constraints
+
+==== Trade-off: Structured message protocol
+
+*Constraint*: Must use specific message format (`{ type:, result:, processor: }`)
+
+*Flexibility loss*: Cannot send arbitrary data between Supervisor and Ractors
+
+*Benefit*: Predictable, debuggable message flow
+
+*Decision*: Structure is beneficial because:
+
+* Makes debugging easier (can trace all messages)
+* Enables future features (message logging, inspection)
+* Cost is minimal (just a Hash wrapper)
+* Structure prevents ad-hoc communication bugs
+
+==== Trade-off: Work/Worker class requirements
+
+*Constraint*: Must subclass `Fractor::Work` and `Fractor::Worker`
+
+*Flexibility loss*: Cannot use arbitrary objects/functions
+
+*Benefit*: Type safety, validation, consistent interface
+
+*Decision*: Classes provide:
+
+* Clear contracts and interfaces
+* Better error messages
+* IDE support and autocomplete
+* Extension points for future features
+
+=== Safety vs speed
+
+==== Trade-off: Immutable work objects
+
+*Safety*: Frozen objects prevent modification bugs
+
+*Speed cost*: Cannot modify in place, must create new objects
+
+*Decision*: Safety prioritized because:
+
+* Bugs from mutation are hard to debug
+* Functional transformation is clearer
+* Cost is minimal for typical use cases
+* Can optimize hot paths if needed
+
+==== Trade-off: Error capture and wrapping
+
+*Safety*: All errors captured in `WorkResult`, none silently swallowed
+
+*Speed cost*: Exception handling overhead
+
+*Decision*: Comprehensive error handling because:
+
+* Silent failures are worse than slowdowns
+* Debugging production issues requires error context
+* Overhead is negligible (<1%)
+* Enables sophisticated error handling (retry, DLQ, etc.)
+
+== Design patterns employed
+
+=== Actor model
+
+Fractor implements the actor model for concurrency:
+
+[source]
+----
+Actor = WrappedRactor + Worker
+
+Actor Properties:
+1. Isolated state (each Ractor has own memory)
+2. Message-driven (communicate via send/receive)
+3. Asynchronous processing (non-blocking sends)
+4. Location transparent (don't care which Ractor)
+----
+
+*Why actor model?*
+
+* Proven pattern for concurrent systems
+* Natural fit for Ractor capabilities
+* Scales well (can add more actors easily)
+* Fault tolerant (actor failures isolated)
+
+=== Supervisor pattern
+
+[`Supervisor`](../../lib/fractor/supervisor.rb) monitors and manages worker Ractors:
+
+[source]
+----
+Supervisor Responsibilities:
+├── Start workers
+├── Distribute work
+├── Monitor health
+├── Collect results
+├── Handle signals
+└── Graceful shutdown
+----
+
+*Benefits*:
+
+* Centralized lifecycle management
+* Fault isolation and recovery
+* Observable system state
+* Coordinated shutdown
+
+=== Producer-consumer pattern
+
+Work flows from producers to consumers via queues:
+
+[source]
+----
+Producers → WorkQueue → Supervisor → Workers (Consumers)
+
+Multiple producers can feed one queue
+Multiple workers can consume from one queue
+Queue provides backpressure and buffering
+----
+
+*Why this pattern?*
+
+* Decouples production from consumption
+* Enables different production/consumption rates
+* Buffers temporary load spikes
+* Natural fit for continuous mode
+
+=== Pipeline pattern
+
+Workflows implement staged processing:
+
+[source]
+----
+Input → Stage 1 → Stage 2 → Stage 3 → Output
+
+Each stage:
+- Independent worker pool
+- Consumes previous stage output
+- Can run in parallel with other stages
+----
+
+*Benefits*:
+
+* Clear data flow
+* Each stage independently scalable
+* Easy to add/remove/reorder stages
+* Type-safe stage boundaries
+
+=== Builder pattern
+
+Workflows use builder pattern for construction:
+
+[source,ruby]
+----
+# Fluent API for workflow construction
+workflow = Fractor::Workflow.chain("pipeline")
+  .step("parse", ParseWorker)
+  .step("validate", ValidateWorker)
+  .step("transform", TransformWorker)
+  .build
+
+# Or using DSL
+class Pipeline < Fractor::Workflow
+  workflow "pipeline" do
+    job "parse", ParseWorker
+    job "validate", ValidateWorker, needs: "parse"
+  end
+end
+----
+
+*Why builder pattern?*
+
+* Expressive DSL
+* Validation before execution
+* Immutable after construction
+* Clear separation: definition vs execution
+
+== Design evolution
+
+=== Learning from production use
+
+Fractor's design evolved based on real-world usage:
+
+==== Early design: Shared queue
+
+*Original*: Workers directly accessed shared queue
+
+[source,ruby]
+----
+# Early design (rejected)
+class Worker
+  def initialize(queue)
+    @queue = queue
+  end
+
+  def run
+    loop do
+      work = @queue.pop  # Shared state!
+      process(work)
+    end
+  end
+end
+----
+
+*Problem*: Race conditions, complex locking, unclear ownership
+
+*Evolution*: Supervisor owns queue and distributes work
+
+[source,ruby]
+----
+# Current design
+class Supervisor
+  def run
+    loop do
+      ractor, message = Ractor.select(*ractors)
+      # Supervisor controls all work distribution
+      if work_available?
+        ractor.send(next_work)
+      end
+    end
+  end
+end
+----
+
+*Benefit*: Clear ownership, no shared state, predictable flow
+
+==== Evolution: Error handling
+
+*Original*: Errors crashed Ractors
+
+*Problem*: Lost work, no error context, hard to debug
+
+*Evolution 1*: Catch and log errors
+
+*Problem*: Errors logged but work  lost, no retry possible
+
+*Evolution 2*: `WorkResult` with error metadata
+
+[source,ruby]
+----
+WorkResult.new(
+  error: exception,
+  work: original_work,  # Can retry!
+  error_category: :network,  # Categorized
+  error_context: { ... }  # Rich context
+)
+----
+
+*Benefit*: Errors don't lose work, rich context, enables smart retry
+
+==== Evolution: Priority handling
+
+*Original*: FIFO queue only
+
+*Problem*: Critical work delayed by low-priority work
+
+*Evolution*: `PriorityWorkQueue` with aging
+
+*Benefit*: Priority-based processing, no starvation
+
+These evolutions demonstrate Fractor's commitment to learning from production use and continuously improving while maintaining backward compatibility.
+
+== Philosophical foundations
+
+=== Favor composition over inheritance
+
+Fractor uses composition to combine behavior:
+
+[source,ruby]
+----
+# Composition: ContinuousServer has-a Supervisor
+class ContinuousServer
+  def initialize(worker_pools:)
+    @supervisor = Supervisor.new(
+      worker_pools: worker_pools,
+      continuous_mode: true
+    )
+  end
+end
+
+# Not inheritance: ContinuousServer is-a Supervisor
+class ContinuousServer < Supervisor  # ✗ Rejected
+end
+----
+
+*Rationale*: Composition is more flexible and doesn't create tight coupling.
+
+=== Make the right thing easy
+
+API design encourages best practices:
+
+[source,ruby]
+----
+# Easy: Type-safe workflow
+class Pipeline < Fractor::Workflow
+  workflow "pipeline" do
+    input_type InputModel
+    output_type OutputModel
+
+    job "process", ProcessWorker
+  end
+end
+
+# Hard: Skip type safety
+# (Must explicitly avoid it)
+----
+
+*Principle*: Default path should be the best path.
+
+=== Optimize for debugging
+
+Production issues are inevitable, so Fractor optimizes for debuggability:
+
+* All errors captured with context
+* Optional execution tracing
+* Clear error messages with suggestions
+* Structured logging support
+* Dead letter queue for failed items
+* Workflow visualization
+
+*Philosophy*: Time spent debugging production issues far exceeds time spent writing code, so invest in debuggability.
+
+=== Fail explicitly, not silently
+
+Fractor never silently swallows errors:
+
+[source,ruby]
+----
+# Every error path is explicit
+case result
+when success?
+  process_success(result.result)
+when failure?
+  handle_error(result.error)  # Must handle
+end
+
+# No: result.result_or_nil  # Silent failure
+# No: rescue; nil; end       # Swallow errors
+----
+
+*Philosophy*: Explicit failures are easier to debug than silent corruption.
+
+== Conclusion
+
+Fractor's design reflects these core values:
+
+* *Safety first*: Correctness over performance
+* *Clarity*: Explicit over implicit
+* *Composability*: Small pieces, loosely joined
+* *Pragmatism*: Solve real problems simply
+* *Evolution*: Learn and improve continuously
+
+These principles guide all design decisions and help Fractor remain simple, safe, and effective for parallel processing in Ruby.
+
+== Next steps
+
+* Read link:core-concepts.adoc[Core Concepts] for component details
+* Read link:architecture.adoc[Architecture Guide] for system design
+* Try link:../guides/pipeline-mode.adoc[Pipeline Mode] to see principles in action
+* Try link:../guides/continuous-mode.adoc[Continuous Mode] for long-running services
+* Study link:../reference/examples.adoc[Examples] to see patterns applied

@@ -6,6 +6,8 @@ source "https://rubygems.org"
 gemspec
 
 gem "benchmark-ips"
+gem "csv"
+gem "openssl", "~> 3.0"
 gem "rake"
 gem "rspec"
 gem "rubocop"

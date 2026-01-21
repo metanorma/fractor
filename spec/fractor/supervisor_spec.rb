@@ -32,8 +32,6 @@ module SupervisorSpec
 end
 
 RSpec.describe Fractor::Supervisor do
-  # Skip these tests on Windows with Ruby 3.4
-  skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
   describe "#initialize" do
     it "initializes with worker pools" do
       supervisor = described_class.new(

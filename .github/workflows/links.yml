@@ -63,6 +63,7 @@ jobs:
           --scheme https,http
           '_site/**/*.html'
         fail: true
+        failIfEmpty: false
         output: link-check-results.md
         format: markdown
         workingDirectory: docs

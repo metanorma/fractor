@@ -34,5 +34,11 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  # No external dependencies
+  # Logger is part of Ruby standard library, but was removed from default gems in Ruby 4.0
+  # Adding it as a dependency ensures compatibility with both Ruby 3.x and 4.x
+  spec.add_dependency "logger"
+
+  # Benchmark is part of Ruby standard library, but was removed from default gems in Ruby 4.0
+  # Used in examples (log_analyzer)
+  spec.add_dependency "benchmark"
 end

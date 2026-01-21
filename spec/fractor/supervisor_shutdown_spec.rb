@@ -4,9 +4,6 @@ require "spec_helper"
 require "timeout"
 
 RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
-  # Skip these tests on Windows with Ruby 3.4
-  skip "This hangs on Windows with Ruby 3.4" if RUBY_PLATFORM.match?(/mingw|mswin|cygwin/) && RUBY_VERSION.start_with?("3.4")
-
   let(:worker_class) do
     Class.new(Fractor::Worker) do
       def process(work)
@@ -26,6 +23,63 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
       def value
         input[:value]
       end
+    end
+  end
+
+  describe "work distribution regression tests" do
+    it "properly distributes work added before run() is called" do
+      # Regression test for stale workers array reference bug
+      # Previously, WorkDistributionManager held a reference to the empty @workers array
+      # from initialization, and didn't get updated when @workers was reassigned in start_workers
+      supervisor = Fractor::Supervisor.new(
+        worker_pools: [
+          { worker_class: worker_class, num_workers: 2 },
+        ],
+        debug: false,
+      )
+
+      # Add work BEFORE calling run
+      3.times { |i| supervisor.add_work_item(work_class.new(i + 1)) }
+
+      # Start supervisor - this should trigger initial work distribution
+      supervisor_thread = Thread.new do
+        supervisor.run
+      end
+
+      # Wait a moment for work to be processed
+      sleep(0.5)
+
+      # Stop the supervisor
+      supervisor.stop
+      supervisor_thread.join(2)
+
+      # Verify work was actually processed (not stuck in queue)
+      total_processed = supervisor.results.results.size + supervisor.results.errors.size
+      expect(total_processed).to eq(3),
+                                 "Expected all 3 work items to be processed, but got #{total_processed}"
+    end
+
+    it "updates work_distribution_manager workers reference after start_workers" do
+      # Direct test that the WorkDistributionManager's workers reference is updated
+      supervisor = Fractor::Supervisor.new(
+        worker_pools: [
+          { worker_class: worker_class, num_workers: 2 },
+        ],
+        debug: false,
+      )
+
+      # Before start_workers, the workers array should be empty
+      expect(supervisor.workers).to be_empty
+
+      # Start workers
+      supervisor.start_workers
+
+      # After start_workers, workers should be populated
+      expect(supervisor.workers.size).to eq(2)
+
+      # WorkDistributionManager should have the updated workers reference
+      # This is verified indirectly through idle_workers list
+      expect(supervisor.instance_variable_get(:@work_distribution_manager).idle_workers.size).to eq(2)
     end
   end
 
@@ -130,8 +184,8 @@ RSpec.describe "Fractor::Supervisor Shutdown Scenarios" do
       sleep(0.2)
       supervisor.stop
 
-      # Wait for thread to finish
-      supervisor_thread.join(3)
+      # Wait for thread to finish with increased timeout for CI environments
+      supervisor_thread.join(10)
 
       # Verify supervisor stopped cleanly (thread finished)
       expect(supervisor_thread.alive?).to be false

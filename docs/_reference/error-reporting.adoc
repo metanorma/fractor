@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Error Reporting
-nav_order: 3
+nav_order: 4
 ---
 
 == Error Reporting and Analytics

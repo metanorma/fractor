@@ -1,0 +1,15 @@
+{"timestamp":"2024-10-25T13:55:36+08:00","level":"INFO","message":"Application started","service":"api-server","version":"1.0.0"}
+{"timestamp":"2024-10-25T13:55:37+08:00","level":"INFO","message":"Request received","method":"GET","path":"/api/users","ip":"192.168.1.1","status_code":200,"response_time":0.045}
+{"timestamp":"2024-10-25T13:55:38+08:00","level":"ERROR","message":"Database connection failed","error":"ConnectionRefused","service":"api-server","retry_count":3}
+{"timestamp":"2024-10-25T13:55:39+08:00","level":"WARN","message":"High memory usage detected","memory_mb":1024,"threshold_mb":800}
+{"timestamp":"2024-10-25T13:55:40+08:00","level":"INFO","message":"Request received","method":"POST","path":"/api/orders","ip":"192.168.1.2","status_code":201,"response_time":0.156}
+{"timestamp":"2024-10-25T13:55:41+08:00","level":"DEBUG","message":"Cache miss","key":"user:123","service":"cache"}
+{"timestamp":"2024-10-25T13:55:42+08:00","level":"ERROR","message":"Payment processing failed","error":"InvalidCard","transaction_id":"txn_abc123","amount":99.99}
+{"timestamp":"2024-10-25T13:55:43+08:00","level":"INFO","message":"Request received","method":"GET","path":"/api/products","ip":"192.168.1.3","status_code":200,"response_time":0.234}
+{"timestamp":"2024-10-25T13:55:44+08:00","level":"WARN","message":"Rate limit approaching","ip":"192.168.1.1","requests":95,"limit":100}
+{"timestamp":"2024-10-25T13:55:45+08:00","level":"INFO","message":"Background job started","job":"SendEmailJob","queue":"mailers"}
+{"timestamp":"2024-10-25T13:55:46+08:00","level":"ERROR","message":"External API timeout","url":"https://api.external.com/data","timeout_seconds":30}
+{"timestamp":"2024-10-25T13:55:47+08:00","level":"INFO","message":"Request received","method":"DELETE","path":"/api/cart/456","ip":"192.168.1.4","status_code":404,"response_time":0.012}
+{"timestamp":"2024-10-25T13:55:48+08:00","level":"FATAL","message":"Critical system error","error":"OutOfMemory","available_mb":50}
+{"timestamp":"2024-10-25T13:55:49+08:00","level":"INFO","message":"Background job completed","job":"SendEmailJob","duration_ms":2345}
+{"timestamp":"2024-10-25T13:55:50+08:00","level":"WARN","message":"Slow query detected","query":"SELECT * FROM orders","duration_ms":5678}

@@ -149,6 +149,13 @@ module Fractor
       # Trace work item queued
       trace_work(:queued, work, queue_size: @work_queue.size)
 
+      # Distribute to idle workers if work_distribution_manager is available
+      # This ensures work added from callbacks gets picked up immediately
+      if @work_distribution_manager && @running
+        distributed = @work_distribution_manager.distribute_to_idle_workers
+        puts "Distributed work to #{distributed} idle workers after add_work_item" if @debug && distributed.positive?
+      end
+
       return unless @debug
 
       puts "Work item added. Initial work count: #{@total_work_count}, Queue size: #{@work_queue.size}"
@@ -177,18 +184,42 @@ module Fractor
 
     # Starts the worker Ractors for all worker pools.
     def start_workers
+      # Capture debug flag for Ractor isolation (Ruby 4.0)
+      # Pass as parameter to avoid isolation error
+      debug_mode = @debug
+
+      # Check if running on Ruby 4.0
+      ruby_4_0 = Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("4.0.0")
+
       # Create a wakeup Ractor for unblocking Ractor.select
-      @wakeup_ractor = Ractor.new do
-        puts "Wakeup Ractor started" if @debug
-        loop do
-          msg = Ractor.receive
-          puts "Wakeup Ractor received: #{msg.inspect}" if @debug
-          if %i[wakeup shutdown].include?(msg)
-            Ractor.yield({ type: :wakeup, message: msg })
-            break if msg == :shutdown
+      if ruby_4_0
+        # In Ruby 4.0, wakeup uses ports too
+        @wakeup_port = Ractor::Port.new
+        @wakeup_ractor = Ractor.new(@wakeup_port, debug_mode) do |port, debug|
+          puts "Wakeup Ractor started" if debug
+          loop do
+            msg = Ractor.receive
+            puts "Wakeup Ractor received: #{msg.inspect}" if debug
+            if %i[wakeup shutdown].include?(msg)
+              port << { type: :wakeup, message: msg }
+              break if msg == :shutdown
+            end
           end
+          puts "Wakeup Ractor shutting down" if debug
         end
-        puts "Wakeup Ractor shutting down" if @debug
+      else
+        @wakeup_ractor = Ractor.new(debug_mode) do |debug|
+          puts "Wakeup Ractor started" if debug
+          loop do
+            msg = Ractor.receive
+            puts "Wakeup Ractor received: #{msg.inspect}" if debug
+            if %i[wakeup shutdown].include?(msg)
+              Ractor.yield({ type: :wakeup, message: msg })
+              break if msg == :shutdown
+            end
+          end
+          puts "Wakeup Ractor shutting down" if debug
+        end
       end
 
       # Add wakeup ractor to the map with a special marker
@@ -199,7 +230,17 @@ module Fractor
         num_workers = pool[:num_workers]
 
         pool[:workers] = (1..num_workers).map do |i|
-          wrapped_ractor = WrappedRactor.new("worker #{worker_class}:#{i}", worker_class)
+          # In Ruby 4.0, create a response port for each worker
+          response_port = if ruby_4_0
+                            Ractor::Port.new
+                          end
+
+          # Use the factory method to create the appropriate implementation
+          wrapped_ractor = WrappedRactor.create(
+            "worker #{worker_class}:#{i}",
+            worker_class,
+            response_port: response_port,
+          )
           wrapped_ractor.start # Start the underlying Ractor
           # Map the actual Ractor object to the WrappedRactor instance
           @ractors_map[wrapped_ractor.ractor] = wrapped_ractor if wrapped_ractor.ractor
@@ -210,9 +251,22 @@ module Fractor
       # Flatten all workers for easier access
       @workers = @worker_pools.flat_map { |pool| pool[:workers] }
       @ractors_map.compact! # Ensure map doesn't contain nil keys/values
+
+      # Update work distribution manager's workers reference
+      # This is critical because @workers was reassigned, and WorkDistributionManager
+      # needs the updated reference to properly track idle workers
+      @work_distribution_manager.update_workers(@workers)
+
+      # Mark all workers as idle initially so they can receive work
+      # This is critical for Ruby 4.0 where workers don't send :initialize messages
+      @workers.each do |worker|
+        @work_distribution_manager.mark_worker_idle(worker)
+      end
+
       return unless @debug
 
       puts "Workers started: #{@workers.size} active across #{@worker_pools.size} pools."
+      puts "All workers marked as idle and ready for work."
     end
 
     # Sets up signal handlers for graceful shutdown.
@@ -260,13 +314,20 @@ module Fractor
 
       @running = true
 
+      # Distribute any work that was added before run() was called
+      # This is critical for Ruby 4.0 where workers need explicit work distribution
+      if @work_distribution_manager
+        distributed = @work_distribution_manager.distribute_to_idle_workers
+        puts "Distributed initial work to #{distributed} idle workers (work_queue.size: #{@work_queue.size})" if @debug || true
+      end
+
       # Start timer thread for continuous mode to periodically check work sources
       start_timer_thread if @continuous_mode && !@work_callbacks.empty?
 
       begin
         # Run the main event loop through MainLoopHandler
-        main_loop_handler = MainLoopHandler.new(self, debug: @debug)
-        main_loop_handler.run_loop
+        @main_loop_handler = MainLoopHandler.create(self, debug: @debug)
+        @main_loop_handler.run_loop
       rescue ShutdownSignal => e
         puts "Shutdown signal caught: #{e.message}" if @debug
         puts "Sending shutdown message to all Ractors..." if @debug
@@ -292,8 +353,13 @@ module Fractor
 
     # Stop the supervisor (for continuous mode)
     def stop
-      @running = false
       puts "Stopping supervisor..." if @debug
+
+      # Initiate shutdown in main loop handler first, so it continues
+      # processing shutdown acknowledgments even after @running = false
+      @main_loop_handler&.initiate_shutdown
+
+      @running = false
 
       # Update shutdown handler with current references before shutdown
       @shutdown_handler.instance_variable_set(:@workers, @workers)
@@ -302,6 +368,8 @@ module Fractor
       @shutdown_handler.instance_variable_set(:@performance_monitor,
                                               @performance_monitor)
 
+      # Send shutdown signals but don't wait for workers to close
+      # The caller (e.g., ContinuousServer) should wait for the main loop thread
       @shutdown_handler.shutdown
     end
 

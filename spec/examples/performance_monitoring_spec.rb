@@ -50,7 +50,8 @@ RSpec.describe "Performance Monitoring Example" do
       end
 
       it "has a configurable sample interval" do
-        custom_monitor = Fractor::PerformanceMonitor.new(supervisor, sample_interval: 0.5)
+        custom_monitor = Fractor::PerformanceMonitor.new(supervisor,
+                                                         sample_interval: 0.5)
 
         expect(custom_monitor).to be_a(Fractor::PerformanceMonitor)
       end
@@ -122,7 +123,8 @@ RSpec.describe "Performance Monitoring Example" do
       before do
         monitor.start
         # Record jobs with known latencies
-        [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10].each do |latency|
+        [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09,
+         0.10].each do |latency|
           monitor.record_job(latency, success: true)
         end
         monitor.stop
@@ -274,7 +276,7 @@ RSpec.describe "Performance Monitoring Example" do
         supervisor_thread = Thread.new { supervisor.run }
 
         # Wait for completion
-        sleep 0.5 while supervisor.work_queue.size > 0
+        sleep 0.5 while !supervisor.work_queue.empty?
 
         monitor.stop
         supervisor.stop
@@ -282,7 +284,7 @@ RSpec.describe "Performance Monitoring Example" do
 
         # Check that work was processed
         expect(supervisor.results.results.size).to eq(5)
-        expect(supervisor.results.results.all? { |r| r.success? }).to be true
+        expect(supervisor.results.results.all?(&:success?)).to be true
       end
 
       it "tracks metrics from supervisor execution" do
@@ -292,7 +294,7 @@ RSpec.describe "Performance Monitoring Example" do
         end
 
         supervisor_thread = Thread.new { supervisor.run }
-        sleep 0.5 while supervisor.work_queue.size > 0
+        sleep 0.5 while !supervisor.work_queue.empty?
 
         # Manually record completed jobs
         supervisor.results.results.each do |result|

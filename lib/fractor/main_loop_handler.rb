@@ -10,6 +10,22 @@ module Fractor
     def initialize(supervisor, debug: false)
       @supervisor = supervisor
       @debug = debug
+      @shutting_down = false
+    end
+
+    # Factory method to create the appropriate MainLoopHandler implementation
+    # based on the current Ruby version.
+    #
+    # @param supervisor [Fractor::Supervisor] The supervisor instance
+    # @param debug [Boolean] Whether debug mode is enabled
+    # @return [MainLoopHandler] The appropriate subclass instance
+    def self.create(supervisor, debug: false)
+      ruby_4_0 = Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("4.0.0")
+      if ruby_4_0
+        MainLoopHandler4.new(supervisor, debug: debug)
+      else
+        MainLoopHandler3.new(supervisor, debug: debug)
+      end
     end
 
     # Run the main event loop.
@@ -17,31 +33,40 @@ module Fractor
     #
     # @return [void]
     def run_loop
-      loop do
-        processed_count = get_processed_count
+      raise NotImplementedError, "Subclasses must implement #run_loop"
+    end
 
-        # Check loop termination condition
-        break unless should_continue_running?(processed_count)
+    # Clean up the ractors map after batch processing.
+    # This is critical on Windows Ruby 3.4 where workers may not respond to shutdown
+    # if they're stuck in Ractor.receive.
+    #
+    # @return [void]
+    def cleanup_ractors_map
+      return if ractors_map.empty?
 
-        log_processing_status(processed_count)
+      puts "Cleaning up ractors map (#{ractors_map.size} entries)..." if @debug
 
-        active_ractors = get_active_ractors
+      # Simply clear the map without trying to interact with ractors
+      # The main loop already attempted to shut down workers properly
+      # On Windows Ruby 3.4, some workers may be stuck in Ractor.receive
+      # and will never acknowledge shutdown - we must not block on them
+      ractors_map.clear
 
-        # Check for new work from callbacks if in continuous mode
-        process_work_callbacks if continuous_mode? && !work_callbacks.empty?
+      # Force garbage collection to help clean up orphaned ractors
+      # This is a workaround for Ruby 3.4 Windows where orphaned ractors
+      # can block creation of new ractors in subsequent tests
+      GC.start
+      puts "Ractors map cleared and GC forced." if @debug
+    end
 
-        # Handle edge cases
-        handle_edge_cases(active_ractors, processed_count)
-
-        # Wait for next message from any active ractor
-        ready_ractor_obj, message = select_from_active_ractors(active_ractors)
-        next unless ready_ractor_obj && message
-
-        # Process the received message
-        process_message(ready_ractor_obj, message)
-      end
-
-      puts "Main loop finished." if @debug
+    # Initiate graceful shutdown.
+    # Sets the shutting_down flag to allow the main loop to process
+    # shutdown acknowledgments before exiting.
+    #
+    # @return [void]
+    def initiate_shutdown
+      @shutting_down = true
+      puts "Main loop shutdown initiated" if @debug
     end
 
     private
@@ -54,11 +79,21 @@ module Fractor
     end
 
     # Check if the main loop should continue running.
+    # Continues during shutdown until all workers have acknowledged.
     #
     # @param processed_count [Integer] Current number of processed items
     # @return [Boolean]
     def should_continue_running?(processed_count)
+      return true if @shutting_down && !all_workers_closed?
+
       running? && (continuous_mode? || processed_count < total_work_count)
+    end
+
+    # Check if all workers have closed (acknowledged shutdown).
+    #
+    # @return [Boolean]
+    def all_workers_closed?
+      workers.all?(&:closed?)
     end
 
     # Log current processing status for debugging.
@@ -73,78 +108,6 @@ module Fractor
       else
         puts "Waiting for Ractor results. Processed: #{processed_count}/#{total_work_count}, Queue size: #{work_queue.size}"
       end
-    end
-
-    # Get list of active ractors for Ractor.select.
-    # Excludes wakeup ractor unless in continuous mode with callbacks.
-    #
-    # @return [Array<Ractor>]
-    def get_active_ractors
-      ractors_map.keys.reject do |ractor|
-        ractor == wakeup_ractor && !(continuous_mode? && !work_callbacks.empty?)
-      end
-    end
-
-    # Check for new work from callbacks in continuous mode.
-    #
-    # @return [void]
-    def process_work_callbacks
-      work_callbacks.each do |callback|
-        new_work = callback.call
-        if new_work && !new_work.empty?
-          @supervisor.add_work_items(new_work)
-          puts "Work source provided #{new_work.size} new items" if @debug
-
-          # Distribute work to idle workers
-          distributed = work_distribution_manager.distribute_to_idle_workers
-          puts "Distributed work to #{distributed} idle workers" if @debug && distributed.positive?
-        end
-      end
-    end
-
-    # Handle edge cases like no active workers or empty queue.
-    #
-    # @param active_ractors [Array<Ractor>] List of active ractors
-    # @param processed_count [Integer] Current number of processed items
-    # @return [Boolean] true if should break from loop
-    def handle_edge_cases(active_ractors, processed_count)
-      # Break if no active workers and queue is empty, but work remains (indicates potential issue)
-      if active_ractors.empty? && work_queue.empty? && !continuous_mode? && processed_count < total_work_count
-        puts "Warning: No active workers and queue is empty, but not all work is processed. Exiting loop." if @debug
-        return true
-      end
-
-      # In continuous mode, just wait if no active ractors but keep running
-      if active_ractors.empty?
-        return true unless continuous_mode?
-
-        sleep(0.1) # Small delay to avoid CPU spinning
-        return false # Continue to next iteration
-      end
-
-      false
-    end
-
-    # Wait for a message from any active ractor.
-    #
-    # @param active_ractors [Array<Ractor>] List of active ractors to select from
-    # @return [Array] ready_ractor_obj and message, or nil if should continue
-    def select_from_active_ractors(active_ractors)
-      ready_ractor_obj, message = Ractor.select(*active_ractors)
-
-      # Check if this is the wakeup ractor
-      if ready_ractor_obj == wakeup_ractor
-        puts "Wakeup signal received: #{message[:message]}" if @debug
-        # Remove wakeup ractor from map if shutting down
-        if message[:message] == :shutdown
-          ractors_map.delete(wakeup_ractor)
-          @supervisor.instance_variable_set(:@wakeup_ractor, nil)
-        end
-        # Return nil to indicate we should continue to next iteration
-        return nil, nil
-      end
-
-      [ready_ractor_obj, message]
     end
 
     # Process a message from a ractor.
@@ -366,6 +329,10 @@ module Fractor
       @supervisor.instance_variable_get(:@wakeup_ractor)
     end
 
+    def wakeup_port
+      @supervisor.instance_variable_get(:@wakeup_port)
+    end
+
     def work_distribution_manager
       @supervisor.instance_variable_get(:@work_distribution_manager)
     end
@@ -388,6 +355,52 @@ module Fractor
 
     def error_callbacks
       @supervisor.instance_variable_get(:@error_callbacks)
+    end
+
+    # Check if running on Windows with Ruby 3.4
+    # Returns true for Windows Ruby 3.4.x where Ractor issues occur
+    #
+    # @return [Boolean]
+    def windows_ruby_34?
+      return false unless RUBY_PLATFORM.match?(/mswin|mingw|cygwin/)
+
+      ruby_version = Gem::Version.new(RUBY_VERSION)
+      ruby_version >= Gem::Version.new("3.4.0") && ruby_version < Gem::Version.new("3.5.0")
+    end
+
+    # Handle a stuck ractor by identifying and removing it from the active pool
+    # This is called when Ractor.select times out on Windows Ruby 3.4
+    #
+    # @param active [Array] List of active ractors/ports
+    # @return [void]
+    def handle_stuck_ractor(active)
+      puts "[WARNING] Ractor.select timeout - detecting stuck ractor..." if @debug
+
+      # Try to identify which ractor is stuck by checking their state
+      active.each do |ractor_or_port|
+        # Skip ports (Ruby 4.0) - they should be checked differently
+        next if ractor_or_port.is_a?(Ractor::Port)
+
+        wrapped_ractor = ractors_map[ractor_or_port]
+        next unless wrapped_ractor
+
+        # Check if ractor appears stuck (terminated or blocked)
+        begin
+          inspect_result = Timeout.timeout(0.1) { ractor_or_port.inspect }
+        rescue Timeout::Error
+          inspect_result = "#<Ractor:blocked>"
+        end
+
+        if inspect_result.include?("terminated") || inspect_result.include?("invalid")
+          puts "[WARNING] Removing stuck/terminated ractor: #{wrapped_ractor.name}" if @debug
+          ractors_map.delete(ractor_or_port)
+          workers.delete(wrapped_ractor)
+        end
+      end
+
+      # Force garbage collection to help clean up stuck ractors
+      GC.start
+      puts "[WARNING] Stuck ractor handled, GC forced" if @debug
     end
   end
 end

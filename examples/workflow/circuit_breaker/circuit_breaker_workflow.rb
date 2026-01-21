@@ -41,7 +41,7 @@ module CircuitBreakerExample
       sleep 0.1
       result = ApiResponse.new(
         data: "Data from #{work.endpoint}",
-        source: :primary
+        source: :primary,
       )
 
       Fractor::WorkResult.new(result: result, work: work)
@@ -58,7 +58,7 @@ module CircuitBreakerExample
       sleep 0.05
       result = ApiResponse.new(
         data: "Cached data for #{work.endpoint}",
-        source: :cache
+        source: :cache,
       )
 
       Fractor::WorkResult.new(result: result, work: work)
@@ -88,9 +88,9 @@ module CircuitBreakerExample
         # Fallback to cache when circuit opens
         fallback_to "fetch_from_cache"
 
-        # Log circuit breaker events
+        # Log circuit breaker events (expected behavior in test scenarios)
         on_error do |error, _context|
-          puts "❌ API call failed: #{error.message}"
+          puts "⚠️ API fallback triggered: #{error.message}"
         end
 
         outputs_to_workflow
@@ -158,7 +158,7 @@ module CircuitBreakerExample
 
   # Demonstration runner
   def self.run_basic_example
-    puts "\n" + "=" * 60
+    puts "\n#{'=' * 60}"
     puts "Circuit Breaker Example - Basic Protection"
     puts "=" * 60
 
@@ -184,16 +184,16 @@ module CircuitBreakerExample
 
     # Circuit should now be open - fallback activated
     puts "\n3️⃣  Circuit open - using fallback:"
-    request = ApiRequest.new("users/456", should_fail: true)  # Still failing to show fallback
+    request = ApiRequest.new("users/456", should_fail: true) # Still failing to show fallback
     result = workflow.execute(input: request)
     puts "✅ Result: #{result.output.data} (source: #{result.output.source})"
     puts "   Note: Got cached data because primary failed"
 
-    puts "\n" + "=" * 60
+    puts "\n#{'=' * 60}"
   end
 
   def self.run_shared_example
-    puts "\n" + "=" * 60
+    puts "\n#{'=' * 60}"
     puts "Circuit Breaker Example - Shared Protection"
     puts "=" * 60
 

@@ -281,10 +281,10 @@ end
 
 == Next steps
 
-* Learn about link:core-concepts.adoc[Core Concepts] - Component details and interactions
-* Read link:architecture.adoc[Architecture Guide] - System design and implementation
-* Read link:design-principles.adoc[Design Principles] - Philosophy and rationale
-* Explore link:../guides/pipeline-mode.adoc[Pipeline Mode] in detail
-* Explore link:../guides/continuous-mode.adoc[Continuous Mode] in detail
-* Try link:../features/workflows.adoc[Workflows] for complex processing
-* See link:../reference/examples.adoc[Examples] for real-world patterns
+* Learn about link:core-concepts/[Core Concepts] - Component details and interactions
+* Read link:../architecture/[Architecture Guide] - System design and implementation
+* Read link:design-principles/[Design Principles] - Philosophy and rationale
+* Explore link:../guides/pipeline-mode/[Pipeline Mode] in detail
+* Explore link:../guides/continuous-mode/[Continuous Mode] in detail
+* Try link:../features/workflows/[Workflows] for complex processing
+* See link:../reference/examples/[Examples] for real-world patterns

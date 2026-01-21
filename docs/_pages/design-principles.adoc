@@ -855,8 +855,8 @@ These principles guide all design decisions and help Fractor remain simple, safe
 
 == Next steps
 
-* Read link:core-concepts.adoc[Core Concepts] for component details
-* Read link:architecture.adoc[Architecture Guide] for system design
-* Try link:../guides/pipeline-mode.adoc[Pipeline Mode] to see principles in action
-* Try link:../guides/continuous-mode.adoc[Continuous Mode] for long-running services
-* Study link:../reference/examples.adoc[Examples] to see patterns applied
+* Read link:core-concepts/[Core Concepts] for component details
+* Read link:../architecture/[Architecture Guide] for system design
+* Try link:../guides/pipeline-mode/[Pipeline Mode] to see principles in action
+* Try link:../guides/continuous-mode/[Continuous Mode] for long-running services
+* Study link:../reference/examples/[Examples] to see patterns applied

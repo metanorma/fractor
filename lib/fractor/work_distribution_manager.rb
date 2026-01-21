@@ -21,6 +21,14 @@ module Fractor
       @work_start_times = {}
     end
 
+    # Update the workers reference after workers are created
+    # This is needed when @workers is reassigned in Supervisor.start_workers
+    #
+    # @param workers [Array<WrappedRactor>] The new workers array
+    def update_workers(workers)
+      @workers = workers
+    end
+
     # Assign work to a specific worker if work is available.
     #
     # @param wrapped_ractor [WrappedRactor] The worker to assign work to

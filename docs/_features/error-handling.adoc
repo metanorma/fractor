@@ -1,10 +1,9 @@
 ---
 layout: default
 title: Error Handling
-parent: Features
-nav_order: 3
+nav_order: 4
 ---
-= Error Reporting and Analytics
+== Error Reporting and Analytics
 
 == Overview
 
@@ -1188,6 +1187,6 @@ threads.each(&:join)
 
 == See Also
 
-* link:../reference/api.adoc[API Reference] - Complete API documentation
-* link:../pages/core-concepts.adoc[Core Concepts] - Understanding WorkResult
-* link:workflows.adoc[Workflows] - Workflow error handling
+* link:../reference/api/[API Reference] - Complete API documentation
+* link:../pages/core-concepts/[Core Concepts] - Understanding WorkResult
+* link:../workflows/[Workflows] - Workflow error handling

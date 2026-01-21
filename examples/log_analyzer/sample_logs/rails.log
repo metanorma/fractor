@@ -1,0 +1,29 @@
+[2024-10-25 13:55:36] INFO -- : Started GET "/api/users" for 127.0.0.1 at 2024-10-25 13:55:36 +0800
+[2024-10-25 13:55:36] INFO -- : Processing by UsersController#index as JSON
+[2024-10-25 13:55:36] INFO -- : Completed 200 OK in 45ms (Views: 12.3ms | ActiveRecord: 8.5ms)
+[2024-10-25 13:55:37] ERROR -- : ActiveRecord::RecordNotFound: Couldn't find User with 'id'=999
+[2024-10-25 13:55:37] ERROR -- : app/controllers/users_controller.rb:42:in `show'
+[2024-10-25 13:55:38] WARN -- : Timeout::Error occurred while connecting to external API
+[2024-10-25 13:55:38] INFO -- : Started POST "/api/orders" for 192.168.1.1 at 2024-10-25 13:55:38 +0800
+[2024-10-25 13:55:38] INFO -- : Processing by OrdersController#create as JSON
+[2024-10-25 13:55:38] DEBUG -- : Parameters: {"product_id"=>"123", "quantity"=>2}
+[2024-10-25 13:55:39] INFO -- : Completed 201 Created in 156ms (Views: 5.2ms | ActiveRecord: 125.3ms)
+[2024-10-25 13:55:40] ERROR -- : Redis::CannotConnectError: Error connecting to Redis on localhost:6379
+[2024-10-25 13:55:40] ERROR -- : lib/cache_store.rb:15:in `fetch'
+[2024-10-25 13:55:41] WARN -- : Slow query detected: SELECT * FROM products WHERE category = 'electronics' (2345.6ms)
+[2024-10-25 13:55:42] INFO -- : Started DELETE "/api/sessions/abc123" for 10.0.0.1 at 2024-10-25 13:55:42 +0800
+[2024-10-25 13:55:42] INFO -- : Processing by SessionsController#destroy as JSON
+[2024-10-25 13:55:42] INFO -- : Completed 204 No Content in 23ms
+[2024-10-25 13:55:43] FATAL -- : SystemExit: Database connection pool exhausted
+[2024-10-25 13:55:43] FATAL -- : config/database.yml pool size may be too small
+[2024-10-25 13:55:44] ERROR -- : NoMethodError: undefined method `email' for nil:NilClass
+[2024-10-25 13:55:44] ERROR -- : app/mailers/user_mailer.rb:10:in `welcome_email'
+[2024-10-25 13:55:45] INFO -- : Started PATCH "/api/settings" for 172.16.0.1 at 2024-10-25 13:55:45 +0800
+[2024-10-25 13:55:45] INFO -- : Processing by SettingsController#update as JSON
+[2024-10-25 13:55:45] DEBUG -- : Current user: #<User id: 42, email: "user@example.com">
+[2024-10-25 13:55:45] INFO -- : Completed 200 OK in 78ms (Views: 3.4ms | ActiveRecord: 45.2ms)
+[2024-10-25 13:55:46] WARN -- : ActionController::ParameterMissing: param is missing or the value is empty: user
+[2024-10-25 13:55:47] INFO -- : Cache hit: products/index/page_1
+[2024-10-25 13:55:48] DEBUG -- : SQL (1.2ms) SELECT COUNT(*) FROM orders WHERE created_at > '2024-10-24'
+[2024-10-25 13:55:49] ERROR -- : Errno::ECONNREFUSED: Connection refused - connect(2) for "api.external.com" port 443
+[2024-10-25 13:55:50] INFO -- : Background job completed: SendEmailJob (queue: mailers)

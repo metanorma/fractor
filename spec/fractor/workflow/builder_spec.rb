@@ -15,13 +15,13 @@ RSpec.describe Fractor::Workflow::Builder do
   describe "#input_type" do
     it "sets the input type" do
       builder = described_class.new("test")
-      builder.input_type(TextData)
-      expect(builder.input_type_class).to eq(TextData)
+      builder.input_type(SimpleLinear::TextData)
+      expect(builder.input_type_class).to eq(SimpleLinear::TextData)
     end
 
     it "returns self for chaining" do
       builder = described_class.new("test")
-      result = builder.input_type(TextData)
+      result = builder.input_type(SimpleLinear::TextData)
       expect(result).to eq(builder)
     end
   end
@@ -29,8 +29,8 @@ RSpec.describe Fractor::Workflow::Builder do
   describe "#output_type" do
     it "sets the output type" do
       builder = described_class.new("test")
-      builder.output_type(FinalOutput)
-      expect(builder.output_type_class).to eq(FinalOutput)
+      builder.output_type(SimpleLinear::FinalOutput)
+      expect(builder.output_type_class).to eq(SimpleLinear::FinalOutput)
     end
   end
 
@@ -86,8 +86,8 @@ RSpec.describe Fractor::Workflow::Builder do
   describe "#build" do
     it "builds a workflow class" do
       builder = described_class.new("builder-test")
-      builder.input_type(TextData)
-      builder.output_type(FinalOutput)
+      builder.input_type(SimpleLinear::TextData)
+      builder.output_type(SimpleLinear::FinalOutput)
       builder.add_job("uppercase", SimpleLinearExample::UppercaseWorker,
                       inputs: :workflow)
       builder.add_job("reverse", SimpleLinearExample::ReverseWorker,
@@ -106,8 +106,8 @@ RSpec.describe Fractor::Workflow::Builder do
 
     it "builds a workflow that can be executed" do
       builder = described_class.new("executable-workflow")
-      builder.input_type(TextData)
-      builder.output_type(FinalOutput)
+      builder.input_type(SimpleLinear::TextData)
+      builder.output_type(SimpleLinear::FinalOutput)
       builder.add_job("uppercase", SimpleLinearExample::UppercaseWorker,
                       inputs: :workflow)
       builder.add_job("reverse", SimpleLinearExample::ReverseWorker,
@@ -118,7 +118,7 @@ RSpec.describe Fractor::Workflow::Builder do
 
       workflow_class = builder.build
       workflow = workflow_class.new
-      input = TextData.new(text: "hello")
+      input = SimpleLinear::TextData.new(text: "hello")
       result = workflow.execute(input: input)
 
       expect(result.success?).to be true
@@ -192,7 +192,7 @@ RSpec.describe Fractor::Workflow::Builder do
   describe "#clone" do
     it "creates a copy of the builder" do
       builder = described_class.new("test")
-      builder.input_type(TextData)
+      builder.input_type(SimpleLinear::TextData)
       builder.add_job("job1", SimpleLinearExample::UppercaseWorker)
 
       clone = builder.clone

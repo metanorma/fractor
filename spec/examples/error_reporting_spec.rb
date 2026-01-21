@@ -2,6 +2,7 @@
 
 require "fractor/error_reporter"
 require "json"
+require "socket"
 
 RSpec.describe "Error Reporting Example" do
   # Workers from the example
@@ -9,7 +10,7 @@ RSpec.describe "Error Reporting Example" do
     def process(work)
       if work.input[:fail]
         Fractor::WorkResult.new(
-          error: ::SocketError.new("Connection refused"),
+          error: SocketError.new("Connection refused"),
           error_code: :connection_refused,
           error_context: { endpoint: work.input[:endpoint], attempt: 1 },
           work: work,
@@ -70,7 +71,8 @@ RSpec.describe "Error Reporting Example" do
     end
 
     it "handles network failures with error codes" do
-      work = Fractor::Work.new({ fail: true, endpoint: "api.example.com", id: 1 })
+      work = Fractor::Work.new({ fail: true, endpoint: "api.example.com",
+                                 id: 1 })
       result = NetworkWorker.new.process(work)
 
       expect(result).to be_failure
@@ -80,10 +82,12 @@ RSpec.describe "Error Reporting Example" do
     end
 
     it "includes error context" do
-      work = Fractor::Work.new({ fail: true, endpoint: "api.example.com", id: 1 })
+      work = Fractor::Work.new({ fail: true, endpoint: "api.example.com",
+                                 id: 1 })
       result = NetworkWorker.new.process(work)
 
-      expect(result.error_context).to eq({ endpoint: "api.example.com", attempt: 1 })
+      expect(result.error_context).to eq({ endpoint: "api.example.com",
+                                           attempt: 1 })
     end
   end
 
@@ -155,7 +159,8 @@ RSpec.describe "Error Reporting Example" do
 
         # 3 errors
         3.times do |i|
-          work = Fractor::Work.new({ fail: true, endpoint: "api.example.com", id: i })
+          work = Fractor::Work.new({ fail: true, endpoint: "api.example.com",
+                                     id: i })
           result = NetworkWorker.new.process(work)
           reporter.record(result, job_name: "network_job")
         end
@@ -170,7 +175,8 @@ RSpec.describe "Error Reporting Example" do
       before do
         # Network errors (SocketError category)
         3.times do |i|
-          work = Fractor::Work.new({ fail: true, endpoint: "api.example.com", id: i })
+          work = Fractor::Work.new({ fail: true, endpoint: "api.example.com",
+                                     id: i })
           result = NetworkWorker.new.process(work)
           reporter.record(result, job_name: "network_job")
         end
@@ -194,7 +200,7 @@ RSpec.describe "Error Reporting Example" do
         # Categories are inferred from error types, not class names
         expect(top.keys).to include(:validation, :network)
         expect(top[:validation]).to eq(4) # ArgumentError -> validation
-        expect(top[:network]).to eq(3)   # SocketError -> network
+        expect(top[:network]).to eq(3) # SocketError -> network
       end
 
       it "limits top categories to specified limit" do
@@ -256,7 +262,8 @@ RSpec.describe "Error Reporting Example" do
           reporter.record(result, job_name: "network_job")
         end
         3.times do |i|
-          work = Fractor::Work.new({ fail: true, endpoint: "api.example.com", id: i })
+          work = Fractor::Work.new({ fail: true, endpoint: "api.example.com",
+                                     id: i })
           result = NetworkWorker.new.process(work)
           reporter.record(result, job_name: "network_job")
         end
@@ -315,7 +322,8 @@ RSpec.describe "Error Reporting Example" do
           reporter.record(result, job_name: "network_job")
         end
         3.times do |i|
-          work = Fractor::Work.new({ fail: true, endpoint: "api.example.com", id: i })
+          work = Fractor::Work.new({ fail: true, endpoint: "api.example.com",
+                                     id: i })
           result = NetworkWorker.new.process(work)
           reporter.record(result, job_name: "network_job")
         end

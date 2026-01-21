@@ -29,8 +29,6 @@ Fractor is a powerful parallel processing framework for Ruby that leverages Ract
 * 🛠️ **Production Ready**: Battle-tested patterns for continuous mode, signal handling, and graceful shutdown
 * 🎯 **Workflow Visualizer**: Built-in tools for visualizing complex workflow graphs and execution traces
 
-See the link:../ROADMAP.md[Roadmap] for full details on completed features and upcoming enhancements.
-
 ---
 
 == Quick Start
@@ -81,14 +79,14 @@ New to Fractor? Start here to learn the fundamentals.
 
 Ready to build real applications? Dive into core features.
 
-* link:_pages/core-concepts/[Core Concepts] - Components, data flow, and concurrency model
-* link:_pages/architecture/[Architecture Guide] - System design and implementation details
-* link:_pages/design-principles/[Design Principles] - Philosophy and design decisions
-* link:_guides/pipeline-mode/[Pipeline Mode] - Batch processing patterns
-* link:_guides/continuous-mode/[Continuous Mode] - Long-running server applications
-* link:_features/workflows/[Workflows] - Complex processing graphs
-* link:_features/error-handling/[Error Handling] - Robust error management
-* link:_features/signal-handling/[Signal Handling] - Graceful shutdown patterns
+* link:core-concepts/[Core Concepts] - Components, data flow, and concurrency model
+* link:architecture/[Architecture Guide] - System design and implementation details
+* link:design-principles/[Design Principles] - Philosophy and design decisions
+* link:guides/pipeline-mode/[Pipeline Mode] - Batch processing patterns
+* link:guides/continuous-mode/[Continuous Mode] - Long-running server applications
+* link:features/workflows/[Workflows] - Complex processing graphs
+* link:features/error-handling/[Error Handling] - Robust error management
+* link:features/signal-handling/[Signal Handling] - Graceful shutdown patterns
 
 === 🚀 Advanced - Deep Dive
 

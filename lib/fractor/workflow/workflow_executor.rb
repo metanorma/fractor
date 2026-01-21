@@ -204,7 +204,7 @@ trace: false, dead_letter_queue: nil)
           job.handle_error(e, @context)
 
           # Log and trigger hook
-          log_job_error(job, e)
+          log_job_error(job, e, has_fallback: !!job.fallback_job)
           @hooks.trigger(:job_error, job, e, @context)
 
           puts "Job '#{job.name}' failed: #{e.message}" if ENV["FRACTOR_DEBUG"]
@@ -445,14 +445,17 @@ trace: false, dead_letter_queue: nil)
         )
       end
 
-      def log_job_error(job, error)
+      def log_job_error(job, error, has_fallback: false)
         return unless @context.logger
 
-        @context.logger.error(
-          "Job failed",
+        # Log at WARN level if fallback is available (error is handled),
+        # otherwise log at ERROR level (error causes workflow failure)
+        log_method = has_fallback ? @context.logger.method(:warn) : @context.logger.method(:error)
+
+        log_method.call(
+          "Job '#{job.name}' encountered error: #{error}",
           job: job.name,
           error: error.class.name,
-          message: error.message,
         )
       end
 

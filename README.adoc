@@ -3,8 +3,29 @@
 image:https://img.shields.io/gem/v/fractor.svg[RubyGems Version, link=https://rubygems.org/gems/fractor]
 image:https://img.shields.io/github/license/metanorma/fractor.svg[License, link=https://github.com/metanorma/fractor/blob/main/LICENSE]
 image:https://github.com/metanorma/fractor/actions/workflows/rake.yml/badge.svg[Build Status, link=https://github.com/metanorma/fractor/actions/workflows/rake.yml]
+image:https://img.shields.io/badge/ruby-3.0%20%E2%86%92%204.0%2B-ruby.svg[Ruby 3.0 to 4.0+, link=https://www.ruby-lang.org]
 
-Fractor is a lightweight Ruby framework for parallel processing using Ractors. It provides a structured way to distribute computational work across multiple Ractors with minimal boilerplate.
+Fractor is a lightweight Ruby framework for parallel processing using Ractors
+(Ruby Actors).
+
+It provides a structured way to distribute computational work across multiple
+Ractors with minimal boilerplate.
+
+== Ruby version support
+
+Fractor fully supports both **Ruby 3.x** and **Ruby 4.0+**:
+
+* *Ruby 3.0+*: Uses `Ractor.yield` for message passing from workers
+
+* *Ruby 4.0+*: Uses `Ractor::Port` for more efficient communication patterns
+
+Fractor automatically detects your Ruby version and uses the appropriate
+internal implementation. The user-facing API is identical across versions --
+write your code once, and Fractor handles the differences internally.
+
+See
+link:docs/_pages/architecture.adoc#ruby-version-compatibility[Architecture: Ruby Version Compatibility]
+for details on the internal differences.
 
 == Quick start
 
@@ -99,7 +120,6 @@ puts "Results: #{supervisor.results.results.map(&:result)}"
 * link:docs/_reference/api.adoc[API Reference] - Complete API documentation
 * link:docs/_reference/examples.adoc[Examples] - Complete examples for all patterns
 * link:docs/_reference/troubleshooting.adoc[Troubleshooting] - Common issues and solutions
-* link:ROADMAP.md[Roadmap] - Planned enhancements and features
 
 == Operating modes
 

@@ -24,7 +24,8 @@ RSpec.describe "Priority Work Example" do
       end
 
       it "creates work with custom priority" do
-        work = Fractor::PriorityWork.new({ task: "urgent" }, priority: :critical)
+        work = Fractor::PriorityWork.new({ task: "urgent" },
+                                         priority: :critical)
 
         expect(work.priority).to eq(:critical)
       end
@@ -42,7 +43,8 @@ RSpec.describe "Priority Work Example" do
         high = Fractor::PriorityWork.new({ task: "b" }, priority: :high)
         normal = Fractor::PriorityWork.new({ task: "c" }, priority: :normal)
         low = Fractor::PriorityWork.new({ task: "d" }, priority: :low)
-        background = Fractor::PriorityWork.new({ task: "e" }, priority: :background)
+        background = Fractor::PriorityWork.new({ task: "e" },
+                                               priority: :background)
 
         expect(critical.priority_value).to eq(0)
         expect(high.priority_value).to eq(1)
@@ -136,9 +138,12 @@ RSpec.describe "Priority Work Example" do
       end
 
       it "processes items in priority order" do
-        queue.push(Fractor::PriorityWork.new({ task: "background" }, priority: :background))
-        queue.push(Fractor::PriorityWork.new({ task: "critical" }, priority: :critical))
-        queue.push(Fractor::PriorityWork.new({ task: "normal" }, priority: :normal))
+        queue.push(Fractor::PriorityWork.new({ task: "background" },
+                                             priority: :background))
+        queue.push(Fractor::PriorityWork.new({ task: "critical" },
+                                             priority: :critical))
+        queue.push(Fractor::PriorityWork.new({ task: "normal" },
+                                             priority: :normal))
 
         expect(queue.pop.priority).to eq(:critical)
         expect(queue.pop.priority).to eq(:normal)
@@ -157,11 +162,16 @@ RSpec.describe "Priority Work Example" do
 
     describe "priority ordering example" do
       it "orders mixed priorities correctly" do
-        queue.push(Fractor::PriorityWork.new({ task: "Background report" }, priority: :background))
-        queue.push(Fractor::PriorityWork.new({ task: "Critical bug fix" }, priority: :critical))
-        queue.push(Fractor::PriorityWork.new({ task: "Normal feature" }, priority: :normal))
-        queue.push(Fractor::PriorityWork.new({ task: "High priority task" }, priority: :high))
-        queue.push(Fractor::PriorityWork.new({ task: "Low priority cleanup" }, priority: :low))
+        queue.push(Fractor::PriorityWork.new({ task: "Background report" },
+                                             priority: :background))
+        queue.push(Fractor::PriorityWork.new({ task: "Critical bug fix" },
+                                             priority: :critical))
+        queue.push(Fractor::PriorityWork.new({ task: "Normal feature" },
+                                             priority: :normal))
+        queue.push(Fractor::PriorityWork.new({ task: "High priority task" },
+                                             priority: :high))
+        queue.push(Fractor::PriorityWork.new({ task: "Low priority cleanup" },
+                                             priority: :low))
 
         5.times do |_i| # rubocop:disable Lint/UnusedBlockArgument
           work = queue.pop_non_blocking
@@ -174,7 +184,8 @@ RSpec.describe "Priority Work Example" do
       it "uses FIFO within same priority" do
         first = Fractor::PriorityWork.new({ task: "first" }, priority: :normal)
         sleep 0.01
-        second = Fractor::PriorityWork.new({ task: "second" }, priority: :normal)
+        second = Fractor::PriorityWork.new({ task: "second" },
+                                           priority: :normal)
         sleep 0.01
         third = Fractor::PriorityWork.new({ task: "third" }, priority: :normal)
 
@@ -222,8 +233,10 @@ RSpec.describe "Priority Work Example" do
       it "processes items normally without aging" do
         normal_queue = Fractor::PriorityWorkQueue.new(aging_enabled: false)
 
-        low_priority = Fractor::PriorityWork.new({ task: "low" }, priority: :low)
-        high_priority = Fractor::PriorityWork.new({ task: "high" }, priority: :high)
+        low_priority = Fractor::PriorityWork.new({ task: "low" },
+                                                 priority: :low)
+        high_priority = Fractor::PriorityWork.new({ task: "high" },
+                                                  priority: :high)
 
         normal_queue.push(low_priority)
         sleep 0.6 # Wait to show aging is NOT applied
@@ -273,7 +286,9 @@ RSpec.describe "Priority Work Example" do
         queue.close
         work = Fractor::PriorityWork.new({ task: "test" })
 
-        expect { queue.push(work) }.to raise_error(Fractor::ClosedQueueError, /Queue is closed/)
+        expect do
+          queue.push(work)
+        end.to raise_error(Fractor::ClosedQueueError, /Queue is closed/)
       end
 
       it "pops remaining items from closed queue" do
@@ -307,19 +322,20 @@ RSpec.describe "Priority Work Example" do
       ]
 
       works.each do |item|
-        supervisor.add_work_item(Fractor::PriorityWork.new(item, priority: item[:priority]))
+        supervisor.add_work_item(Fractor::PriorityWork.new(item,
+                                                           priority: item[:priority]))
       end
 
       # Run supervisor
       supervisor_thread = Thread.new { supervisor.run }
-      sleep 1 while supervisor.work_queue.size > 0
+      sleep 1 while !supervisor.work_queue.empty?
       supervisor.stop
       supervisor_thread.join
 
       # All work should be processed
       results = supervisor.results.results
       expect(results.size).to eq(3)
-      expect(results.all? { |r| r.success? }).to be true
+      expect(results.all?(&:success?)).to be true
     end
 
     it "processes all work items" do
@@ -331,11 +347,12 @@ RSpec.describe "Priority Work Example" do
 
       5.times do |i|
         priority = %i[critical high normal low background].sample
-        supervisor.add_work_item(Fractor::PriorityWork.new({ id: i }, priority: priority))
+        supervisor.add_work_item(Fractor::PriorityWork.new({ id: i },
+                                                           priority: priority))
       end
 
       supervisor_thread = Thread.new { supervisor.run }
-      sleep 1 while supervisor.work_queue.size > 0
+      sleep 1 while !supervisor.work_queue.empty?
       supervisor.stop
       supervisor_thread.join
 
@@ -370,7 +387,8 @@ RSpec.describe "Priority Work Example" do
 
   describe "real-world scenario" do
     it "handles complex priority workflow" do
-      queue = Fractor::PriorityWorkQueue.new(aging_enabled: true, aging_threshold: 1)
+      queue = Fractor::PriorityWorkQueue.new(aging_enabled: true,
+                                             aging_threshold: 1)
 
       # Simulate realistic workload
       works = [

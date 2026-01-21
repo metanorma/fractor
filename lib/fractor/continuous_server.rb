@@ -23,7 +23,6 @@ module Fractor
       @error_callbacks = []
       @supervisor = nil
       @supervisor_thread = nil
-      @results_thread = nil
       @running = false
     end
 
@@ -51,20 +50,20 @@ module Fractor
     # This method handles:
     # - Opening log file if specified
     # - Creating and starting supervisor
-    # - Starting results processing thread
-    # - Setting up signal handlers
+    # - Registering result callbacks with ResultAggregator
     # - Blocking until shutdown signal received
     def run
       setup_log_file
       setup_supervisor
+      register_result_callbacks
       start_supervisor_thread
-      start_results_thread
 
       log_message("Continuous server started")
       log_message("Press Ctrl+C to stop")
 
       begin
-        # Block until shutdown
+        # Event-driven: simply join the supervisor thread
+        # It will exit when @running = false and shutdown is complete
         @supervisor_thread&.join
       rescue Interrupt
         log_message("Interrupt received, shutting down...")
@@ -82,12 +81,11 @@ module Fractor
 
       @supervisor&.stop
 
-      # Wait for threads to finish
-      [@supervisor_thread, @results_thread].compact.each do |thread|
-        thread.join(2) if thread.alive?
-      end
-
-      log_message("Continuous server stopped")
+      # Ensure log file is closed
+      # This is important when stop() is called from outside the run() thread
+      # The run() method's ensure block will also call cleanup, but we ensure
+      # it here as well for immediate cleanup
+      cleanup
     end
 
     private
@@ -115,6 +113,34 @@ module Fractor
       end
     end
 
+    def register_result_callbacks
+      # Register callbacks directly with ResultAggregator for event-driven processing
+      # This eliminates the need for a separate results polling thread
+      unless @result_callbacks.empty?
+        @supervisor.results.on_new_result do |result|
+          if result.success?
+            @result_callbacks.each do |callback|
+              callback.call(result)
+            rescue StandardError => e
+              log_message("Error in result callback: #{e.message}")
+            end
+          end
+        end
+      end
+
+      unless @error_callbacks.empty?
+        @supervisor.results.on_new_result do |result|
+          unless result.success?
+            @error_callbacks.each do |callback|
+              callback.call(result)
+            rescue StandardError => e
+              log_message("Error in error callback: #{e.message}")
+            end
+          end
+        end
+      end
+    end
+
     def start_supervisor_thread
       @running = true
       @supervisor_thread = Thread.new do
@@ -124,57 +150,6 @@ module Fractor
         # Use instance logger or fall back to global
         instance_logger = @logger || Fractor.logger
         instance_logger.debug(e.backtrace.join("\n")) if instance_logger&.debug?
-      end
-
-      # Give supervisor time to start up
-      sleep(0.1)
-    end
-
-    def start_results_thread
-      @results_thread = Thread.new do
-        log_message("Results processing thread started")
-        process_results_loop
-      rescue StandardError => e
-        log_message("Results thread error: #{e.message}")
-        # Use instance logger or fall back to global
-        instance_logger = @logger || Fractor.logger
-        instance_logger.debug(e.backtrace.join("\n")) if instance_logger&.debug?
-      end
-    end
-
-    def process_results_loop
-      while @running
-        sleep(0.05)
-
-        process_successful_results
-        process_error_results
-      end
-      log_message("Results processing thread stopped")
-    end
-
-    def process_successful_results
-      loop do
-        result = @supervisor.results.results.shift
-        break unless result
-
-        @result_callbacks.each do |callback|
-          callback.call(result)
-        rescue StandardError => e
-          log_message("Error in result callback: #{e.message}")
-        end
-      end
-    end
-
-    def process_error_results
-      loop do
-        error_result = @supervisor.results.errors.shift
-        break unless error_result
-
-        @error_callbacks.each do |callback|
-          callback.call(error_result)
-        rescue StandardError => e
-          log_message("Error in error callback: #{e.message}")
-        end
       end
     end
 
@@ -193,8 +168,13 @@ module Fractor
       log_entry = "[#{timestamp}] #{message}"
 
       if @log_file && !@log_file.closed?
-        @log_file.puts(log_entry)
-        @log_file.flush
+        begin
+          @log_file.puts(log_entry)
+          @log_file.flush
+        rescue IOError
+          # File was closed in another thread, stop trying to write to it
+          @log_file = nil
+        end
       end
 
       puts log_entry

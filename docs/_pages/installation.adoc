@@ -7,7 +7,18 @@ nav_order: 3
 
 == System requirements
 
-Fractor requires Ruby 3.0 or later. It relies on Ractor, which is available in Ruby 3.0+.
+Fractor requires Ruby 3.0 or later. It relies on Ractor, which is available in
+Ruby 3.0+.
+
+Fractor supports:
+
+* **Ruby 3.0 - 3.x**: Full support using `Ractor.yield` for message passing
+* **Ruby 4.0+**: Full support using `Ractor::Port` for improved communication patterns
+
+The user-facing API is identical across both versions. Fractor automatically
+detects your Ruby version and uses the appropriate internal implementation. See
+link:architecture.adoc#ruby-version-compatibility[Architecture: Ruby Version Compatibility]
+for details on the internal differences.
 
 To check your Ruby version:
 
@@ -71,7 +82,8 @@ puts Fractor::VERSION
 
 === Ruby version issues
 
-If you encounter errors about Ractor not being available, ensure you're using Ruby 3.0 or later:
+If you encounter errors about Ractor not being available, ensure you're using
+Ruby 3.0 or later:
 
 [source,sh]
 ----

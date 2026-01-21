@@ -79,7 +79,8 @@ conditions = {})
 
   # First worker type: Handles compute-intensive operations
   class ComputeWorker < Fractor::Worker
-    def initialize(name: nil)
+    def initialize(name: nil, **options)
+      super
       # Setup resources needed for computation
       # Use Ractor.make_shareable to make the hash shareable across Ractors
       @compute_resources = Ractor.make_shareable({ memory: 1024, cpu_cores: 4 })
@@ -148,7 +149,8 @@ conditions = {})
 
   # Second worker type: Handles database operations
   class DatabaseWorker < Fractor::Worker
-    def initialize(name: nil)
+    def initialize(name: nil, **options)
+      super
       # Setup database connection and resources
       # Use Ractor.make_shareable to make the hash shareable across Ractors
       @db_connection = Ractor.make_shareable({ pool_size: 5, timeout: 30 })

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "socket"
+
 RSpec.describe Fractor::WorkResult do
   let(:sample_work) { Fractor::Work.new("test input") }
 
@@ -131,8 +133,6 @@ RSpec.describe Fractor::WorkResult do
     end
 
     it "categorizes SocketError as network" do
-      skip "SocketError not defined in this environment" unless defined?(SocketError)
-
       result = described_class.new(error: SocketError.new("Connection failed"))
       expect(result.error_category).to eq(:network)
     end
@@ -213,8 +213,6 @@ RSpec.describe Fractor::WorkResult do
     end
 
     it "returns true for network errors" do
-      skip "SocketError not defined in this environment" unless defined?(SocketError)
-
       result = described_class.new(error: SocketError.new(""))
       expect(result.retriable?).to be true
     end

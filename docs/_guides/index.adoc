@@ -21,14 +21,14 @@ organized from foundational concepts to advanced capabilities.
 
 ==== Advanced Features
 
-* *link:workflows/[Workflows]* - Complex processing graphs with retry, circuit breakers, and more
+* *link:../workflows/[Workflows]* - Complex processing graphs with retry, circuit breakers, and more
 * *link:error-reporting/[Error Reporting]* - Error categorization, monitoring, and analytics
 * *link:signal-handling/[Signal Handling]* - Graceful shutdown and signal management
 
 ==== Support
 
-* *link:cookbook/[Cookbook]* - Common patterns and recipes
-* *link:troubleshooting/[Troubleshooting]* - Diagnose and resolve common issues
+* *link:../cookbook/[Cookbook]* - Common patterns and recipes
+* *link:../troubleshooting/[Troubleshooting]* - Diagnose and resolve common issues
 
 === How to Use These Guides
 

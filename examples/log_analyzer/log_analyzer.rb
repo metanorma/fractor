@@ -144,13 +144,13 @@ class LogAnalyzerWorker < Fractor::Worker
 
     sample = lines.first(5).join("\n")
 
-    if sample.match?(/^\{.*\}$/)
+    if sample.match?(/^\{/)
       :json
     elsif sample.match?(/^\d+\.\d+\.\d+\.\d+ - - \[/)
       :apache
     elsif sample.match?(/\[.*\] "(GET|POST|PUT|DELETE|PATCH)/)
       :nginx
-    elsif sample.match?(/(ERROR|WARN|INFO|DEBUG|FATAL)/)
+    elsif sample.match?(/\] (ERROR|WARN|INFO|DEBUG|FATAL) -- /)
       :rails
     else
       :generic

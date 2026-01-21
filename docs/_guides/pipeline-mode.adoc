@@ -1,10 +1,9 @@
 ---
 layout: default
 title: Pipeline mode (batch processing)
-parent: Guides
-nav_order: 1
+nav_order: 3
 ---
-= Pipeline mode (batch processing)
+== Pipeline mode (batch processing)
 
 == General
 
@@ -126,7 +125,7 @@ That's it! With these three simple steps, you have a working parallel processing
 
 === General
 
-This section describes the components and their detailed usage specifically for pipeline mode (batch processing). For continuous mode, see the link:continuous-mode.adoc[Continuous Mode] documentation.
+This section describes the components and their detailed usage specifically for pipeline mode (batch processing). For continuous mode, see the link:continuous-mode/[Continuous Mode] documentation.
 
 Pipeline mode uses only the core components without any additional primitives.
 

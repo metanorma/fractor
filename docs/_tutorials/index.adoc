@@ -10,7 +10,7 @@ Step-by-step guides to help you get started with Fractor.
 
 These tutorials are designed to be followed in order:
 
-. *link:installation/[Installation]* - Set up Fractor in your environment
+. *link:../installation/[Installation]* - Set up Fractor in your environment
 . *link:first-application/[Your First Application]* - Build a simple parallel processor
 . *link:getting-started/[Getting Started]* - Understand modes and patterns
 

@@ -1,4 +1,9 @@
-# Troubleshooting Guide
+---
+layout: default
+title: Troubleshooting Guide
+nav_order: 5
+---
+== Troubleshooting Guide
 
 This guide helps you diagnose and resolve common issues when using Fractor.
 

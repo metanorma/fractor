@@ -16,7 +16,8 @@ RSpec.describe "Continuous Chat Common" do
 
       it "accepts custom timestamp" do
         custom_time = Time.now.to_i - 1000
-        custom_packet = ContinuousChat::MessagePacket.new(:chat, data, custom_time)
+        custom_packet = ContinuousChat::MessagePacket.new(:chat, data,
+                                                          custom_time)
 
         expect(custom_packet.timestamp).to eq(custom_time)
       end
@@ -36,7 +37,8 @@ RSpec.describe "Continuous Chat Common" do
 
         expect(parsed["type"]).to eq("chat")
         # JSON returns string keys, not symbol keys
-        expect(parsed["data"]).to eq("message" => "Hello", "username" => "alice")
+        expect(parsed["data"]).to eq("message" => "Hello",
+                                     "username" => "alice")
         expect(parsed["timestamp"]).to be_a(Integer)
       end
 
@@ -62,7 +64,8 @@ RSpec.describe "Continuous Chat Common" do
   describe "MessageProtocol" do
     describe ".create_packet" do
       it "creates a JSON packet from type and data" do
-        json = ContinuousChat::MessageProtocol.create_packet(:join, { username: "bob" })
+        json = ContinuousChat::MessageProtocol.create_packet(:join,
+                                                             { username: "bob" })
 
         expect(json).to be_a(String)
         parsed = JSON.parse(json)
@@ -71,7 +74,8 @@ RSpec.describe "Continuous Chat Common" do
       end
 
       it "includes timestamp in created packet" do
-        json = ContinuousChat::MessageProtocol.create_packet(:chat, { message: "hi" })
+        json = ContinuousChat::MessageProtocol.create_packet(:chat,
+                                                             { message: "hi" })
         parsed = JSON.parse(json)
 
         expect(parsed["timestamp"]).to be_a(Integer)
@@ -80,7 +84,8 @@ RSpec.describe "Continuous Chat Common" do
 
     describe ".parse_packet" do
       it "parses JSON string into MessagePacket" do
-        json = { type: "chat", data: { message: "hello" }, timestamp: Time.now.to_i }.to_json
+        json = { type: "chat", data: { message: "hello" },
+                 timestamp: Time.now.to_i }.to_json
         packet = ContinuousChat::MessageProtocol.parse_packet(json)
 
         expect(packet).to be_a(ContinuousChat::MessagePacket)
@@ -90,7 +95,8 @@ RSpec.describe "Continuous Chat Common" do
       end
 
       it "converts type to symbol" do
-        json = { type: "server_message", data: {}, timestamp: Time.now.to_i }.to_json
+        json = { type: "server_message", data: {},
+                 timestamp: Time.now.to_i }.to_json
         packet = ContinuousChat::MessageProtocol.parse_packet(json)
 
         expect(packet.type).to eq(:server_message)
@@ -120,7 +126,9 @@ RSpec.describe "Continuous Chat Common" do
 
     describe "round-trip serialization" do
       it "can serialize and deserialize packets correctly" do
-        original = ContinuousChat::MessagePacket.new(:chat, { username: "alice", message: "Hi!" })
+        original = ContinuousChat::MessagePacket.new(:chat,
+                                                     { username: "alice",
+                                                       message: "Hi!" })
         json = original.to_json
         parsed = ContinuousChat::MessageProtocol.parse_packet(json)
 
@@ -134,7 +142,8 @@ RSpec.describe "Continuous Chat Common" do
 
   describe "message types" do
     it "supports join messages" do
-      json = ContinuousChat::MessageProtocol.create_packet(:join, { username: "user1" })
+      json = ContinuousChat::MessageProtocol.create_packet(:join,
+                                                           { username: "user1" })
       packet = ContinuousChat::MessageProtocol.parse_packet(json)
 
       expect(packet.type).to eq(:join)
@@ -143,7 +152,8 @@ RSpec.describe "Continuous Chat Common" do
     end
 
     it "supports chat messages" do
-      json = ContinuousChat::MessageProtocol.create_packet(:chat, { message: "Hello everyone" })
+      json = ContinuousChat::MessageProtocol.create_packet(:chat,
+                                                           { message: "Hello everyone" })
       packet = ContinuousChat::MessageProtocol.parse_packet(json)
 
       expect(packet.type).to eq(:chat)
@@ -151,7 +161,8 @@ RSpec.describe "Continuous Chat Common" do
     end
 
     it "supports server_message type" do
-      json = ContinuousChat::MessageProtocol.create_packet(:server_message, { message: "Welcome!" })
+      json = ContinuousChat::MessageProtocol.create_packet(:server_message,
+                                                           { message: "Welcome!" })
       packet = ContinuousChat::MessageProtocol.parse_packet(json)
 
       expect(packet.type).to eq(:server_message)
@@ -160,7 +171,8 @@ RSpec.describe "Continuous Chat Common" do
 
     it "supports user_list type" do
       users = %w[alice bob charlie]
-      json = ContinuousChat::MessageProtocol.create_packet(:user_list, { users: users })
+      json = ContinuousChat::MessageProtocol.create_packet(:user_list,
+                                                           { users: users })
       packet = ContinuousChat::MessageProtocol.parse_packet(json)
 
       expect(packet.type).to eq(:user_list)
@@ -171,7 +183,8 @@ RSpec.describe "Continuous Chat Common" do
   describe "complex data structures" do
     it "handles nested data structures" do
       complex_data = {
-        user: { name: "Alice", id: 123, metadata: { role: "admin", joined_at: "2024-01-01" } },
+        user: { name: "Alice", id: 123,
+                metadata: { role: "admin", joined_at: "2024-01-01" } },
         message: { content: "Hello", format: "markdown" },
       }
       json = ContinuousChat::MessageProtocol.create_packet(:chat, complex_data)

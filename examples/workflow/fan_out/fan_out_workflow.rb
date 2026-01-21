@@ -31,6 +31,13 @@ class CombinedResult
 end
 
 module FanOutExample
+  # Enable/disable debug output from workers
+  @debug_output = false
+
+  class << self
+    attr_accessor :debug_output
+  end
+
   # Worker that splits text for parallel processing
   class TextSplitter < Fractor::Worker
     input_type TextInput
@@ -38,7 +45,7 @@ module FanOutExample
 
     def process(work)
       input = work.input
-      puts "[TextSplitter] Processing: #{input.text}"
+      puts "[TextSplitter] Processing: #{input.text}" if FanOutExample.debug_output
 
       output = TextInput.new(text: input.text)
       Fractor::WorkResult.new(result: output, work: work)
@@ -53,7 +60,7 @@ module FanOutExample
     def process(work)
       input = work.input
       result = input.text.upcase
-      puts "[UppercaseWorker] Result: #{result}"
+      puts "[UppercaseWorker] Result: #{result}" if FanOutExample.debug_output
 
       output = ProcessedText.new(result: result)
       Fractor::WorkResult.new(result: output, work: work)
@@ -68,7 +75,7 @@ module FanOutExample
     def process(work)
       input = work.input
       result = input.text.downcase
-      puts "[LowercaseWorker] Result: #{result}"
+      puts "[LowercaseWorker] Result: #{result}" if FanOutExample.debug_output
 
       output = ProcessedText.new(result: result)
       Fractor::WorkResult.new(result: output, work: work)
@@ -83,7 +90,7 @@ module FanOutExample
     def process(work)
       input = work.input
       result = input.text.reverse
-      puts "[ReverseWorker] Result: #{result}"
+      puts "[ReverseWorker] Result: #{result}" if FanOutExample.debug_output
 
       output = ProcessedText.new(result: result)
       Fractor::WorkResult.new(result: output, work: work)
@@ -97,10 +104,12 @@ module FanOutExample
 
     def process(work)
       input = work.input
-      puts "[ResultCombiner] Combining results:"
-      puts "  Uppercase: #{input.uppercase}"
-      puts "  Lowercase: #{input.lowercase}"
-      puts "  Reversed: #{input.reversed}"
+      if FanOutExample.debug_output
+        puts "[ResultCombiner] Combining results:"
+        puts "  Uppercase: #{input.uppercase}"
+        puts "  Lowercase: #{input.lowercase}"
+        puts "  Reversed: #{input.reversed}"
+      end
 
       Fractor::WorkResult.new(result: input, work: work)
     end
@@ -159,29 +168,35 @@ class FanOutWorkflow < Fractor::Workflow
   end
 end
 
-# Execute the workflow
-puts "=" * 60
-puts "Fan-Out Workflow Example"
-puts "=" * 60
-puts ""
+# Only run the example when this file is executed directly
+if __FILE__ == $PROGRAM_NAME
+  # Execute the workflow
+  puts "=" * 60
+  puts "Fan-Out Workflow Example"
+  puts "=" * 60
+  puts ""
 
-input = TextInput.new(text: "Hello Fractor!")
-puts "Input: #{input.text}"
-puts ""
+  # Enable debug output for demonstration
+  FanOutExample.debug_output = true
 
-workflow = FanOutWorkflow.new
-result = workflow.execute(input: input)
+  input = TextInput.new(text: "Hello Fractor!")
+  puts "Input: #{input.text}"
+  puts ""
 
-puts ""
-puts "=" * 60
-puts "Workflow Results:"
-puts "-" * 60
-puts "Status: #{result.success? ? 'SUCCESS' : 'FAILED'}"
-puts "Execution Time: #{result.execution_time.round(3)}s"
-puts "Completed Jobs: #{result.completed_jobs.join(', ')}"
-puts ""
-puts "Final Output:"
-puts "  Uppercase: #{result.output.uppercase}"
-puts "  Lowercase: #{result.output.lowercase}"
-puts "  Reversed: #{result.output.reversed}"
-puts "=" * 60
+  workflow = FanOutWorkflow.new
+  result = workflow.execute(input: input)
+
+  puts ""
+  puts "=" * 60
+  puts "Workflow Results:"
+  puts "-" * 60
+  puts "Status: #{result.success? ? 'SUCCESS' : 'FAILED'}"
+  puts "Execution Time: #{result.execution_time.round(3)}s"
+  puts "Completed Jobs: #{result.completed_jobs.join(', ')}"
+  puts ""
+  puts "Final Output:"
+  puts "  Uppercase: #{result.output.uppercase}"
+  puts "  Lowercase: #{result.output.lowercase}"
+  puts "  Reversed: #{result.output.reversed}"
+  puts "=" * 60
+end

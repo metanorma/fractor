@@ -1,18 +1,17 @@
 ---
 layout: default
 title: Signal handling
-parent: Features
-nav_order: 2
+nav_order: 3
 ---
-= Signal handling
+== Signal handling
 
 == General
 
 Fractor provides production-ready signal handling for process control and monitoring. The framework supports different signals depending on the operating system, enabling graceful shutdown and runtime status monitoring.
 
-== Unix signals (Linux, macOS, Unix)
+=== Unix signals (Linux, macOS, Unix)
 
-=== SIGINT (Ctrl+C)
+==== SIGINT (Ctrl+C)
 
 Interactive interrupt signal for graceful shutdown.
 
@@ -23,7 +22,7 @@ Usage:
 ** *Batch mode*: Stops immediately after current work completes
 ** *Continuous mode*: Initiates graceful shutdown
 
-=== SIGTERM
+==== SIGTERM
 
 Standard Unix termination signal, preferred for production deployments.
 
@@ -54,7 +53,7 @@ KillSignal=SIGTERM
 TimeoutStopSec=30
 ----
 
-=== SIGUSR1
+==== SIGUSR1
 
 Real-time status monitoring without stopping the process.
 
@@ -72,7 +71,7 @@ Output example:
 ====
 [source]
 ----
-=== Fractor Supervisor Status ===
+==== Fractor Supervisor Status ===
 Mode: Continuous
 Running: true
 Workers: 4
@@ -83,9 +82,9 @@ Errors: 3
 ----
 ====
 
-== Windows signals
+=== Windows signals
 
-=== SIGBREAK (Ctrl+Break)
+==== SIGBREAK (Ctrl+Break)
 
 Windows alternative to SIGUSR1 for status monitoring.
 
@@ -99,16 +98,16 @@ Usage:
 SIGUSR1 is not available on Windows. Use `Ctrl+Break` instead for status monitoring on Windows platforms.
 ====
 
-== Signal behavior by mode
+=== Signal behavior by mode
 
-=== Batch mode
+==== Batch mode
 
 In batch processing mode:
 
 * SIGINT/SIGTERM: Stops immediately after current work completes
 * SIGUSR1/SIGBREAK: Displays current status
 
-=== Continuous mode
+==== Continuous mode
 
 In continuous mode (long-running servers):
 
@@ -118,9 +117,9 @@ In continuous mode (long-running servers):
 ** Cleans up resources
 * SIGUSR1/SIGBREAK: Displays current status
 
-== Process monitoring and logging
+=== Process monitoring and logging
 
-=== Status monitoring and health checks
+==== Status monitoring and health checks
 
 The signals SIGUSR1 (or SIGBREAK on Windows) can be used for health checks.
 
@@ -149,7 +148,7 @@ Output:
 
 [source]
 ----
-=== Fractor Supervisor Status ===
+==== Fractor Supervisor Status ===
 Mode: Continuous
 Running: true
 Workers: 4
@@ -160,7 +159,7 @@ Errors: 3
 ----
 ====
 
-=== Logging
+==== Logging
 
 Fractor supports logging of its operations to a specified log file.
 

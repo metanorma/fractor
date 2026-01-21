@@ -1,8 +1,7 @@
 ---
 layout: default
 title: API Reference
-parent: Reference
-nav_order: 1
+nav_order: 2
 ---
 = API Reference
 
@@ -1076,6 +1075,6 @@ end
 
 == See Also
 
-* link:../pages/core-concepts.adoc[Core Concepts] - Understanding Fractor components
-* link:../features/workflows.adoc[Workflows] - Complete workflow documentation
-* link:examples.adoc[Examples] - Usage examples
+* link:../pages/core-concepts/[Core Concepts] - Understanding Fractor components
+* link:../features/workflows/[Workflows] - Complete workflow documentation
+* link:../examples/[Examples] - Usage examples

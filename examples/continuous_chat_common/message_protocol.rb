@@ -41,7 +41,7 @@ module ContinuousChat
     def self.parse_packet(json_string)
       data = JSON.parse(json_string)
       type = data["type"]&.to_sym
-      content = data["data"]
+      content = data["data"] || {}
       timestamp = data["timestamp"] || Time.now.to_i
 
       MessagePacket.new(type, content, timestamp)

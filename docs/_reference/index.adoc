@@ -17,21 +17,21 @@ guidelines.
 
 ==== API Documentation
 
-* *link:api/[API Reference]* - Complete API documentation for all classes and methods
-* *link:configuration/[Configuration Options]* - All configuration parameters and their effects
+* *link:../api/[API Reference]* - Complete API documentation for all classes and methods
+// * *link:../configuration/[Configuration Options]* - All configuration parameters and their effects
 
 ==== Design Patterns & Examples
 
-* *link:examples/[Examples]* - Real-world use cases with complete code
-* *link:patterns/[Design Patterns]* - Common architectural patterns and best practices
-* *link:performance/[Performance Tuning]* - Optimization strategies and benchmarking
+* *link:../examples/[Examples]* - Real-world use cases with complete code
+// * *link:../patterns/[Design Patterns]* - Common architectural patterns and best practices
+// * *link:../performance/[Performance Tuning]* - Optimization strategies and benchmarking
 
 ==== Advanced Topics
 
-* *link:production/[Production Deployment]* - Guidelines for production environments
-* *link:best-practices/[Best Practices]* - Recommendations from production usage
-* *link:troubleshooting/[Troubleshooting]* - Common issues and solutions
-* *link:contributing/[Contributing]* - How to contribute to Fractor
+// * *link:../production/[Production Deployment]* - Guidelines for production environments
+// * *link:best-practices/[Best Practices]* - Recommendations from production usage
+* *link:../troubleshooting/[Troubleshooting]* - Common issues and solutions
+// * *link:../contributing/[Contributing]* - How to contribute to Fractor
 
 === Who Should Use This Section
 
@@ -46,8 +46,8 @@ The reference documentation is for:
 
 Before diving into reference documentation, you should:
 
-* Complete the link:../tutorials/[Tutorials] section
-* Understand link:../guides/core-concepts/[Core Concepts]
+* Complete the link:../../tutorials/[Tutorials] section
+* Understand link:../../core-concepts/[Core Concepts]
 * Have experience with production Ruby applications
 * Understand parallel processing fundamentals
 
@@ -57,32 +57,32 @@ Before diving into reference documentation, you should:
 
 *I want to...*
 
-* *Optimize performance* → See link:performance/[Performance Tuning]
-* *Handle production errors* → See link:best-practices/[Best Practices] and link:troubleshooting/[Troubleshooting]
-* *Understand all options* → See link:api/[API Reference] and link:configuration/[Configuration]
-* *Learn patterns* → See link:patterns/[Design Patterns] and link:examples/[Examples]
-* *Deploy to production* → See link:production/[Production Deployment]
-* *Contribute code* → See link:contributing/[Contributing]
+* *Optimize performance* → See link:../performance/[Performance Tuning]
+* *Handle production errors* → See link:best-practices/[Best Practices] and link:../troubleshooting/[Troubleshooting]
+* *Understand all options* → See link:../api/[API Reference] and link:configuration/[Configuration]
+* *Learn patterns* → See link:../patterns/[Design Patterns] and link:examples/[Examples]
+* *Deploy to production* → See link:../production/[Production Deployment]
+* *Contribute code* → See link:../contributing/[Contributing]
 
 ==== By Experience Level
 
 *Advanced Users*
 
-. link:performance/[Performance Tuning]
-. link:patterns/[Design Patterns]
+. link:../performance/[Performance Tuning]
+. link:../patterns/[Design Patterns]
 . link:best-practices/[Best Practices]
 
 *Library Developers*
 
-. link:api/[API Reference]
-. link:examples/[Examples]
-. link:contributing/[Contributing]
+. link:../api/[API Reference]
+. link:../examples/[Examples]
+. link:../contributing/[Contributing]
 
 *Production Engineers*
 
-. link:production/[Production Deployment]
+. link:../production/[Production Deployment]
 . link:best-practices/[Best Practices]
-. link:troubleshooting/[Troubleshooting]
+. link:../troubleshooting/[Troubleshooting]
 
 === Related Resources
 
@@ -93,4 +93,4 @@ Before diving into reference documentation, you should:
 
 === Contributing to Documentation
 
-Found an error or want to improve the documentation? See link:contributing/[Contributing] for guidelines on submitting documentation improvements.
+Found an error or want to improve the documentation? See link:../contributing/[Contributing] for guidelines on submitting documentation improvements.

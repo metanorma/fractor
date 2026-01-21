@@ -4,18 +4,11 @@ require "logger"
 
 module Fractor
   class << self
-    # Disabled logger for use in Ractors (Ractor isolation prohibits shared instance variables)
-    RACTOR_LOGGER = Logger.new(nil).tap { |l| l.level = Logger::UNKNOWN }.freeze
-
     attr_writer :logger
 
     # Get the Fractor logger instance
-    # @return [Logger] Logger instance (disabled in Ractors, defaults to STDOUT/INFO in main)
+    # @return [Logger] Logger instance
     def logger
-      # Ractors cannot access module instance variables, so always return disabled logger
-      return RACTOR_LOGGER if defined?(Ractor) && Ractor.current != Ractor.main
-
-      # Main ractor - use instance variable with sensible defaults
       @logger ||= create_default_logger
     end
 
@@ -34,9 +27,6 @@ module Fractor
 
     # Check if debug logging is enabled
     def debug_enabled?
-      # Always false in Ractors
-      return false if defined?(Ractor) && Ractor.current != Ractor.main
-
       @logger&.debug?
     end
 
@@ -113,9 +103,128 @@ module Fractor
     end
 
     # Reset all global state (useful for testing and isolation)
-    # This ensures that multiple uses of Fractor don't pollute each other
     def reset!
       @logger = nil
     end
+  end
+
+  # Ractor-safe logging module.
+  #
+  # This module provides logging functionality that works correctly
+  # within Ractors by using $stderr for unbuffered output.
+  #
+  # @example Inside a worker or ractor
+  #   Fractor::RactorLogger.debug("Processing work", ractor_name: "worker-1")
+  #   Fractor::RactorLogger.info("Worker started", ractor_name: "worker-1")
+  #   Fractor::RactorLogger.warn("Long processing time", ractor_name: "worker-1")
+  #   Fractor::RactorLogger.error("Worker failed", ractor_name: "worker-1", exception: e)
+  #
+  module RactorLogger
+    # Log levels in order of severity
+    LEVELS = {
+      debug: 0,
+      info: 1,
+      warn: 2,
+      error: 3,
+    }.freeze
+
+    class << self
+      # Get or set the current log level
+      # @return [Symbol] Current log level (:debug, :info, :warn, :error)
+      attr_accessor :level
+
+      # Enable or disable logging
+      # @return [Boolean] Whether logging is enabled
+      attr_accessor :enabled
+
+      # Enable debug mode (sets level to :debug)
+      def debug!
+        self.level = :debug
+        self.enabled = true
+      end
+
+      # Disable debug mode (sets level to :warn)
+      def nodebug!
+        self.level = :warn
+        self.enabled = false
+      end
+
+      # Check if a given log level would be logged
+      # @param lvl [Symbol] Log level to check
+      # @return [Boolean] True if messages at this level would be logged
+      def log?(lvl)
+        enabled && LEVELS[lvl.to_sym] >= LEVELS[level]
+      end
+
+      # Log a debug message
+      # @param message [String] Message to log
+      # @param ractor_name [String, nil] Name of the ractor (optional)
+      def debug(message, ractor_name: nil)
+        return unless log?(:debug)
+
+        log(:debug, message, ractor_name: ractor_name)
+      end
+
+      # Log an info message
+      # @param message [String] Message to log
+      # @param ractor_name [String, nil] Name of the ractor (optional)
+      def info(message, ractor_name: nil)
+        return unless log?(:info)
+
+        log(:info, message, ractor_name: ractor_name)
+      end
+
+      # Log a warning message
+      # @param message [String] Message to log
+      # @param ractor_name [String, nil] Name of the ractor (optional)
+      def warn(message, ractor_name: nil)
+        return unless log?(:warn)
+
+        log(:warn, message, ractor_name: ractor_name)
+      end
+
+      # Log an error message
+      # @param message [String] Message to log
+      # @param ractor_name [String, nil] Name of the ractor (optional)
+      # @param exception [Exception, nil] Exception object (optional)
+      def error(message, ractor_name: nil, exception: nil)
+        return unless log?(:error)
+
+        log(:error, message, ractor_name: ractor_name, exception: exception)
+      end
+
+      private
+
+      # Internal logging method
+      # @param level [Symbol] Log level
+      # @param message [String] Message to log
+      # @param ractor_name [String, nil] Name of the ractor
+      # @param exception [Exception, nil] Exception object
+      def log(level, message, ractor_name: nil, exception: nil)
+        timestamp = Time.now.strftime("%Y-%m-%d %H:%M:%S.%3N")
+        level_tag = level.to_s.upcase.ljust(5)
+
+        # Format: [TIMESTAMP] [LEVEL] [RACTOR] message
+        ractor_tag = ractor_name ? "[#{ractor_name}] " : ""
+        output = "[#{timestamp}] [#{level_tag}] #{ractor_tag}#{message}"
+
+        # Always use $stderr for immediate, unbuffered output
+        warn(output)
+        $stderr.flush
+
+        # If there's an exception, log the stack trace
+        if exception
+          warn("[#{timestamp}] [#{level_tag}] #{ractor_tag}#{exception.class}: #{exception.message}")
+          exception.backtrace&.each do |line|
+            warn("[#{timestamp}] [#{level_tag}] #{ractor_tag}    #{line}")
+          end
+          $stderr.flush
+        end
+      end
+    end
+
+    # Initialize with defaults - check FRACTOR_DEBUG environment variable
+    @enabled = ["1", "true"].include?(ENV["FRACTOR_DEBUG"])
+    @level = @enabled ? :debug : :info
   end
 end

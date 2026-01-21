@@ -21,9 +21,9 @@ In this 30-minute intermediate tutorial, you'll build a production-ready backgro
 
 **Prerequisites:**
 
-* Completed link:getting-started[Getting Started] tutorial
-* Basic understanding of link:../guides/core-concepts[Core Concepts]
-* Familiarity with link:../guides/continuous-mode[Continuous Mode]
+* Completed link:../../getting-started[Getting Started] tutorial
+* Basic understanding of link:../../guides/core-concepts[Core Concepts]
+* Familiarity with link:../../guides/continuous-mode[Continuous Mode]
 
 === The Problem
 
@@ -925,7 +925,7 @@ You've built a production-ready background job processor with:
 
 === Next Steps
 
-* Try the link:complex-workflows[Implementing Complex Workflows] tutorial
-* Learn about link:../guides/workflows[Workflows] for job dependencies
-* Explore link:../reference/error-reporting[Error Reporting] for production monitoring
-* Check production patterns in link:../guides/continuous-mode[Continuous Mode]
+* Try the link:../complex-workflows/[Implementing Complex Workflows] tutorial
+* Learn about link:../../guides/workflows/[Workflows] for job dependencies
+* Explore link:../../reference/error-reporting/[Error Reporting] for production monitoring
+* Check production patterns in link:../../guides/continuous-mode/[Continuous Mode]

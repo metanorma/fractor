@@ -7,7 +7,9 @@ nav_order: 3
 
 == Overview
 
-This guide provides an in-depth exploration of Fractor's architecture, covering system components, concurrency model, workflow execution, queue management, and error handling strategies.
+This guide provides an in-depth exploration of Fractor's architecture, covering
+system components, concurrency model, workflow execution, queue management, and
+error handling strategies.
 
 .Architecture documentation structure
 [source]
@@ -406,6 +408,92 @@ Time  Supervisor                          Ractor
 [Remove from active ractors]                 [Terminate]
  │                                           │
 ----
+====
+
+=== Ruby version compatibility
+
+Fractor provides a unified user-facing API while internally adapting to the
+different Ractor communication primitives available in Ruby 3.x and Ruby 4.0+.
+
+[cols="2,2,3"]
+|===
+|Ruby Version |Ractor Primitives |Implementation Details
+
+|3.0 - 3.x
+|`Ractor.yield` / `Ractor.take`
+|Workers use `Ractor.yield` to send results back. Main ractor uses `Ractor.take` to receive messages from workers.
+
+|4.0+
+|`Ractor::Port`
+|Main ractor creates response ports and passes them to workers. Workers send results directly through ports.
+|===
+
+.Ruby 3.x implementation (WrappedRactor3)
+[source,ruby]
+----
+# Worker sends results via Ractor.yield
+class WrappedRactor3 < WrappedRactor
+  def start
+    @ractor = Ractor.new do
+      loop do
+        work = Ractor.receive
+        result = worker.process(work)
+        # Send result back using Ractor.yield
+        Ractor.yield({ type: :result, result: result })
+      end
+    end
+  end
+
+  def receive_message
+    # Main ractor receives via Ractor.take
+    @ractor&.take
+  end
+end
+----
+
+.Ruby 4.0+ implementation (WrappedRactor4)
+[source,ruby]
+----
+# Worker sends results via response port
+class WrappedRactor4 < WrappedRactor
+  attr_reader :response_port
+
+  def initialize(name, worker_class, response_port: nil)
+    super(name, worker_class)
+    @response_port = response_port  # Port created by main ractor
+  end
+
+  def start
+    @ractor = Ractor.new do
+      loop do
+        # Receive [work, response_port] from main
+        work, response_port = Ractor.receive
+        result = worker.process(work)
+        # Send result through the provided port
+        response_port << { type: :result, result: result }
+      end
+    end
+  end
+
+  def send(work)
+    # Main sends [work, response_port] to worker
+    @ractor.send([work, @response_port])
+  end
+end
+----
+
+.Implications for users
+
+* **Identical API**: Your Work and Worker classes work the same on both versions
+* **Automatic detection**: Fractor detects Ruby version and uses appropriate implementation
+* **Performance**: Ruby 4.0's port-based communication may offer better performance for high-throughput scenarios
+* **Compatibility**: Code written for Fractor works on both Ruby 3.x and 4.0+ without changes
+
+[NOTE]
+====
+The internal implementation difference is transparent to users. You write your
+Workers and Work classes once, and Fractor handles the version-specific
+communication patterns.
 ====
 
 === Backpressure mechanisms
@@ -1293,10 +1381,10 @@ Key metrics to monitor:
 
 == Next steps
 
-* Read link:design-principles.adoc[Design Principles] for philosophy and rationale
-* Explore link:core-concepts.adoc[Core Concepts] for component details
-* Try link:../guides/pipeline-mode.adoc[Pipeline Mode] for batch processing
-* Try link:../guides/continuous-mode.adoc[Continuous Mode] for long-running services
-* Learn link:../features/workflows.adoc[Workflows] for complex processing
-* Review link:../features/error-handling.adoc[Error Handling] strategies
-* Study link:../reference/examples.adoc[Examples] for real-world patterns
+* Read link:design-principles/[Design Principles] for philosophy and rationale
+* Explore link:core-concepts/[Core Concepts] for component details
+* Try link:../guides/pipeline-mode/[Pipeline Mode] for batch processing
+* Try link:../guides/continuous-mode/[Continuous Mode] for long-running services
+* Learn link:../features/workflows/[Workflows] for complex processing
+* Review link:../features/error-handling/[Error Handling] strategies
+* Study link:../reference/examples/[Examples] for real-world patterns

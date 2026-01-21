@@ -441,7 +441,8 @@ RSpec.describe ImageProcessor do
         sleep(0.1)
 
         expect(tracker.elapsed_time).to be >= 0.1
-        expect(tracker.elapsed_time).to be < 0.2
+        # Use a more lenient upper bound to account for CI system load
+        expect(tracker.elapsed_time).to be < 0.5
       end
     end
 

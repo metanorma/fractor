@@ -1,10 +1,9 @@
 ---
 layout: default
 title: Continuous mode (long-running servers)
-parent: Guides
 nav_order: 2
 ---
-= Continuous mode (long-running servers)
+== Continuous mode (long-running servers)
 
 == General
 
@@ -138,7 +137,7 @@ That's it! The ContinuousServer handles all thread management, signal handling, 
 
 === General
 
-This section describes the components and their detailed usage specifically for continuous mode (long-running servers). For pipeline mode, see the link:pipeline-mode.adoc[Pipeline Mode] documentation.
+This section describes the components and their detailed usage specifically for continuous mode (long-running servers). For pipeline mode, see the link:pipeline-mode/[Pipeline Mode] documentation.
 
 Continuous mode offers two approaches: a low-level API for manual control, and high-level primitives that eliminate boilerplate code.
 
@@ -734,4 +733,4 @@ This example demonstrates production deployment patterns including:
 * Process monitoring and health checks
 * Graceful restart procedures
 
-See link:../examples/continuous_chat_fractor/README.adoc[the chat server README] for detailed implementation documentation.
+See link:../examples/continuous_chat_fractor/README/[the chat server README] for detailed implementation documentation.

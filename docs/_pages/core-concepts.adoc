@@ -1382,11 +1382,11 @@ Best practices:
 
 == Next steps
 
-* Learn about link:../guides/pipeline-mode.adoc[Pipeline Mode] patterns and best practices
-* Learn about link:../guides/continuous-mode.adoc[Continuous Mode] for long-running applications
-* Read link:architecture.adoc[Architecture Guide] for detailed system design
-* Read link:design-principles.adoc[Design Principles] for philosophy and decisions
-* Try link:../features/workflows.adoc[Workflows] for complex processing graphs
-* Monitor errors with link:../features/error-handling.adoc[Error Handling] and analytics
-* Explore link:../reference/examples.adoc[Examples] for real-world use cases
-* Reference link:../reference/api.adoc[API Reference] for complete documentation
+* Learn about link:../guides/pipeline-mode/[Pipeline Mode] patterns and best practices
+* Learn about link:../guides/continuous-mode/[Continuous Mode] for long-running applications
+* Read link:../architecture/[Architecture Guide] for detailed system design
+* Read link:design-principles/[Design Principles] for philosophy and decisions
+* Try link:../features/workflows/[Workflows] for complex processing graphs
+* Monitor errors with link:../features/error-handling/[Error Handling] and analytics
+* Explore link:../reference/examples/[Examples] for real-world use cases
+* Reference link:../reference/api/[API Reference] for complete documentation

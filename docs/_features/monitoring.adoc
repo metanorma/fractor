@@ -1,10 +1,9 @@
 ---
 layout: default
 title: Monitoring
-parent: Features
-nav_order: 4
+nav_order: 5
 ---
-= Monitoring
+== Monitoring
 
 Fractor provides comprehensive monitoring capabilities for tracking performance, analyzing errors, and benchmarking your parallel processing applications.
 
@@ -584,7 +583,7 @@ puts monitor.report
 
 == See Also
 
-* link:error-handling.adoc[Error Handling] - Comprehensive error analytics
-* link:../guides/pipeline-mode.adoc[Pipeline Mode] - Batch processing patterns
-* link:../guides/continuous-mode.adoc[Continuous Mode] - Long-running servers
-* link:../reference/api.adoc[API Reference] - Complete API documentation
+* link:error-handling/[Error Handling] - Comprehensive error analytics
+* link:../guides/pipeline-mode/[Pipeline Mode] - Batch processing patterns
+* link:../guides/continuous-mode/[Continuous Mode] - Long-running servers
+* link:../reference/api/[API Reference] - Complete API documentation

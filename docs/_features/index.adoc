@@ -1,10 +1,9 @@
 ---
 layout: default
-title: Features
-nav_order: 4
-has_children: true
+title: Overview
+nav_order: 1
 ---
-= Features
+== Features
 
 Fractor provides a rich set of features for building robust parallel processing systems.
 
@@ -14,25 +13,25 @@ Fractor provides a rich set of features for building robust parallel processing 
 
 GitHub Actions-style declarative workflows for complex data processing pipelines.
 
-* link:workflows.adoc[Workflows] - Comprehensive workflow system documentation
+* link:../workflows/[Workflows] - Comprehensive workflow system documentation
 
 === Error Handling and Resilience
 
 Production-ready error handling with comprehensive analytics and reporting.
 
-* link:error-handling.adoc[Error Handling] - Error reporting and analytics
+* link:error-handling/[Error Handling] - Error reporting and analytics
 
 === Monitoring
 
 Real-time performance monitoring and metrics collection.
 
-* link:monitoring.adoc[Monitoring] - Performance monitoring and analytics
+* link:../monitoring/[Monitoring] - Performance monitoring and analytics
 
 === Signal Handling
 
 Production-ready signal handling for process control and monitoring.
 
-* link:signal-handling.adoc[Signal Handling] - Signal handling and process monitoring
+* link:signal-handling/[Signal Handling] - Signal handling and process monitoring
 
 == Feature Categories
 

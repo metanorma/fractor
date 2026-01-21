@@ -123,6 +123,19 @@ module Fractor
         CATEGORY_VALIDATION
       when Timeout::Error
         CATEGORY_TIMEOUT
+      when String
+        # Categorize string error messages by content
+        error_msg = error.downcase
+        if error_msg.include?("timeout") || error_msg.include?("timed out")
+          CATEGORY_TIMEOUT
+        elsif error_msg.include?("connection") || error_msg.include?("network") ||
+            error_msg.include?("socket") || error_msg.include?("refused")
+          CATEGORY_NETWORK
+        elsif error_msg.include?("memory") || error_msg.include?("space")
+          CATEGORY_RESOURCE
+        else
+          CATEGORY_UNKNOWN
+        end
       when defined?(SocketError) ? SocketError : nil, Errno::ECONNREFUSED, Errno::ETIMEDOUT
         CATEGORY_NETWORK
       when Errno::ENOMEM, Errno::ENOSPC

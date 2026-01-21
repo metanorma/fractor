@@ -29,7 +29,7 @@ RSpec.describe Fractor::MainLoopHandler do
                     error_reporter: Fractor::ErrorReporter.new)
   end
 
-  let(:handler) { described_class.new(supervisor, debug: false) }
+  let(:handler) { described_class.create(supervisor, debug: false) }
 
   before do
     # Set up common instance variables that the handler will access
@@ -57,7 +57,8 @@ RSpec.describe Fractor::MainLoopHandler do
   describe "#get_processed_count" do
     it "returns sum of results and errors" do
       allow(supervisor).to receive(:results).and_return(
-        instance_double(Fractor::ResultAggregator, results: [1, 2], errors: [:error]),
+        instance_double(Fractor::ResultAggregator, results: [1, 2],
+                                                   errors: [:error]),
       )
 
       count = handler.send(:get_processed_count)

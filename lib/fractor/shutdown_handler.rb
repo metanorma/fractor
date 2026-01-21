@@ -8,11 +8,12 @@ module Fractor
   # the Single Responsibility Principle.
   class ShutdownHandler
     def initialize(workers, wakeup_ractor, timer_thread, performance_monitor,
-debug: false)
+                   main_loop_thread: nil, debug: false)
       @workers = workers
       @wakeup_ractor = wakeup_ractor
       @timer_thread = timer_thread
       @performance_monitor = performance_monitor
+      @main_loop_thread = main_loop_thread
       @debug = debug
     end
 
@@ -22,13 +23,63 @@ debug: false)
     # 2. Stop timer thread (to stop periodic wakeups)
     # 3. Signal wakeup ractor (to unblock Ractor.select)
     # 4. Signal all workers (to stop processing)
+    # 5. Wait for main loop thread and workers to finish
     #
+    # @param wait_for_completion [Boolean] Whether to wait for all workers to close
+    # @param timeout [Integer] Maximum seconds to wait for shutdown (default: 10)
     # @return [void]
-    def shutdown
+    def shutdown(wait_for_completion: false, timeout: 10)
       stop_performance_monitor
       stop_timer_thread
       signal_wakeup_ractor
       signal_all_workers
+
+      wait_for_shutdown_completion(timeout) if wait_for_completion
+    end
+
+    # Wait for all components to finish after shutdown signals have been sent.
+    # This waits for both the main loop thread (if provided) and all workers to close.
+    # This is important for tests and for ensuring clean shutdown.
+    #
+    # @param timeout [Integer] Maximum seconds to wait
+    # @return [Boolean] true if all components finished, false if timeout
+    def wait_for_shutdown_completion(timeout = 10)
+      start_time = Time.now
+      poll_interval = 0.1
+
+      loop do
+        # Check if timeout exceeded
+        break if Time.now - start_time > timeout
+
+        # Check main loop thread status (if provided and alive)
+        main_loop_done = @main_loop_thread.nil? || !@main_loop_thread.alive?
+
+        # Check if all workers are closed
+        workers_done = @workers.empty? || @workers.all?(&:closed?)
+
+        # If both main loop and workers are done, we're finished
+        if main_loop_done && workers_done
+          puts "All components closed successfully" if @debug
+          return true
+        end
+
+        # Show status while waiting
+        if @debug
+          closed_count = @workers.count(&:closed?)
+          main_status = @main_loop_thread&.alive? ? "running" : "stopped"
+          puts "Waiting for shutdown: main_loop=#{main_status}, workers=#{closed_count}/#{@workers.size} closed"
+        end
+
+        sleep(poll_interval)
+      end
+
+      # Timeout exceeded
+      if @debug
+        closed_count = @workers.count(&:closed?)
+        main_status = @main_loop_thread&.alive? ? "running" : "stopped"
+        puts "Shutdown timeout: main_loop=#{main_status}, workers=#{closed_count}/#{@workers.size} closed after #{timeout}s"
+      end
+      false
     end
 
     # Stop the performance monitor if it's enabled.

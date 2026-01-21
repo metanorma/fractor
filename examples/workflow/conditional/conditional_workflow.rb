@@ -31,6 +31,13 @@ class ProcessedNumber
 end
 
 module ConditionalExample
+  # Enable/disable debug output from workers
+  @debug_output = false
+
+  class << self
+    attr_accessor :debug_output
+  end
+
   # Worker that validates the number
   class ValidatorWorker < Fractor::Worker
     input_type NumberInput
@@ -38,14 +45,14 @@ module ConditionalExample
 
     def process(work)
       input = work.input
-      puts "[Validator] Checking number: #{input.value}"
+      puts "[Validator] Checking number: #{input.value}" if ConditionalExample.debug_output
 
       output = ValidationResult.new(
         is_positive: input.value > 0,
         is_even: input.value.even?,
       )
 
-      puts "[Validator] Positive: #{output.is_positive}, Even: #{output.is_even}"
+      puts "[Validator] Positive: #{output.is_positive}, Even: #{output.is_even}" if ConditionalExample.debug_output
       Fractor::WorkResult.new(result: output, work: work)
     end
   end
@@ -58,7 +65,7 @@ module ConditionalExample
     def process(work)
       input = work.input
       result = input.value * 2
-      puts "[DoubleWorker] Doubled #{input.value} to #{result}"
+      puts "[DoubleWorker] Doubled #{input.value} to #{result}" if ConditionalExample.debug_output
 
       output = ProcessedNumber.new(
         result: result,
@@ -77,7 +84,7 @@ module ConditionalExample
     def process(work)
       input = work.input
       result = input.value**2
-      puts "[SquareWorker] Squared #{input.value} to #{result}"
+      puts "[SquareWorker] Squared #{input.value} to #{result}" if ConditionalExample.debug_output
 
       output = ProcessedNumber.new(
         result: result,
@@ -95,7 +102,7 @@ module ConditionalExample
 
     def process(work)
       input = work.input
-      puts "[PassThrough] Keeping original value: #{input.value}"
+      puts "[PassThrough] Keeping original value: #{input.value}" if ConditionalExample.debug_output
 
       output = ProcessedNumber.new(
         result: input.value,
@@ -166,37 +173,43 @@ class ConditionalWorkflow < Fractor::Workflow
   end
 end
 
-# Execute the workflow with different inputs
-puts "=" * 60
-puts "Conditional Workflow Example"
-puts "=" * 60
-puts ""
-
-test_cases = [
-  { value: 5, description: "Positive number (should double)" },
-  { value: -4, description: "Negative even number (should square)" },
-  { value: -3, description: "Negative odd number (should pass through)" },
-]
-
-test_cases.each_with_index do |test_case, index|
-  puts "Test Case #{index + 1}: #{test_case[:description]}"
-  puts "-" * 60
-
-  input = NumberInput.new(value: test_case[:value])
-  puts "Input: #{input.value}"
-  puts ""
-
-  workflow = ConditionalWorkflow.new
-  result = workflow.execute(input: input)
-
-  puts ""
-  puts "Results:"
-  puts "  Status: #{result.success? ? 'SUCCESS' : 'FAILED'}"
-  puts "  Execution Time: #{result.execution_time.round(3)}s"
-  puts "  Completed Jobs: #{result.completed_jobs.join(', ')}"
-  puts "  Final Result: #{result.output.result}"
-  puts "  Operation: #{result.output.operation}"
-  puts ""
+# Only run the example when this file is executed directly
+if __FILE__ == $PROGRAM_NAME
+  # Execute the workflow with different inputs
+  puts "=" * 60
+  puts "Conditional Workflow Example"
   puts "=" * 60
   puts ""
+
+  # Enable debug output for demonstration
+  ConditionalExample.debug_output = true
+
+  test_cases = [
+    { value: 5, description: "Positive number (should double)" },
+    { value: -4, description: "Negative even number (should square)" },
+    { value: -3, description: "Negative odd number (should pass through)" },
+  ]
+
+  test_cases.each_with_index do |test_case, index|
+    puts "Test Case #{index + 1}: #{test_case[:description]}"
+    puts "-" * 60
+
+    input = NumberInput.new(value: test_case[:value])
+    puts "Input: #{input.value}"
+    puts ""
+
+    workflow = ConditionalWorkflow.new
+    result = workflow.execute(input: input)
+
+    puts ""
+    puts "Results:"
+    puts "  Status: #{result.success? ? 'SUCCESS' : 'FAILED'}"
+    puts "  Execution Time: #{result.execution_time.round(3)}s"
+    puts "  Completed Jobs: #{result.completed_jobs.join(', ')}"
+    puts "  Final Result: #{result.output.result}"
+    puts "  Operation: #{result.output.operation}"
+    puts ""
+    puts "=" * 60
+    puts ""
+  end
 end

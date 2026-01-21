@@ -14,7 +14,9 @@ class FileWork < Fractor::Work
       file_path: file_path,
       output_dir: output_dir,
       validate: options.fetch(:validate, true),
-      transform: options.fetch(:transform, true)
+      transform: options.fetch(:transform, true),
+      # Pre-parsed data (for CSV/JSON - must be parsed OUTSIDE ractors)
+      pre_parsed_data: options[:pre_parsed_data]
     })
   end
 
@@ -32,6 +34,10 @@ class FileWork < Fractor::Work
 
   def transform?
     input[:transform]
+  end
+
+  def pre_parsed_data
+    input[:pre_parsed_data]
   end
 
   def to_s
@@ -52,8 +58,14 @@ class FileProcessorWorker < Fractor::Worker
 
     format = detect_format(file_path)
 
-    # Parse file
-    data = parse_file(file_path, format)
+    # Use pre-parsed data if available (for CSV/JSON), otherwise parse in-place
+    # CSV and JSON must be parsed OUTSIDE ractors to avoid segfault
+    if work.pre_parsed_data
+      data = work.pre_parsed_data
+    else
+      # Only for XML which is Ractor-safe
+      data = parse_file(file_path, format)
+    end
 
     # Validate if requested
     if work.validate?
@@ -113,9 +125,15 @@ class FileProcessorWorker < Fractor::Worker
   end
 
   def parse_csv(file_path)
+    # Parse CSV outside of Ractors
+    # CSV parsing must be sequential, so we parse before distributing work
     content = File.read(file_path)
-    csv_data = CSV.parse(content, headers: true)
-    csv_data.map(&:to_h)
+    csv_table = CSV.parse(content, headers: true)
+
+    # Convert to array immediately (CSV::Table is not Ractor-safe)
+    result = []
+    csv_table.each { |row| result << row.to_hash }
+    result
   end
 
   def parse_json(file_path)
@@ -246,8 +264,23 @@ class BatchFileProcessor
     puts "Transformation: #{transform ? 'enabled' : 'disabled'}"
     puts
 
+    # Parse CSV/JSON files OUTSIDE ractors to avoid segfault
+    # XML can be parsed inside ractors (Ractor-safe)
     work_items = @files.map do |file_path|
-      FileWork.new(file_path, @output_dir, validate: validate, transform: transform)
+      format = detect_format_from_path(file_path)
+      pre_parsed_data = nil
+
+      # Parse CSV and JSON outside ractors
+      if format == :csv
+        pre_parsed_data = parse_csv_outside_ractor(file_path)
+      elsif format == :json
+        pre_parsed_data = parse_json_outside_ractor(file_path)
+      end
+
+      FileWork.new(file_path, @output_dir,
+                   validate: validate,
+                   transform: transform,
+                   pre_parsed_data: pre_parsed_data)
     end
 
     supervisor = Fractor::Supervisor.new(
@@ -379,6 +412,45 @@ class BatchFileProcessor
     return nil unless File.exist?(file_path)
 
     Digest::SHA256.file(file_path).hexdigest
+  end
+
+  # Helper methods to parse files OUTSIDE ractors
+  # CSV and JSON must be parsed sequentially due to library limitations
+
+  def detect_format_from_path(file_path)
+    ext = File.extname(file_path).downcase
+    case ext
+    when ".csv"
+      :csv
+    when ".json"
+      :json
+    when ".xml"
+      :xml
+    else
+      raise "Unsupported file format: #{ext}"
+    end
+  end
+
+  def parse_csv_outside_ractor(file_path)
+    content = File.read(file_path)
+    csv_table = CSV.parse(content, headers: true)
+
+    # Convert to array immediately (CSV::Table is not Ractor-safe)
+    result = []
+    csv_table.each { |row| result << row.to_hash }
+    result
+  rescue StandardError => e
+    raise "Failed to parse CSV #{file_path}: #{e.message}"
+  end
+
+  def parse_json_outside_ractor(file_path)
+    content = File.read(file_path)
+    data = JSON.parse(content)
+
+    # Normalize to array format
+    data.is_a?(Array) ? data : [data]
+  rescue StandardError => e
+    raise "Failed to parse JSON #{file_path}: #{e.message}"
   end
 end
 

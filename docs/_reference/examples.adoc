@@ -1,14 +1,13 @@
 ---
 layout: default
 title: Examples
-parent: Reference
-nav_order: 2
+nav_order: 3
 ---
 = Examples
 
 == Running a basic example
 
-. Install the gem as described in the link:installation.adoc[Installation] section.
+. Install the gem as described in the link:../installation/[Installation] section.
 
 . Create a new Ruby file (e.g., `my_fractor_example.rb`) with your implementation:
 +
@@ -112,7 +111,7 @@ For complex data processing pipelines, see:
 
 For production monitoring and error analysis, see:
 
-* link:../features/error-handling.adoc[Error Handling] - Comprehensive error analytics
+* link:../features/error-handling/[Error Handling] - Comprehensive error analytics
   ** Error aggregation by category and job
   ** Real-time error handlers and alerts
   ** Trending error detection
@@ -175,8 +174,8 @@ Each example directory contains:
 
 == Next steps
 
-* Start with link:../pages/getting-started.adoc[Getting Started] for quick start guides
-* Learn about link:../guides/pipeline-mode.adoc[Pipeline Mode] for batch processing
-* Learn about link:../guides/continuous-mode.adoc[Continuous Mode] for long-running servers
-* Explore link:../features/workflows.adoc[Workflows] for complex processing graphs
-* Understand link:../pages/core-concepts.adoc[Core Concepts] of the framework
+* Start with link:../pages/getting-started/[Getting Started] for quick start guides
+* Learn about link:../guides/pipeline-mode/[Pipeline Mode] for batch processing
+* Learn about link:../guides/continuous-mode/[Continuous Mode] for long-running servers
+* Explore link:../features/workflows/[Workflows] for complex processing graphs
+* Understand link:../pages/core-concepts/[Core Concepts] of the framework

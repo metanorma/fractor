@@ -29,8 +29,8 @@ RSpec.describe "Retry Workflow Examples" do
   describe ProcessResponseWorker do
     it "processes successful API response" do
       work = Fractor::Work.new(
-        status: "success",
-        data: { url: "https://api.example.com", timestamp: Time.now },
+        { status: "success",
+          data: { url: "https://api.example.com", timestamp: Time.now } }
       )
       worker = described_class.new
       result = worker.process(work)
@@ -40,8 +40,8 @@ RSpec.describe "Retry Workflow Examples" do
 
     it "processes cached response" do
       work = Fractor::Work.new(
-        status: "cached",
-        data: { url: "https://api.example.com", cached: true },
+        { status: "cached",
+          data: { url: "https://api.example.com", cached: true } }
       )
       worker = described_class.new
       result = worker.process(work)

@@ -4,10 +4,16 @@ module Fractor
   # Base class for defining work items.
   # Contains the input data for a worker.
   class Work
-    attr_reader :input
+    attr_reader :input, :timeout
 
-    def initialize(input)
+    # Initializes a new work item.
+    #
+    # @param input [Object] The input data for the worker
+    # @param timeout [Numeric, nil] Optional per-work-item timeout in seconds.
+    #   If nil, uses the worker's default timeout.
+    def initialize(input, timeout: nil)
       @input = input
+      @timeout = timeout
     end
 
     def to_s
@@ -23,6 +29,7 @@ module Fractor
         "@input=#{@input.inspect}",
         "@type=#{input.class.name}",
       ]
+      details << "@timeout=#{@timeout.inspect}" if @timeout
       details.join(" ")
     end
   end

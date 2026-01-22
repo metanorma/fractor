@@ -82,6 +82,65 @@ puts "Results: #{supervisor.results.results.map(&:result)}"
 # => Results: [2, 4, 6]
 ----
 
+=== Timeout Configuration
+
+Fractor supports flexible timeout configuration at three levels:
+
+[cols="1,2,4"]
+|===
+|Level |Syntax |Description
+
+|Global
+|`Fractor.configure`
+|Sets default timeout for all workers
+
+|Worker
+|`Worker.timeout` class method
+|Sets timeout for all work processed by a worker
+
+|Work item
+|`Work.new(input, timeout: N)`
+|Overrides worker timeout for specific work item
+|===
+
+[source,ruby]
+----
+# 1. Global default (optional)
+Fractor.configure do |config|
+  config.default_worker_timeout = 60  # 60 seconds
+end
+
+# 2. Worker-level timeout
+class FastWorker < Fractor::Worker
+  timeout 10  # 10 second timeout for this worker
+
+  def process(work)
+    Fractor::WorkResult.new(result: work.input * 2, work: work)
+  end
+end
+
+# 3. Per-work-item timeout (overrides worker timeout)
+class MyWork < Fractor::Work
+  def initialize(value, timeout: nil)
+    super({ value: value }, timeout: timeout)
+  end
+end
+
+supervisor = Fractor::Supervisor.new(
+  worker_pools: [{ worker_class: FastWorker }]
+)
+
+# Mix work items with different timeouts
+fast_work = MyWork.new(1, timeout: 5)      # 5 seconds
+normal_work = MyWork.new(2)                 # uses worker's 10s timeout
+slow_work = MyWork.new(3, timeout: 30)     # 30 seconds
+
+supervisor.add_work_items([fast_work, normal_work, slow_work])
+supervisor.run
+----
+
+When a timeout occurs, the work item is marked as failed with `error_category: :timeout` and can be retried if using the workflow system.
+
 == Key features
 
 * *Function-driven*: Define processing logic by subclassing `Fractor::Worker`

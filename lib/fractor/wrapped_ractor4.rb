@@ -89,21 +89,26 @@ module Fractor
           end
 
           begin
-            # Get the timeout for this worker (nil means no timeout)
-            worker_timeout = worker.timeout
+            # Get the timeout for this specific work item
+            # Priority: work.timeout > worker.timeout (nil means no timeout)
+            work_timeout = if work.respond_to?(:timeout) && !work.timeout.nil?
+                             work.timeout
+                           else
+                             worker.timeout
+                           end
 
             # Process the work with timeout if configured
             # Note: Ruby's Timeout.timeout uses threads which don't work with Ractors.
             # We measure execution time and raise timeout error afterward if exceeded.
-            result = if worker_timeout
+            result = if work_timeout
                        start_time = Time.now
                        process_result = worker.process(work)
                        elapsed = Time.now - start_time
-                       if elapsed > worker_timeout
+                       if elapsed > work_timeout
                          # Raise a timeout error after the fact
                          # Note: This is a post-facto timeout check - the work has already completed
                          raise Timeout::Error,
-                               "execution timed out after #{elapsed}s (limit: #{worker_timeout}s)"
+                               "execution timed out after #{elapsed}s (limit: #{work_timeout}s)"
                        end
 
                        process_result
@@ -132,7 +137,7 @@ module Fractor
           rescue Timeout::Error => e
             # Handle timeout errors as retriable errors
             RactorLogger.warn(
-              "Timed out after #{worker.timeout}s processing work #{work.inspect}", ractor_name: name
+              "Timed out after #{work_timeout}s processing work #{work.inspect}", ractor_name: name
             )
             error_result = Fractor::WorkResult.new(
               error: "Worker timeout: #{e.message}",

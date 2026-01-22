@@ -171,6 +171,54 @@ Supported persistence formats:
 * **YAML** - More readable than JSON
 * **Marshal** - Binary format, faster but Ruby-specific
 
+=== Result Caching
+
+For expensive, deterministic operations, Fractor provides a result cache to avoid redundant processing of identical work items:
+
+[source,ruby]
+----
+# Create a cache with TTL (time-to-live)
+cache = Fractor::ResultCache.new(ttl: 300)  # 5 minutes
+
+# Or with size limit
+cache = Fractor::ResultCache.new(max_size: 1000)
+
+# Or with memory limit
+cache = Fractor::ResultCache.new(max_memory: 1024 * 1024)  # 1MB
+
+# Use the cache
+result = cache.get(work) do
+  # This block only runs if work is not cached
+  expensive_operation(work)
+end
+
+# Check if work is cached
+if cache.has?(work)
+  puts "Result is cached!"
+end
+
+# Manual cache operations
+cache.set(work, result)           # Store a result
+cache.invalidate(work)            # Remove a cached result
+cache.clear                       # Remove all cached results
+
+# Get cache statistics
+stats = cache.stats
+puts "Cache hit rate: #{stats[:hit_rate]}%"
+----
+
+The cache generates consistent keys based on:
+* Work class name
+* Work input data
+* Work timeout (if set)
+
+This means identical work items with the same input and timeout will share cached results.
+
+Cache eviction policies:
+* **TTL** - Entries expire after a configured time
+* **LRU** - Least-recently-used entries are evicted when max_size is reached
+* **Memory-based** - Entries are evicted when max_memory is reached
+
 == Key features
 
 * *Function-driven*: Define processing logic by subclassing `Fractor::Worker`

@@ -47,7 +47,10 @@ module Fractor
           _class: work.class.name,
           _input: work.input,
         }
-        hash[:_timeout] = work.timeout if work.respond_to?(:timeout) && !work.timeout.nil?
+        if work.respond_to?(:timeout) && !work.timeout.nil?
+          hash[:_timeout] =
+            work.timeout
+        end
         hash
       end
     end
@@ -154,7 +157,9 @@ module Fractor
         yaml = File.read(@path)
         return nil if yaml.strip.empty?
 
-        YAML.safe_load(yaml, permitted_classes: [Symbol, Hash, String, Integer, Float, TrueClass, FalseClass, NilClass])
+        YAML.safe_load(yaml,
+                       permitted_classes: [Symbol, Hash, String, Integer, Float, TrueClass,
+                                           FalseClass, NilClass])
       rescue StandardError => e
         warn "Failed to load from #{@path}: #{e.message}"
         nil

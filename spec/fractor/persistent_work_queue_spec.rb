@@ -31,7 +31,9 @@ RSpec.describe Fractor::PersistentWorkQueue do
     end
 
     it "accepts a custom persister" do
-      persister = Fractor::QueuePersister::YAMLPersister.new(File.join(temp_dir, "queue.yml"))
+      persister = Fractor::QueuePersister::YAMLPersister.new(File.join(
+                                                               temp_dir, "queue.yml"
+                                                             ))
       queue = described_class.new(persister)
       expect(queue.persister).to eq(persister)
     end
@@ -223,7 +225,8 @@ RSpec.describe Fractor::PersistentWorkQueue do
     end
 
     it "stops auto-save thread if running" do
-      queue = described_class.new(queue_file, auto_save: false, save_interval: 1)
+      queue = described_class.new(queue_file, auto_save: false,
+                                              save_interval: 1)
       work = TestWork.new(42)
 
       queue << work

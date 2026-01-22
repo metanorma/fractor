@@ -101,7 +101,8 @@ RSpec.describe "Per-work-item timeout integration" do
 
     it "uses worker timeout when work timeout is nil" do
       supervisor = Fractor::Supervisor.new(
-        worker_pools: [{ worker_class: WorkerWithClassTimeout, num_workers: 1 }],
+        worker_pools: [{ worker_class: WorkerWithClassTimeout,
+                         num_workers: 1 }],
         debug: false,
       )
 

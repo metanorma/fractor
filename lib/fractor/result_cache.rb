@@ -164,7 +164,10 @@ module Fractor
         class: work.class.name,
         input: work.input,
       }
-      data[:timeout] = work.timeout if work.respond_to?(:timeout) && !work.timeout.nil?
+      if work.respond_to?(:timeout) && !work.timeout.nil?
+        data[:timeout] =
+          work.timeout
+      end
 
       # Use SHA256 hash for consistent, collision-resistant keys
       Digest::SHA256.hexdigest(JSON.dump(data))

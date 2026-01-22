@@ -141,6 +141,36 @@ supervisor.run
 
 When a timeout occurs, the work item is marked as failed with `error_category: :timeout` and can be retried if using the workflow system.
 
+=== Queue Persistence
+
+For critical applications, work queues can be persisted to disk for crash recovery:
+
+[source,ruby]
+----
+# Create a persistent queue with automatic saving
+queue = Fractor::PersistentWorkQueue.new("data/queue.json")
+
+# Add work items - automatically saved
+queue << MyWork.new(data1)
+queue << MyWork.new(data2)
+
+# Use with ContinuousServer for crash recovery
+server = Fractor::ContinuousServer.new(
+  worker_pools: [{ worker_class: MyWorker }],
+  work_queue: queue
+)
+
+# Load any previous work items on startup
+queue.load
+
+server.run
+----
+
+Supported persistence formats:
+* **JSON** (default) - Human-readable, widely compatible
+* **YAML** - More readable than JSON
+* **Marshal** - Binary format, faster but Ruby-specific
+
 == Key features
 
 * *Function-driven*: Define processing logic by subclassing `Fractor::Worker`

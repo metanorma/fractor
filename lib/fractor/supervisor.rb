@@ -318,7 +318,7 @@ module Fractor
       # This is critical for Ruby 4.0 where workers need explicit work distribution
       if @work_distribution_manager
         distributed = @work_distribution_manager.distribute_to_idle_workers
-        puts "Distributed initial work to #{distributed} idle workers (work_queue.size: #{@work_queue.size})" if @debug || true
+        puts "Distributed initial work to #{distributed} idle workers (work_queue.size: #{@work_queue.size})" if @debug
       end
 
       # Start timer thread for continuous mode to periodically check work sources

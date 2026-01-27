@@ -140,8 +140,9 @@ RSpec.describe Fractor::MainLoopHandler do
     it "includes wakeup ractor in continuous mode with callbacks" do
       allow(supervisor).to receive(:instance_variable_get).with(:@wakeup_ractor).and_return(ractor1)
       allow(supervisor).to receive(:instance_variable_get).with(:@continuous_mode).and_return(true)
-      allow(supervisor).to receive(:instance_variable_get).with(:@work_callbacks).and_return([-> {
-      }])
+      # Mock callback_registry to indicate callbacks exist
+      registry = instance_double(Fractor::CallbackRegistry, work_callbacks: [-> {}], has_work_callbacks?: true)
+      allow(supervisor).to receive(:callback_registry).and_return(registry)
 
       active = handler.send(:get_active_ractors)
       expect(active).to contain_exactly(ractor1, ractor2)
@@ -318,7 +319,9 @@ RSpec.describe Fractor::MainLoopHandler do
       )
       allow(supervisor).to receive(:instance_variable_get).with(:@performance_monitor).and_return(nil)
       allow(supervisor).to receive(:instance_variable_get).with(:@work_distribution_manager).and_return(work_distribution_manager)
-      allow(supervisor).to receive(:instance_variable_get).with(:@error_callbacks).and_return([])
+      # Mock callback_registry for error callbacks
+      registry = instance_double(Fractor::CallbackRegistry, error_callbacks: [])
+      allow(supervisor).to receive(:callback_registry).and_return(registry)
       allow(supervisor).to receive(:instance_variable_get).with(:@continuous_mode).and_return(false)
       allow(supervisor).to receive(:instance_variable_get).with(:@total_work_count).and_return(1)
       # Allow calling private methods and stub work distribution

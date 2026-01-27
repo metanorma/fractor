@@ -172,7 +172,7 @@ RSpec.describe Fractor::WorkQueue do
       5.times { |i| work_queue << Fractor::Work.new("data_#{i}") }
 
       # Trigger work source callback manually
-      new_work = supervisor.instance_variable_get(:@work_callbacks).first.call
+      new_work = supervisor.callback_registry.work_callbacks.first.call
       expect(new_work).to be_an(Array)
       expect(new_work.size).to be <= 10
     end
@@ -183,7 +183,7 @@ RSpec.describe Fractor::WorkQueue do
       10.times { |i| work_queue << Fractor::Work.new("data_#{i}") }
 
       # Trigger work source callback manually
-      new_work = supervisor.instance_variable_get(:@work_callbacks).first.call
+      new_work = supervisor.callback_registry.work_callbacks.first.call
       expect(new_work.size).to eq(3)
     end
 
@@ -191,7 +191,7 @@ RSpec.describe Fractor::WorkQueue do
       work_queue.register_with_supervisor(supervisor)
 
       # Trigger work source callback manually with empty queue
-      new_work = supervisor.instance_variable_get(:@work_callbacks).first.call
+      new_work = supervisor.callback_registry.work_callbacks.first.call
       expect(new_work).to be_nil
     end
   end

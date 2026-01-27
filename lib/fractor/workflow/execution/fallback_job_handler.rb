@@ -27,7 +27,8 @@ module Fractor
       # @param job_executor [JobExecutor] The job executor to use
       # @param start_time [Time] The original job start time (for duration calculation)
       # @return [Object] The output from the fallback job
-      def execute_fallback(original_job, original_error, job_trace, job_executor, start_time)
+      def execute_fallback(original_job, original_error, job_trace,
+job_executor, start_time)
         fallback_job_name = original_job.fallback_job
         fallback_job = @workflow.class.jobs[fallback_job_name]
 
@@ -36,7 +37,8 @@ module Fractor
                 "Fallback job '#{fallback_job_name}' not found for job '#{original_job.name}'"
         end
 
-        @logger.fallback_execution(original_job.name, fallback_job.name, original_error)
+        @logger.fallback_execution(original_job.name, fallback_job.name,
+                                   original_error)
 
         begin
           # Execute fallback job using job_executor

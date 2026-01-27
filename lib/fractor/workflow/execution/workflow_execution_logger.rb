@@ -34,7 +34,8 @@ module Fractor
       # @param duration [Float] Execution duration in seconds
       # @param jobs_completed [Integer] Number of jobs completed
       # @param jobs_failed [Integer] Number of jobs failed
-      def workflow_complete(workflow_name, duration, jobs_completed:, jobs_failed:)
+      def workflow_complete(workflow_name, duration, jobs_completed:,
+jobs_failed:)
         return unless @logger
 
         @logger.info(
@@ -206,7 +207,8 @@ module Fractor
       # @param failure_count [Integer] Number of failures
       # @param threshold [Integer] Failure threshold
       # @param last_failure [Time, nil] Time of last failure
-      def circuit_breaker_open(job_name, failure_count, threshold, last_failure: nil)
+      def circuit_breaker_open(job_name, failure_count, threshold,
+last_failure: nil)
         return unless @logger
 
         @logger.error(

@@ -53,7 +53,8 @@ module Fractor
                                         failed_jobs: @failed_jobs,
                                         dead_letter_queue: @dead_letter_queue,
                                         circuit_breakers: @circuit_breakers)
-        @fallback_handler = FallbackJobHandler.new(@workflow, @context, @hooks, @logger)
+        @fallback_handler = FallbackJobHandler.new(@workflow, @context, @hooks,
+                                                   @logger)
       end
 
       # Execute the workflow and return the result.
@@ -63,7 +64,8 @@ module Fractor
         # Run pre-execution validation
         @pre_execution_context.validate!
 
-        @logger.workflow_start(@workflow.class.workflow_name, @context.correlation_id)
+        @logger.workflow_start(@workflow.class.workflow_name,
+                               @context.correlation_id)
         @hooks.trigger(:workflow_start, @workflow)
         @trace&.start_job(
           job_name: "workflow",
@@ -210,7 +212,8 @@ module Fractor
 
           # Try fallback job if configured
           if job.fallback_job
-            @fallback_handler.execute_fallback(job, e, job_trace, @job_executor, start_time)
+            @fallback_handler.execute_fallback(job, e, job_trace,
+                                               @job_executor, start_time)
             # Fallback succeeded - add original job to completed
             @completed_jobs.add(job.name)
           else

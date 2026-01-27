@@ -362,6 +362,18 @@ module Fractor
 
       @running = false
 
+      # CRITICAL: Send immediate wakeup signal to unblock main loop from Ractor.select
+      # This is especially important for Ruby 3.4+ where Ractor.select may block indefinitely
+      # without periodic checks of @running. The timer thread might take time to exit,
+      # so we send the signal here immediately.
+      if @wakeup_ractor
+        begin
+          @wakeup_ractor.send(:shutdown)
+        rescue StandardError => e
+          puts "Error sending shutdown to wakeup ractor: #{e.message}" if @debug
+        end
+      end
+
       # Update shutdown handler with current references before shutdown
       @shutdown_handler.instance_variable_set(:@workers, @workers)
       @shutdown_handler.instance_variable_set(:@wakeup_ractor, @wakeup_ractor)
@@ -391,15 +403,6 @@ module Fractor
               puts "Timer thread error sending wakeup: #{e.message}" if @debug
               break
             end
-          end
-        end
-        # Send final wakeup to ensure main loop exits cleanly
-        # This is critical for Ruby 3.4+ where Ractor.select may block indefinitely
-        if @wakeup_ractor
-          begin
-            @wakeup_ractor.send(:shutdown)
-          rescue StandardError => e
-            puts "Timer thread error sending shutdown: #{e.message}" if @debug
           end
         end
         puts "Timer thread shutting down" if @debug

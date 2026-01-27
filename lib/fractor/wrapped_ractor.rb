@@ -14,8 +14,7 @@ module Fractor
     # @param kwargs [Hash] Additional keyword arguments for subclass initialization
     # @return [WrappedRactor] The appropriate subclass instance
     def self.create(name, worker_class, **kwargs)
-      ruby_4_0 = Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("4.0.0")
-      if ruby_4_0
+      if Fractor::RUBY_4_0_OR_HIGHER
         WrappedRactor4.new(name, worker_class, **kwargs)
       else
         WrappedRactor3.new(name, worker_class, **kwargs)
@@ -112,9 +111,8 @@ module Fractor
       end
 
       false
-    rescue Exception => e
+    rescue Exception
       # If we get an exception, the Ractor is likely terminated
-      puts "Ractor #{@name} appears to be terminated: #{e.message}" if ENV["FRACTOR_DEBUG"]
       @ractor = nil
       true
     end

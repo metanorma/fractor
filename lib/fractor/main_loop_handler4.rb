@@ -8,10 +8,11 @@ module Fractor
   class MainLoopHandler4 < MainLoopHandler
     # Run the main event loop for Ruby 4.0+.
     def run_loop
-      # Build mapping of response ports to workers for message routing
-      port_to_worker = build_port_to_worker_map
-
       loop do
+        # Build mapping of response ports to workers for message routing
+        # REBUILD ON EACH ITERATION to handle terminated workers
+        port_to_worker = build_port_to_worker_map
+
         processed_count = get_processed_count
 
         # Check loop termination condition
@@ -65,12 +66,16 @@ module Fractor
 
     # Build mapping of response ports to workers.
     # This is needed to route messages from ports back to workers.
+    # Skips workers whose ractors have terminated to avoid blocking on closed ports.
     #
     # @return [Hash] Mapping of Ractor::Port => WrappedRactor
     def build_port_to_worker_map
       port_map = {}
       ractors_map.each_value do |wrapped_ractor|
         next unless wrapped_ractor.is_a?(WrappedRactor4)
+
+        # Skip workers whose ractors have terminated
+        next if wrapped_ractor.closed?
 
         port = wrapped_ractor.response_port
         port_map[port] = wrapped_ractor if port
@@ -80,6 +85,7 @@ module Fractor
 
     # Get list of active items for Ractor.select (Ruby 4.0+).
     # Includes both response ports and ractors (excluding wakeup ractor).
+    # Skips workers whose ractors have terminated to avoid blocking on closed ports.
     #
     # @return [Array] List of Ractor::Port and Ractor objects
     def get_active_items
@@ -88,6 +94,9 @@ module Fractor
       # Add response ports from all workers
       ractors_map.each_value do |wrapped_ractor|
         next unless wrapped_ractor.is_a?(WrappedRactor4)
+
+        # Skip workers whose ractors have terminated
+        next if wrapped_ractor.closed?
 
         port = wrapped_ractor.response_port
         items << port if port
@@ -213,8 +222,20 @@ processed_count)
 
       ready_item, message = Ractor.select(*active_items)
 
-      # Check if this is the wakeup port
-      if ready_item == wakeup_port
+      # Debug: log what we received
+      if @debug
+        if ready_item.equal?(wakeup_port)
+          puts "DEBUG: Received from wakeup_port: #{message.inspect}"
+        elsif ready_item.is_a?(Ractor::Port)
+          worker = port_to_worker[ready_item]
+          puts "DEBUG: Received from port: #{worker&.name || 'unknown'}, message: #{message.inspect}"
+        else
+          puts "DEBUG: Received from ractor: #{ready_item.inspect}, message: #{message.inspect}"
+        end
+      end
+
+      # Check if this is the wakeup port (use equal? for identity comparison)
+      if wakeup_port && ready_item.equal?(wakeup_port)
         puts "Wakeup signal received: #{message[:message]}" if @debug
         # Remove wakeup ractor from map if shutting down
         if message && message[:message] == :shutdown
@@ -228,7 +249,7 @@ processed_count)
       [ready_item, message]
     rescue Ractor::ClosedError, Ractor::Error => e
       # Handle closed ports/ractors - remove them from ractors_map
-      puts "Ractor::Error in select: #{e.message}. Cleaning up closed ports." if @debug
+      puts "Ractor::Error in select: #{e.class} - #{e.message}. Cleaning up closed ports." if @debug
 
       # Find and remove workers with closed ports
       closed_ports = active_items.select { |item| item.is_a?(Ractor::Port) }
@@ -244,6 +265,11 @@ processed_count)
 
       # Return nil to continue the loop with updated active_items
       [nil, nil]
+    rescue StandardError => e
+      # Catch any other unexpected errors and re-raise with context
+      puts "Unexpected error in select_from_mixed: #{e.class} - #{e.message}" if @debug
+      puts e.backtrace.first(5) if @debug
+      raise
     end
 
     # Process a message from a ractor or port (Ruby 4.0+).

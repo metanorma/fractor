@@ -86,7 +86,8 @@ RSpec.describe Fractor::MainLoopHandler4, :ruby4 do
         allow(supervisor).to receive(:instance_variable_get).with(:@wakeup_ractor).and_return(ractor1)
         allow(supervisor).to receive(:instance_variable_get).with(:@continuous_mode).and_return(true)
         # Mock callback_registry to indicate callbacks exist
-        registry = instance_double(Fractor::CallbackRegistry, work_callbacks: [-> {}], has_work_callbacks?: true)
+        registry = instance_double(Fractor::CallbackRegistry, work_callbacks: [-> {
+        }], has_work_callbacks?: true)
         allow(supervisor).to receive(:callback_registry).and_return(registry)
 
         active = handler.send(:get_active_ractors)

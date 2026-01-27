@@ -173,7 +173,8 @@ module Fractor
         @dead_letter_queue.add(work, error, context: context,
                                             metadata: metadata)
 
-        @logger.added_to_dead_letter_queue(job.name, error, @dead_letter_queue.size)
+        @logger.added_to_dead_letter_queue(job.name, error,
+                                           @dead_letter_queue.size)
       end
 
       # Build failure metadata for dead letter queue.

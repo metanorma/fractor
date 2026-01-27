@@ -33,6 +33,8 @@ require_relative "fractor/error_reporter"
 require_relative "fractor/error_statistics"
 require_relative "fractor/error_report_generator"
 require_relative "fractor/error_formatter"
+require_relative "fractor/callback_registry"
+require_relative "fractor/config_schema"
 require_relative "fractor/execution_tracer"
 require_relative "fractor/result_cache"
 

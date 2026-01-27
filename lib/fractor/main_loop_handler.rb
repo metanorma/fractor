@@ -350,11 +350,11 @@ module Fractor
     end
 
     def work_callbacks
-      @supervisor.instance_variable_get(:@work_callbacks)
+      @supervisor.callback_registry.work_callbacks
     end
 
     def error_callbacks
-      @supervisor.instance_variable_get(:@error_callbacks)
+      @supervisor.callback_registry.error_callbacks
     end
 
     # Check if running on Windows with Ruby 3.4

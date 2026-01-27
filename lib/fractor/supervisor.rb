@@ -12,7 +12,7 @@ module Fractor
   # Supervises multiple WrappedRactors, distributes work, and aggregates results.
   class Supervisor
     attr_reader :work_queue, :workers, :results, :worker_pools, :debug,
-                :error_reporter, :logger, :performance_monitor
+                :error_reporter, :logger, :performance_monitor, :callback_registry
 
     # Initializes the Supervisor.
     # - worker_pools: An array of worker pool configurations, each containing:
@@ -81,12 +81,13 @@ module Fractor
       @ractors_map = {} # Map Ractor object to WrappedRactor instance
       @continuous_mode = continuous_mode
       @running = false
-      @work_callbacks = []
       @wakeup_ractor = nil # Control ractor for unblocking select
       @timer_thread = nil # Timer thread for periodic wakeup
       @error_reporter = ErrorReporter.new # Track errors and statistics
-      @error_callbacks = [] # Custom error callbacks
       @performance_monitor = nil # Performance monitor instance
+
+      # Initialize callback registry for managing work and error callbacks
+      @callback_registry = CallbackRegistry.new(debug: @debug)
 
       # Initialize performance monitor if enabled
       if enable_performance_monitoring
@@ -172,14 +173,14 @@ module Fractor
     # Register a callback to provide new work items
     # The callback should return nil or empty array when no new work is available
     def register_work_source(&callback)
-      @work_callbacks << callback
+      @callback_registry.register_work_source(&callback)
     end
 
     # Register a callback to handle errors
     # The callback receives (error_result, worker_name, worker_class)
     # Example: supervisor.on_error { |err, worker, klass| puts "Error in #{klass}: #{err.error}" }
     def on_error(&callback)
-      @error_callbacks << callback
+      @callback_registry.register_error_callback(&callback)
     end
 
     # Starts the worker Ractors for all worker pools.
@@ -322,7 +323,7 @@ module Fractor
       end
 
       # Start timer thread for continuous mode to periodically check work sources
-      start_timer_thread if @continuous_mode && !@work_callbacks.empty?
+      start_timer_thread if @continuous_mode && @callback_registry.has_work_callbacks?
 
       begin
         # Run the main event loop through MainLoopHandler
@@ -549,6 +550,64 @@ module Fractor
       return nil unless @performance_monitor
 
       @performance_monitor.snapshot
+    end
+
+    # Class-level documentation for Supervisor configuration options.
+    # Provides a summary of valid configuration parameters for the initialize method.
+    #
+    # @example Print configuration help
+    #   puts Fractor::Supervisor.configuration_help
+    #
+    # @return [String] Configuration documentation
+    def self.configuration_help
+      <<~HELP
+        Fractor::Supervisor Configuration Options
+        ==========================================
+
+        The Supervisor accepts the following keyword arguments to initialize():
+
+        worker_pools (Array, required)
+          Array of worker pool configuration hashes.
+          Each hash must contain:
+            - worker_class: Class inheriting from Fractor::Worker (required)
+            - num_workers: Positive integer for number of workers (optional, defaults to CPU count)
+
+          Example:
+            worker_pools: [
+              { worker_class: MyWorker, num_workers: 4 },
+              { worker_class: AnotherWorker, num_workers: 2 }
+            ]
+
+        continuous_mode (Boolean, optional, default: false)
+          Whether to run in continuous mode (long-running) or batch mode.
+          - false: Batch mode - processes all work items and exits
+          - true: Continuous mode - runs until stopped, accepts work from callbacks
+
+        debug (Boolean, optional, default: false)
+          Enable verbose debug output for all state changes.
+          Can also be enabled via FRACTOR_DEBUG=1 environment variable.
+
+        logger (Logger, optional, default: Fractor.logger)
+          Optional logger instance for this Supervisor.
+          Provides isolation when multiple gems use Fractor in the same process.
+
+        tracer_enabled (Boolean, optional)
+          Override for ExecutionTracer. nil uses global setting.
+
+        tracer_stream (IO, optional)
+          Optional trace stream for this Supervisor. nil uses global setting.
+
+        enable_performance_monitoring (Boolean, optional, default: false)
+          Enable performance monitoring (latency, throughput, etc.).
+          When enabled, performance_metrics() returns current metrics.
+
+        Validation
+        ----------
+        All configuration is validated at initialization time with detailed error messages.
+        Invalid configurations will raise ArgumentError with helpful fix suggestions.
+
+        For more information, see the Supervisor class documentation.
+      HELP
     end
   end
 end

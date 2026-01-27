@@ -19,3 +19,16 @@ CLAUDE.md
 
 # rubocop
 .rubocop_todo.yml
+.rubocop-remote-*.yml
+
+# Local development files
+.tool-versions
+scraped_data/
+files.txt
+DEBUGGABILITY_IMPROVEMENTS.md
+
+# Local documentation files (not for commit)
+docs/DOCUMENTATION_SETUP.md
+docs/REORGANIZATION_PLAN.md
+docs/REORGANIZATION_SUMMARY.md
+docs/assets/LOGO_GUIDELINES.md

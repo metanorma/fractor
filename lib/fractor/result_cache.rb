@@ -156,21 +156,69 @@ module Fractor
 
     # Generate a cache key for a work item.
     #
+    # Optimized to avoid JSON.dump for common simple types.
+    # For complex nested structures, falls back to JSON serialization.
+    #
     # @param work [Fractor::Work] The work item
     # @return [String] The cache key
     def generate_key(work)
-      # Create a deterministic key from the work item
-      data = {
-        class: work.class.name,
-        input: work.input,
-      }
-      if work.respond_to?(:timeout) && !work.timeout.nil?
-        data[:timeout] =
-          work.timeout
-      end
+      # For simple types, use faster string interpolation
+      # For complex nested structures, fall back to JSON
+      input = work.input
+      input_str = if simple_input?(input)
+                    serialize_simple_input(input)
+                  else
+                    JSON.dump(input)
+                  end
+
+      # Build key components
+      parts = [work.class.name, input_str]
+      parts << work.timeout.to_s if work.respond_to?(:timeout) && !work.timeout.nil?
 
       # Use SHA256 hash for consistent, collision-resistant keys
-      Digest::SHA256.hexdigest(JSON.dump(data))
+      Digest::SHA256.hexdigest(parts.join("|"))
+    end
+
+    # Check if input is a simple type that can be serialized without JSON.
+    # @return [Boolean] true if input is a simple, directly serializable type
+    def simple_input?(input)
+      case input
+      when NilClass, TrueClass, FalseClass, String, Numeric, Symbol
+        true
+      when Array
+        input.all? { |item| simple_input?(item) }
+      when Hash
+        input.keys.all? { |k| k.is_a?(String) || k.is_a?(Symbol) } &&
+          input.values.all? { |v| simple_input?(v) }
+      else
+        false
+      end
+    end
+
+    # Serialize simple input types efficiently without JSON.
+    # @return [String] Serialized representation
+    def serialize_simple_input(input)
+      case input
+      when NilClass
+        "nil"
+      when TrueClass
+        "true"
+      when FalseClass
+        "false"
+      when String
+        # Escape special characters for consistent hashing
+        input.inspect
+      when Symbol
+        ":#{input}"
+      when Array
+        "[#{input.map { |item| serialize_simple_input(item) }.join(',')}]"
+      when Hash
+        pairs = input.map { |k, v| "#{k}=>#{serialize_simple_input(v)}" }
+        "{#{pairs.sort.join(',')}}"
+      else
+        # Fallback - shouldn't happen if simple_input? is correct
+        input.to_s
+      end
     end
 
     # Check if a cache entry is expired.

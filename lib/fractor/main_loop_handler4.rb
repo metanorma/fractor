@@ -22,7 +22,7 @@ module Fractor
         active_items = get_active_items
 
         # Check for new work from callbacks if in continuous mode
-        process_work_callbacks if continuous_mode? && !work_callbacks.empty?
+        process_work_callbacks if continuous_mode? && @supervisor.callback_registry.has_work_callbacks?
 
         # Handle edge cases - break if edge case handler indicates we should
         next if handle_edge_cases_with_ports(active_items, port_to_worker,
@@ -94,7 +94,7 @@ module Fractor
       end
 
       # Add wakeup ractor/port if in continuous mode with callbacks
-      if continuous_mode? && !work_callbacks.empty? && wakeup_ractor && wakeup_port
+      if continuous_mode? && @supervisor.callback_registry.has_work_callbacks? && wakeup_ractor && wakeup_port
         items << wakeup_port
       end
 
@@ -107,7 +107,7 @@ module Fractor
     # @return [Array<Ractor>] List of active Ractor objects
     def get_active_ractors
       ractors_map.keys.reject do |ractor|
-        ractor == wakeup_ractor && !(continuous_mode? && !work_callbacks.empty?)
+        ractor == wakeup_ractor && !(continuous_mode? && @supervisor.callback_registry.has_work_callbacks?)
       end
     end
 
@@ -115,16 +115,14 @@ module Fractor
     #
     # @return [void]
     def process_work_callbacks
-      work_callbacks.each do |callback|
-        new_work = callback.call
-        if new_work && !new_work.empty?
-          @supervisor.add_work_items(new_work)
-          puts "Work source provided #{new_work.size} new items" if @debug
+      new_work = @supervisor.callback_registry.process_work_callbacks
+      if new_work && !new_work.empty?
+        @supervisor.add_work_items(new_work)
+        puts "Work source provided #{new_work.size} new items" if @debug
 
-          # Distribute work to idle workers
-          distributed = work_distribution_manager.distribute_to_idle_workers
-          puts "Distributed work to #{distributed} idle workers" if @debug && distributed.positive?
-        end
+        # Distribute work to idle workers
+        distributed = work_distribution_manager.distribute_to_idle_workers
+        puts "Distributed work to #{distributed} idle workers" if @debug && distributed.positive?
       end
     end
 

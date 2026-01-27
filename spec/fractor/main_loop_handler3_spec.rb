@@ -42,6 +42,13 @@ RSpec.describe Fractor::MainLoopHandler3, :ruby3 do
     allow(supervisor).to receive(:instance_variable_get).with(:@performance_monitor).and_return(nil)
     allow(supervisor).to receive(:instance_variable_get).with(:@work_callbacks).and_return([])
     allow(supervisor).to receive(:instance_variable_get).with(:@error_callbacks).and_return([])
+
+    # Set up default callback_registry mock
+    registry = instance_double(Fractor::CallbackRegistry,
+                               work_callbacks: [],
+                               error_callbacks: [],
+                               has_work_callbacks?: false)
+    allow(supervisor).to receive(:callback_registry).and_return(registry)
   end
 
   describe "Ruby 3.x specific behavior" do
@@ -82,8 +89,11 @@ RSpec.describe Fractor::MainLoopHandler3, :ruby3 do
       it "includes wakeup ractor in continuous mode with callbacks" do
         allow(supervisor).to receive(:instance_variable_get).with(:@wakeup_ractor).and_return(ractor1)
         allow(supervisor).to receive(:instance_variable_get).with(:@continuous_mode).and_return(true)
-        allow(supervisor).to receive(:instance_variable_get).with(:@work_callbacks).and_return([-> {
-        }])
+
+        registry = instance_double(Fractor::CallbackRegistry,
+                                   work_callbacks: [-> {}],
+                                   has_work_callbacks?: true)
+        allow(supervisor).to receive(:callback_registry).and_return(registry)
 
         active = handler.send(:get_active_ractors)
         expect(active).to contain_exactly(ractor1, ractor2)

@@ -8,29 +8,35 @@ module Fractor
   # the Single Responsibility Principle.
   class ShutdownHandler
     def initialize(workers, wakeup_ractor, timer_thread, performance_monitor,
-                   main_loop_thread: nil, debug: false)
+                   main_loop_thread: nil, debug: false, continuous_mode: false)
       @workers = workers
       @wakeup_ractor = wakeup_ractor
       @timer_thread = timer_thread
       @performance_monitor = performance_monitor
       @main_loop_thread = main_loop_thread
       @debug = debug
+      @continuous_mode = continuous_mode
     end
 
     # Execute a graceful shutdown of all supervisor components.
     # Components are stopped in the correct order to prevent issues:
     # 1. Stop performance monitor (to stop metric collection)
-    # 2. Stop timer thread (to stop periodic wakeups)
-    # 3. Signal wakeup ractor (to unblock Ractor.select)
-    # 4. Signal all workers (to stop processing)
-    # 5. Wait for main loop thread and workers to finish
+    # 2. Skip stopping timer thread in continuous mode (it will exit when workers close)
+    # 3. Stop timer thread in batch mode (to stop periodic wakeups)
+    # 4. Signal wakeup ractor (to unblock Ractor.select)
+    # 5. Signal all workers (to stop processing)
+    # 6. Wait for main loop thread and workers to finish
     #
     # @param wait_for_completion [Boolean] Whether to wait for all workers to close
     # @param timeout [Integer] Maximum seconds to wait for shutdown (default: 10)
     # @return [void]
     def shutdown(wait_for_completion: false, timeout: 10)
       stop_performance_monitor
-      stop_timer_thread
+
+      # Only stop timer thread in batch mode. In continuous mode, the timer thread
+      # will exit on its own when workers are closed (it checks this condition).
+      stop_timer_thread unless @continuous_mode
+
       signal_wakeup_ractor
       signal_all_workers
 

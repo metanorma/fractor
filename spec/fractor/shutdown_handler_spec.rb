@@ -28,6 +28,23 @@ RSpec.describe Fractor::ShutdownHandler do
     it "initializes with debug flag" do
       expect(handler.instance_variable_get(:@debug)).to be false
     end
+
+    context "with continuous_mode parameter" do
+      let(:handler) do
+        described_class.new(
+          workers,
+          wakeup_ractor,
+          timer_thread,
+          performance_monitor,
+          debug: false,
+          continuous_mode: true,
+        )
+      end
+
+      it "stores continuous_mode flag" do
+        expect(handler.instance_variable_get(:@continuous_mode)).to be true
+      end
+    end
   end
 
   describe "#shutdown" do
@@ -89,6 +106,94 @@ RSpec.describe Fractor::ShutdownHandler do
 
       expect(worker).to receive(:send).with(:shutdown).once
       handler.shutdown
+    end
+
+    context "when in batch mode (default)" do
+      let(:thread) { Thread.new { sleep } }
+
+      after { thread.kill }
+
+      it "calls stop_timer_thread when thread exists and is alive" do
+        handler = described_class.new(
+          workers,
+          wakeup_ractor,
+          thread,
+          performance_monitor,
+          debug: false,
+          continuous_mode: false,
+        )
+
+        expect(thread).to receive(:join).with(1).once
+        handler.shutdown
+      end
+    end
+
+    context "when in continuous mode" do
+      let(:thread) { Thread.new { sleep } }
+
+      after { thread.kill }
+
+      it "does NOT call stop_timer_thread" do
+        handler = described_class.new(
+          workers,
+          wakeup_ractor,
+          thread,
+          performance_monitor,
+          debug: false,
+          continuous_mode: true,
+        )
+
+        expect(thread).not_to receive(:join)
+        handler.shutdown
+      end
+
+      it "still calls stop_performance_monitor" do
+        pm = instance_double(Fractor::PerformanceMonitor, stop: true)
+        handler = described_class.new(
+          workers,
+          wakeup_ractor,
+          thread,
+          pm,
+          debug: false,
+          continuous_mode: true,
+        )
+
+        expect(pm).to receive(:stop).once
+        handler.shutdown
+      end
+
+      it "still signals wakeup_ractor" do
+        ractor = instance_double(Ractor, send: true)
+        handler = described_class.new(
+          workers,
+          ractor,
+          thread,
+          performance_monitor,
+          debug: false,
+          continuous_mode: true,
+        )
+
+        expect(ractor).to receive(:send).with(:shutdown).once
+        handler.shutdown
+      end
+
+      it "still signals all workers" do
+        worker = instance_double(Fractor::WrappedRactor,
+                                 name: "worker-1",
+                                 send: true,
+                                 closed?: true)
+        handler = described_class.new(
+          [worker],
+          wakeup_ractor,
+          thread,
+          performance_monitor,
+          debug: false,
+          continuous_mode: true,
+        )
+
+        expect(worker).to receive(:send).with(:shutdown).once
+        handler.shutdown
+      end
     end
   end
 

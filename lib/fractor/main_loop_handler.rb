@@ -20,8 +20,7 @@ module Fractor
     # @param debug [Boolean] Whether debug mode is enabled
     # @return [MainLoopHandler] The appropriate subclass instance
     def self.create(supervisor, debug: false)
-      ruby_4_0 = Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("4.0.0")
-      if ruby_4_0
+      if Fractor::RUBY_4_0_OR_HIGHER
         MainLoopHandler4.new(supervisor, debug: debug)
       else
         MainLoopHandler3.new(supervisor, debug: debug)
@@ -362,10 +361,7 @@ module Fractor
     #
     # @return [Boolean]
     def windows_ruby_34?
-      return false unless RUBY_PLATFORM.match?(/mswin|mingw|cygwin/)
-
-      ruby_version = Gem::Version.new(RUBY_VERSION)
-      ruby_version >= Gem::Version.new("3.4.0") && ruby_version < Gem::Version.new("3.5.0")
+      Fractor::WINDOWS_RUBY_34
     end
 
     # Handle a stuck ractor by identifying and removing it from the active pool

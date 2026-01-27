@@ -48,6 +48,15 @@ end
 
 # Fractor: Function-driven Ractors framework
 module Fractor
+  # Version check constant - computed once at load time for performance
+  # Avoids expensive Gem::Version.new calls in hot paths
+  RUBY_4_0_OR_HIGHER = RUBY_VERSION >= "4.0.0"
+
+  # Windows Ruby 3.4.x check - for platform-specific workarounds
+  # This is only relevant on Windows and Ruby 3.4.x
+  WINDOWS_RUBY_34 = RUBY_PLATFORM.match?(/mswin|mingw|cygwin/) &&
+    RUBY_VERSION >= "3.4.0" && RUBY_VERSION < "3.5.0"
+
   # Exception raised when trying to push to a closed queue
   class ClosedQueueError < StandardError; end
 

@@ -113,6 +113,7 @@ module Fractor
         @timer_thread,
         @performance_monitor,
         debug: @debug,
+        continuous_mode: @continuous_mode,
       )
 
       # Initialize signal handler for graceful shutdown
@@ -189,11 +190,8 @@ module Fractor
       # Pass as parameter to avoid isolation error
       debug_mode = @debug
 
-      # Check if running on Ruby 4.0
-      ruby_4_0 = Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("4.0.0")
-
       # Create a wakeup Ractor for unblocking Ractor.select
-      if ruby_4_0
+      if Fractor::RUBY_4_0_OR_HIGHER
         # In Ruby 4.0, wakeup uses ports too
         @wakeup_port = Ractor::Port.new
         @wakeup_ractor = Ractor.new(@wakeup_port, debug_mode) do |port, debug|
@@ -232,7 +230,7 @@ module Fractor
 
         pool[:workers] = (1..num_workers).map do |i|
           # In Ruby 4.0, create a response port for each worker
-          response_port = if ruby_4_0
+          response_port = if Fractor::RUBY_4_0_OR_HIGHER
                             Ractor::Port.new
                           end
 
@@ -323,7 +321,9 @@ module Fractor
       end
 
       # Start timer thread for continuous mode to periodically check work sources
-      start_timer_thread if @continuous_mode && @callback_registry.has_work_callbacks?
+      # CRITICAL: Always start timer thread in continuous mode to ensure main loop
+      # can periodically check for worker termination during shutdown
+      start_timer_thread if @continuous_mode
 
       begin
         # Run the main event loop through MainLoopHandler
@@ -390,13 +390,29 @@ module Fractor
 
     # Start the timer thread for continuous mode.
     # This thread periodically wakes up the main loop to check for new work.
+    # CRITICAL: Always start the timer thread in continuous mode, even without callbacks,
+    # to ensure the main loop can periodically check for worker termination during shutdown.
     #
     # @return [void]
     def start_timer_thread
       @timer_thread = Thread.new do
-        while @running
+        # Keep running during shutdown to allow periodic checks for worker termination
+        # Only exit when @shutting_down is true AND workers are closed
+        loop do
           sleep(0.1) # Check work sources every 100ms
-          if @wakeup_ractor && @running
+
+          # Exit if we're no longer running AND (not in continuous mode OR workers are closed)
+          break if !@running && (!@continuous_mode || workers.all?(&:closed?))
+
+          # Send wakeup signals if running, or during shutdown in continuous mode until workers close
+          should_send = if @running
+                          @running
+                        else
+                          # During shutdown in continuous mode, keep sending until workers close
+                          @continuous_mode && !workers.all?(&:closed?)
+                        end
+
+          if @wakeup_ractor && should_send
             begin
               @wakeup_ractor.send(:wakeup)
             rescue StandardError => e

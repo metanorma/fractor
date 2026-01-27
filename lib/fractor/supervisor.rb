@@ -393,6 +393,15 @@ module Fractor
             end
           end
         end
+        # Send final wakeup to ensure main loop exits cleanly
+        # This is critical for Ruby 3.4+ where Ractor.select may block indefinitely
+        if @wakeup_ractor
+          begin
+            @wakeup_ractor.send(:shutdown)
+          rescue StandardError => e
+            puts "Timer thread error sending shutdown: #{e.message}" if @debug
+          end
+        end
         puts "Timer thread shutting down" if @debug
       end
     end

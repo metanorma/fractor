@@ -93,8 +93,10 @@ module Fractor
         items << port if port
       end
 
-      # Add wakeup ractor/port if in continuous mode with callbacks
-      if continuous_mode? && @supervisor.callback_registry.has_work_callbacks? && wakeup_ractor && wakeup_port
+      # Add wakeup ractor/port if in continuous mode
+      # CRITICAL: Always include wakeup port in continuous mode to ensure
+      # the main loop can be unblocked for shutdown, even without callbacks.
+      if continuous_mode? && wakeup_ractor && wakeup_port
         items << wakeup_port
       end
 
@@ -106,8 +108,10 @@ module Fractor
     #
     # @return [Array<Ractor>] List of active Ractor objects
     def get_active_ractors
+      # CRITICAL: Always include wakeup ractor in continuous mode to ensure
+      # the main loop can be unblocked for shutdown, even without callbacks.
       ractors_map.keys.reject do |ractor|
-        ractor == wakeup_ractor && !(continuous_mode? && @supervisor.callback_registry.has_work_callbacks?)
+        ractor == wakeup_ractor && !continuous_mode?
       end
     end
 

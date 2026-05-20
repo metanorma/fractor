@@ -339,6 +339,8 @@ RSpec/ExpectInHook:
 # Offense count: 2
 RSpec/ExpectOutput:
   Exclude:
+    - 'spec/fixtures/long_running_fractor.rb'
+    - 'spec/fractor/signal_handling_spec.rb'
     - 'spec/fractor/workflow/type_compatibility_validator_spec.rb'
 
 # Offense count: 1

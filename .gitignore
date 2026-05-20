@@ -32,3 +32,5 @@ docs/DOCUMENTATION_SETUP.md
 docs/REORGANIZATION_PLAN.md
 docs/REORGANIZATION_SUMMARY.md
 docs/assets/LOGO_GUIDELINES.md
+vendor/
+/.bundle/

@@ -176,11 +176,11 @@ module Fractor
 
         if common_ancestor
           "Consider using #{common_ancestor.name} as the input type for the consumer, " \
-          "or ensure the producer outputs #{input_type.name} instead of #{output_type.name}"
+            "or ensure the producer outputs #{input_type.name} instead of #{output_type.name}"
         else
           "The producer's output type (#{output_type.name}) is not compatible with " \
-          "the consumer's input type (#{input_type.name}). " \
-          "Ensure the producer outputs data that the consumer can process."
+            "the consumer's input type (#{input_type.name}). " \
+            "Ensure the producer outputs data that the consumer can process."
         end
       end
 
@@ -213,9 +213,9 @@ module Fractor
       # @param suggestion [String] Suggestion for fixing
       # @return [String] Formatted error message
       def type_declaration_error(job, direction, problem, suggestion)
-        "Job '#{job.name}' has invalid #{direction}_type declaration:\n" \
-        "  Problem: #{problem}\n" \
-        "  Suggestion: #{suggestion}"
+        "Job '#{job.name}' has invalid #{direction}_type declaration:\n  " \
+          "Problem: #{problem}\n  " \
+          "Suggestion: #{suggestion}"
       end
     end
   end

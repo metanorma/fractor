@@ -24,7 +24,7 @@ RSpec.describe "Signal handling in Fractor" do
     # Start a thread to read output
     output_thread = Thread.new do
       while (line = stdout.gets)
-        puts "Test output: #{line}"
+
         pid = Regexp.last_match(1).to_i if line =~ /Process ID: (\d+)/
       end
     end
@@ -45,8 +45,6 @@ RSpec.describe "Signal handling in Fractor" do
     # Make sure we got a valid PID
     expect(pid).not_to be_nil
     expect(pid).to be > 0
-
-    puts "Created test process with PID: #{pid}"
 
     # Give the process a moment to start the workers
     sleep(1)
@@ -89,7 +87,7 @@ RSpec.describe "Signal handling in Fractor" do
         pid, stdin, stdout, stderr, wait_thread = spawn_test_process(fixture_script)
 
         # Send SIGINT signal to the process
-        puts "Sending SIGINT to test process"
+
         Process.kill("INT", pid)
 
         # Process should exit within 3 seconds
@@ -100,7 +98,7 @@ RSpec.describe "Signal handling in Fractor" do
           end
         rescue Timeout::Error
           # If it doesn't exit within 3 seconds, kill it and fail the test
-          puts "Process did not exit within timeout period - killing it"
+
           cleanup_process(pid, stdin, stdout, stderr, force: true)
           raise "Process did not exit within 3 seconds after SIGINT signal"
         ensure
@@ -117,7 +115,7 @@ RSpec.describe "Signal handling in Fractor" do
 
         # Send SIGBREAK signal to the process
         # On Windows, SIGBREAK is more reliable than SIGINT for termination
-        puts "Sending SIGBREAK to test process"
+
         begin
           Process.kill("BREAK", pid)
         rescue ArgumentError, Errno::EINVAL
@@ -135,7 +133,7 @@ RSpec.describe "Signal handling in Fractor" do
           end
         rescue Timeout::Error
           # If it doesn't exit within 5 seconds, kill it and fail the test
-          puts "Process did not exit within timeout period - killing it"
+
           cleanup_process(pid, stdin, stdout, stderr, force: true)
           raise "Process did not exit within 5 seconds after SIGBREAK signal"
         ensure
@@ -149,7 +147,7 @@ RSpec.describe "Signal handling in Fractor" do
         pid, stdin, stdout, stderr, wait_thread = spawn_test_process(fixture_script)
 
         # Use taskkill to forcefully terminate
-        puts "Using taskkill to forcefully terminate Windows process"
+
         system("taskkill /F /PID #{pid} >nul 2>&1")
 
         # Process should exit within 2 seconds when forcefully killed
@@ -161,7 +159,7 @@ RSpec.describe "Signal handling in Fractor" do
           end
         rescue Timeout::Error
           # This shouldn't happen with /F flag, but handle it anyway
-          puts "Process did not exit within timeout period after taskkill"
+
           cleanup_process(pid, stdin, stdout, stderr, force: true)
           raise "Process did not exit within 2 seconds after taskkill /F"
         ensure

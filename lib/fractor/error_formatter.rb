@@ -40,7 +40,7 @@ module Fractor
       suggestion = suggest_fix_for(error_result)
       lines << "Suggestion: #{suggestion}" if suggestion
 
-      lines << "=" * 80
+      lines << ("=" * 80)
       lines.join("\n")
     end
 

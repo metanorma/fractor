@@ -252,7 +252,7 @@ processed_count)
       puts "Ractor::Error in select: #{e.class} - #{e.message}. Cleaning up closed ports." if @debug
 
       # Find and remove workers with closed ports
-      closed_ports = active_items.select { |item| item.is_a?(Ractor::Port) }
+      closed_ports = active_items.grep(Ractor::Port)
       closed_ports.each do |port|
         wrapped_ractor = port_to_worker[port]
         if wrapped_ractor

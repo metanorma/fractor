@@ -42,14 +42,14 @@ module Fractor
         if @workflow_class.jobs.empty?
           raise WorkflowError,
                 "Workflow '#{@workflow_class.workflow_name}' has no jobs defined.\n\n" \
-                "A workflow must define at least one job using the `job` DSL method:\n\n" \
-                "  workflow '#{@workflow_class.workflow_name}' do\n" \
-                "    job 'process' do\n" \
-                "      runs_with MyWorker\n" \
-                "      inputs_from_workflow\n" \
-                "      outputs_to_workflow\n" \
-                "    end\n" \
-                "  end"
+                "A workflow must define at least one job using the `job` DSL method:\n\n  " \
+                "workflow '#{@workflow_class.workflow_name}' do\n    " \
+                "job 'process' do\n      " \
+                "runs_with MyWorker\n      " \
+                "inputs_from_workflow\n      " \
+                "outputs_to_workflow\n    " \
+                "end\n  " \
+                "end"
         end
       end
 
@@ -137,29 +137,29 @@ module Fractor
         unless @workflow_class.start_job_name
           raise WorkflowError,
                 "Pipeline workflow '#{@workflow_class.workflow_name}' must define start_with.\n\n" \
-                "Add a start job to your workflow:\n\n" \
-                "  workflow '#{@workflow_class.workflow_name}' do\n" \
-                "    start_with 'process'  # Define the starting job\n" \
-                "    job 'process' do\n" \
-                "      runs_with MyWorker\n" \
-                "      # ...\n" \
-                "    end\n" \
-                "  end"
+                "Add a start job to your workflow:\n\n  " \
+                "workflow '#{@workflow_class.workflow_name}' do\n    " \
+                "start_with 'process'  # Define the starting job\n    " \
+                "job 'process' do\n      " \
+                "runs_with MyWorker\n      " \
+                "# ...\n    " \
+                "end\n  " \
+                "end"
         end
 
         if @workflow_class.end_job_names.empty?
           raise WorkflowError,
                 "Pipeline workflow '#{@workflow_class.workflow_name}' must define at least one end_with.\n\n" \
-                "Add an end job to your workflow:\n\n" \
-                "  workflow '#{@workflow_class.workflow_name}' do\n" \
-                "    # ...\n" \
-                "    end_with 'finalize'  # Define the ending job\n" \
-                "    job 'finalize' do\n" \
-                "      runs_with FinalizeWorker\n" \
-                "      outputs_to_workflow\n" \
-                "      terminates_workflow\n" \
-                "    end\n" \
-                "  end"
+                "Add an end job to your workflow:\n\n  " \
+                "workflow '#{@workflow_class.workflow_name}' do\n    " \
+                "# ...\n    " \
+                "end_with 'finalize'  # Define the ending job\n    " \
+                "job 'finalize' do\n      " \
+                "runs_with FinalizeWorker\n      " \
+                "outputs_to_workflow\n      " \
+                "terminates_workflow\n    " \
+                "end\n  " \
+                "end"
         end
 
         # Verify start job exists
@@ -190,30 +190,30 @@ module Fractor
           unless job.worker_class
             raise WorkflowError,
                   "Job '#{name}' does not specify a worker class.\n\n" \
-                  "Add a worker using runs_with:\n\n" \
-                  "  job '#{name}' do\n" \
-                  "    runs_with MyWorker  # Specify the worker class\n" \
-                  "  end"
+                  "Add a worker using runs_with:\n\n  " \
+                  "job '#{name}' do\n    " \
+                  "runs_with MyWorker  # Specify the worker class\n  " \
+                  "end"
           end
 
           unless job.input_type
             raise WorkflowError,
                   "Job '#{name}' worker '#{job.worker_class}' does not declare input_type.\n\n" \
-                  "Add input_type to your worker:\n\n" \
-                  "  class #{job.worker_class} < Fractor::Worker\n" \
-                  "    input_type MyInputClass\n" \
-                  "    output_type MyOutputClass\n" \
-                  "  end"
+                  "Add input_type to your worker:\n\n  " \
+                  "class #{job.worker_class} < Fractor::Worker\n    " \
+                  "input_type MyInputClass\n    " \
+                  "output_type MyOutputClass\n  " \
+                  "end"
           end
 
           unless job.output_type
             raise WorkflowError,
                   "Job '#{name}' worker '#{job.worker_class}' does not declare output_type.\n\n" \
-                  "Add output_type to your worker:\n\n" \
-                  "  class #{job.worker_class} < Fractor::Worker\n" \
-                  "    input_type MyInputClass\n" \
-                  "    output_type MyOutputClass\n" \
-                  "  end"
+                  "Add output_type to your worker:\n\n  " \
+                  "class #{job.worker_class} < Fractor::Worker\n    " \
+                  "input_type MyInputClass\n    " \
+                  "output_type MyOutputClass\n  " \
+                  "end"
           end
         end
       end

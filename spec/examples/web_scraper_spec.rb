@@ -9,12 +9,12 @@ RSpec.describe WebScraper do
   let(:output_dir) { "spec/tmp/scraped_data" }
 
   before do
-    FileUtils.rm_rf(output_dir) if File.exist?(output_dir)
+    FileUtils.rm_rf(output_dir)
     WebMock.disable_net_connect!(allow_localhost: false)
   end
 
   after do
-    FileUtils.rm_rf(output_dir) if File.exist?(output_dir)
+    FileUtils.rm_rf(output_dir)
     WebMock.allow_net_connect!
   end
 
@@ -260,7 +260,7 @@ RSpec.describe WebScraper do
     describe "file handling" do
       it "creates output directory on initialization" do
         new_dir = "spec/tmp/new_scraper_dir"
-        FileUtils.rm_rf(new_dir) if File.exist?(new_dir)
+        FileUtils.rm_rf(new_dir)
 
         # Create a worker which should create the directory
         described_class.new

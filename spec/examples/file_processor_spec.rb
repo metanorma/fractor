@@ -12,13 +12,13 @@ RSpec.describe "File Processor Example" do
   let(:test_dlq_dir) { File.join(Dir.tmpdir, "file_processor_test_dlq") }
 
   before do
-    FileUtils.rm_rf(test_output_dir) if Dir.exist?(test_output_dir)
-    FileUtils.rm_rf(test_dlq_dir) if Dir.exist?(test_dlq_dir)
+    FileUtils.rm_rf(test_output_dir)
+    FileUtils.rm_rf(test_dlq_dir)
   end
 
   after do
-    FileUtils.rm_rf(test_output_dir) if Dir.exist?(test_output_dir)
-    FileUtils.rm_rf(test_dlq_dir) if Dir.exist?(test_dlq_dir)
+    FileUtils.rm_rf(test_output_dir)
+    FileUtils.rm_rf(test_dlq_dir)
   end
 
   describe FileWork do

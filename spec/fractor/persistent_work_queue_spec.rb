@@ -10,7 +10,7 @@ RSpec.describe Fractor::PersistentWorkQueue do
 
   after do
     # Clean up temp directory
-    FileUtils.rm_rf(temp_dir) if Dir.exist?(temp_dir)
+    FileUtils.rm_rf(temp_dir)
   end
 
   # Simple test work class
@@ -262,7 +262,7 @@ RSpec.describe Fractor::QueuePersister do
   let(:temp_dir) { Dir.mktmpdir("fractor_persister_test") }
 
   after do
-    FileUtils.rm_rf(temp_dir) if Dir.exist?(temp_dir)
+    FileUtils.rm_rf(temp_dir)
   end
 
   describe Fractor::QueuePersister::JSONPersister do

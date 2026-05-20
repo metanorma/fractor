@@ -406,7 +406,7 @@ RSpec.describe Fractor::Workflow::FilePersister do
   end
 
   after do
-    File.delete(file_path) if File.exist?(file_path)
+    FileUtils.rm_f(file_path)
   end
 
   describe "#persist" do

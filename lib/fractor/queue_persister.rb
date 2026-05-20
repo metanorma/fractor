@@ -103,7 +103,7 @@ module Fractor
       #
       # @return [Boolean] true if cleared successfully
       def clear
-        File.delete(@path) if File.exist?(@path)
+        FileUtils.rm_f(@path)
         true
       rescue StandardError => e
         warn "Failed to clear #{@path}: #{e.message}"
@@ -117,7 +117,7 @@ module Fractor
       # @return [void]
       def ensure_directory_exists
         dir = File.dirname(@path)
-        FileUtils.mkdir_p(dir) unless Dir.exist?(dir)
+        FileUtils.mkdir_p(dir)
       end
     end
 
@@ -169,7 +169,7 @@ module Fractor
       #
       # @return [Boolean] true if cleared successfully
       def clear
-        File.delete(@path) if File.exist?(@path)
+        FileUtils.rm_f(@path)
         true
       rescue StandardError => e
         warn "Failed to clear #{@path}: #{e.message}"
@@ -183,7 +183,7 @@ module Fractor
       # @return [void]
       def ensure_directory_exists
         dir = File.dirname(@path)
-        FileUtils.mkdir_p(dir) unless Dir.exist?(dir)
+        FileUtils.mkdir_p(dir)
       end
     end
 
@@ -232,7 +232,7 @@ module Fractor
       #
       # @return [Boolean] true if cleared successfully
       def clear
-        File.delete(@path) if File.exist?(@path)
+        FileUtils.rm_f(@path)
         true
       rescue StandardError => e
         warn "Failed to clear #{@path}: #{e.message}"
@@ -246,7 +246,7 @@ module Fractor
       # @return [void]
       def ensure_directory_exists
         dir = File.dirname(@path)
-        FileUtils.mkdir_p(dir) unless Dir.exist?(dir)
+        FileUtils.mkdir_p(dir)
       end
     end
   end

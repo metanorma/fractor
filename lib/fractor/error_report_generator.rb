@@ -12,14 +12,14 @@ module Fractor
     # @return [String] Formatted text report
     def self.text_report(report_data)
       lines = []
-      lines << "=" * 80
+      lines << ("=" * 80)
       lines << "ERROR REPORT"
-      lines << "=" * 80
+      lines << ("=" * 80)
       lines << ""
 
       # Summary
       lines << "SUMMARY"
-      lines << "-" * 80
+      lines << ("-" * 80)
       summary = report_data[:summary]
       lines << "Uptime:          #{summary[:uptime]}s"
       lines << "Total Errors:    #{summary[:total_errors]}"
@@ -36,7 +36,7 @@ module Fractor
 
       # Top Categories
       lines << "TOP ERROR CATEGORIES"
-      lines << "-" * 80
+      lines << ("-" * 80)
       report_data[:top_categories].each do |category, count|
         lines << "#{category.to_s.ljust(20)}: #{count} errors"
       end
@@ -45,7 +45,7 @@ module Fractor
       # Top Jobs
       unless report_data[:top_jobs].empty?
         lines << "TOP ERROR JOBS"
-        lines << "-" * 80
+        lines << ("-" * 80)
         report_data[:top_jobs].each do |job, count|
           lines << "#{job.to_s.ljust(20)}: #{count} errors"
         end
@@ -55,7 +55,7 @@ module Fractor
       # Critical Errors
       unless report_data[:critical_errors].empty?
         lines << "CRITICAL ERRORS"
-        lines << "-" * 80
+        lines << ("-" * 80)
         report_data[:critical_errors].each do |error_info|
           lines << "Category: #{error_info[:category]}"
           lines << "Count:    #{error_info[:count]}"
@@ -70,7 +70,7 @@ module Fractor
       # Trending Errors
       unless report_data[:trending_errors].empty?
         lines << "TRENDING ERRORS (Increasing)"
-        lines << "-" * 80
+        lines << ("-" * 80)
         report_data[:trending_errors].each do |trend|
           stats = trend[:stats]
           lines << "Category:    #{stats[:category]}"
@@ -81,7 +81,7 @@ module Fractor
         end
       end
 
-      lines << "=" * 80
+      lines << ("=" * 80)
       lines.join("\n")
     end
 

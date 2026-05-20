@@ -113,7 +113,7 @@ module Fractor
       #
       # @return [Hash<String, Job>]
       def build_jobs_index
-        @jobs.each_with_object({}) { |job, hash| hash[job.name] = job }
+        @jobs.to_h { |job| [job.name, job] }
       end
     end
   end

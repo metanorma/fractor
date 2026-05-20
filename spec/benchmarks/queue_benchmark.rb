@@ -16,11 +16,6 @@ module Fractor
       QUEUE_SIZES = [100, 1000, 10000].freeze
 
       def run
-        puts "=" * 80
-        puts "Queue Operations Benchmarks"
-        puts "=" * 80
-        puts
-
         benchmark_enqueue
         benchmark_dequeue
         benchmark_concurrent_access
@@ -30,9 +25,6 @@ module Fractor
       private
 
       def benchmark_enqueue
-        puts "Enqueue Operations"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 5, warmup: 2)
 
@@ -47,13 +39,9 @@ module Fractor
 
           x.compare!
         end
-        puts
       end
 
       def benchmark_dequeue
-        puts "Dequeue Operations"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 5, warmup: 2)
 
@@ -68,13 +56,9 @@ module Fractor
 
           x.compare!
         end
-        puts
       end
 
       def benchmark_concurrent_access
-        puts "Concurrent Queue Access (4 threads)"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 5, warmup: 2)
 
@@ -107,13 +91,9 @@ module Fractor
 
           x.compare!
         end
-        puts
       end
 
       def benchmark_queue_iteration
-        puts "Queue Iteration and Inspection"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 5, warmup: 2)
 
@@ -132,7 +112,6 @@ module Fractor
 
           x.compare!
         end
-        puts
       end
     end
   end

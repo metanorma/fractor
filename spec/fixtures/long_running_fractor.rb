@@ -11,7 +11,7 @@ require "fractor"
 class LongRunningWorker < Fractor::Worker
   def process(work)
     sleep_seconds = work.input[:sleep_time]
-    puts "Worker #{@name}: Starting long-running task for #{sleep_seconds} seconds" if ENV["FRACTOR_DEBUG"]
+     if ENV["FRACTOR_DEBUG"]
 
     # Start a long sleep
     start_time = Time.now
@@ -20,7 +20,7 @@ class LongRunningWorker < Fractor::Worker
       sleep(0.1)
     end
 
-    puts "Worker #{@name}: Long-running task completed" if ENV["FRACTOR_DEBUG"]
+     if ENV["FRACTOR_DEBUG"]
     Fractor::WorkResult.new(
       result: "Processed sleep for #{sleep_seconds} seconds", work: work,
     )
@@ -36,7 +36,7 @@ end
 
 # For testing purposes, we need to see these messages regardless of FRACTOR_DEBUG
 # since this is a test script, not part of the library itself
-puts "Starting Fractor with long-running work..."
+
 
 # Setup Fractor supervisor with our worker
 supervisor = Fractor::Supervisor.new(
@@ -51,10 +51,10 @@ supervisor.add_work_item(SleepWork.new(10))
 
 # Print process ID for testing purposes and ensure it's flushed immediately
 # This is critical for the test to work - it needs to capture the PID
-puts "Process ID: #{Process.pid}"
+
 $stdout.flush
 
 # Run the supervisor - should be interruptible by Ctrl+C/SIGINT
 supervisor.run
 
-puts "Supervisor completed normally" if ENV["FRACTOR_DEBUG"]
+ if ENV["FRACTOR_DEBUG"]

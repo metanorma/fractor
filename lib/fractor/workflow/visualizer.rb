@@ -83,7 +83,7 @@ module Fractor
 
           lines << if job.terminates
                      "  #{dot_id(name)} [label=\"#{label}\", " \
-                              "style=\"rounded,filled\", fillcolor=lightpink];"
+                       "style=\"rounded,filled\", fillcolor=lightpink];"
                    else
                      "  #{dot_id(name)} [label=\"#{label}\"];"
                    end
@@ -101,7 +101,7 @@ module Fractor
             job.dependencies.each do |dep|
               lines << if job.condition_proc
                          "  #{dot_id(dep)} -> #{dot_id(name)} " \
-                                  "[label=\"conditional\", style=dashed];"
+                           "[label=\"conditional\", style=dashed];"
                        else
                          "  #{dot_id(dep)} -> #{dot_id(name)};"
                        end

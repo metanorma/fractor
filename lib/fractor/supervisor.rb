@@ -42,19 +42,19 @@ module Fractor
                 "Expected: { worker_class: MyWorker }\n" \
                 "Got:      { worker_class: #{worker_class.inspect} }\n\n" \
                 "Fix: Use the class itself, not a symbol or string.\n" \
-                "Example: { worker_class: MyWorker }  # Correct\n" \
-                "         { worker_class: 'MyWorker' } # Wrong - this is a string"
+                "Example: { worker_class: MyWorker }  # Correct\n         " \
+                "{ worker_class: 'MyWorker' } # Wrong - this is a string"
         end
 
         unless worker_class < Fractor::Worker
           raise ArgumentError,
                 "#{worker_class} must inherit from Fractor::Worker, in worker_pools[#{index}]\n\n" \
-                "Your worker class must be defined as:\n" \
-                "  class #{worker_class} < Fractor::Worker\n" \
-                "    def process(work)\n" \
-                "      # ...\n" \
-                "    end\n" \
-                "  end\n\n" \
+                "Your worker class must be defined as:\n  " \
+                "class #{worker_class} < Fractor::Worker\n    " \
+                "def process(work)\n      " \
+                "# ...\n    " \
+                "end\n  " \
+                "end\n\n" \
                 "Did you forget to inherit from Fractor::Worker?"
         end
 
@@ -63,8 +63,8 @@ module Fractor
           raise ArgumentError,
                 "num_workers must be a positive integer (got #{num_workers.inspect}), in worker_pools[#{index}]\n\n" \
                 "Valid values: Integer >= 1\n" \
-                "Examples: { num_workers: 4 }  # Use 4 workers\n" \
-                "          { num_workers: Etc.nprocessors }  # Use available CPUs"
+                "Examples: { num_workers: 4 }  # Use 4 workers\n          " \
+                "{ num_workers: Etc.nprocessors }  # Use available CPUs"
         end
 
         {
@@ -135,14 +135,14 @@ module Fractor
         raise ArgumentError,
               "#{work.class} must be an instance of Fractor::Work.\n\n" \
               "Received: #{work.inspect}\n\n" \
-              "To create a valid work item:\n" \
-              "  class MyWork < Fractor::Work\n" \
-              "    def initialize(data)\n" \
-              "      super({ value: data })\n" \
-              "    end\n" \
-              "  end\n\n" \
-              "  work = MyWork.new(42)\n" \
-              "  supervisor.add_work_item(work)"
+              "To create a valid work item:\n  " \
+              "class MyWork < Fractor::Work\n    " \
+              "def initialize(data)\n      " \
+              "super({ value: data })\n    " \
+              "end\n  " \
+              "end\n\n  " \
+              "work = MyWork.new(42)\n  " \
+              "supervisor.add_work_item(work)"
       end
 
       @work_queue << work
@@ -173,15 +173,15 @@ module Fractor
 
     # Register a callback to provide new work items
     # The callback should return nil or empty array when no new work is available
-    def register_work_source(&callback)
-      @callback_registry.register_work_source(&callback)
+    def register_work_source(&)
+      @callback_registry.register_work_source(&)
     end
 
     # Register a callback to handle errors
     # The callback receives (error_result, worker_name, worker_class)
     # Example: supervisor.on_error { |err, worker, klass| puts "Error in #{klass}: #{err.error}" }
-    def on_error(&callback)
-      @callback_registry.register_error_callback(&callback)
+    def on_error(&)
+      @callback_registry.register_error_callback(&)
     end
 
     # Starts the worker Ractors for all worker pools.
@@ -228,7 +228,7 @@ module Fractor
         worker_class = pool[:worker_class]
         num_workers = pool[:num_workers]
 
-        pool[:workers] = (1..num_workers).map do |i|
+        pool[:workers] = (1..num_workers).filter_map do |i|
           # In Ruby 4.0, create a response port for each worker
           response_port = if Fractor::RUBY_4_0_OR_HIGHER
                             Ractor::Port.new
@@ -244,7 +244,7 @@ module Fractor
           # Map the actual Ractor object to the WrappedRactor instance
           @ractors_map[wrapped_ractor.ractor] = wrapped_ractor if wrapped_ractor.ractor
           wrapped_ractor
-        end.compact
+        end
       end
 
       # Flatten all workers for easier access

@@ -120,8 +120,8 @@ module Fractor
             attr_name = var.to_s.delete("@").to_sym
 
             # Check if target class has this attribute (via attr_accessor/reader)
-            if input_type.instance_methods.include?(attr_name) ||
-                input_type.instance_methods.include?("#{attr_name}=".to_sym)
+            if input_type.method_defined?(attr_name) ||
+                input_type.method_defined?(:"#{attr_name}=")
               target_hash[attr_name] = source.instance_variable_get(var)
             end
           end

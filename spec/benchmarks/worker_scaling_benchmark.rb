@@ -37,11 +37,6 @@ module Fractor
       WORK_COUNT = 1000
 
       def run
-        puts "=" * 80
-        puts "Worker Scaling Benchmarks"
-        puts "=" * 80
-        puts
-
         benchmark_cpu_bound_scaling
         benchmark_io_bound_scaling
         benchmark_mixed_workload
@@ -50,9 +45,6 @@ module Fractor
       private
 
       def benchmark_cpu_bound_scaling
-        puts "CPU-Bound Work Scaling (#{WORK_COUNT} items)"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 10, warmup: 2)
 
@@ -76,13 +68,9 @@ module Fractor
 
           x.compare!
         end
-        puts
       end
 
       def benchmark_io_bound_scaling
-        puts "I/O-Bound Work Scaling (#{WORK_COUNT} items)"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 10, warmup: 2)
 
@@ -106,13 +94,9 @@ module Fractor
 
           x.compare!
         end
-        puts
       end
 
       def benchmark_mixed_workload
-        puts "Mixed Workload (50% CPU, 50% I/O, #{WORK_COUNT} items)"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 10, warmup: 2)
 
@@ -146,7 +130,6 @@ module Fractor
 
           x.compare!
         end
-        puts
       end
     end
   end

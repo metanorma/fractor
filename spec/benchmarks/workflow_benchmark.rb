@@ -37,11 +37,6 @@ module Fractor
       end
 
       def run
-        puts "=" * 80
-        puts "Workflow Execution Benchmarks"
-        puts "=" * 80
-        puts
-
         benchmark_simple_workflow
         benchmark_linear_workflow
         benchmark_fanout_workflow
@@ -51,9 +46,6 @@ module Fractor
       private
 
       def benchmark_simple_workflow
-        puts "Simple Workflow (single job, 100 items)"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 5, warmup: 2)
 
@@ -66,13 +58,9 @@ module Fractor
             workflow.new.execute(items)
           end
         end
-        puts
       end
 
       def benchmark_linear_workflow
-        puts "Linear Workflow (3 jobs in sequence, 100 items)"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 5, warmup: 2)
 
@@ -87,13 +75,9 @@ module Fractor
             workflow.new.execute(items)
           end
         end
-        puts
       end
 
       def benchmark_fanout_workflow
-        puts "Fan-out Workflow (1 -> 3 parallel jobs, 100 items)"
-        puts "-" * 80
-
         Benchmark.ips do |x|
           x.config(time: 5, warmup: 2)
 
@@ -109,13 +93,9 @@ module Fractor
             workflow.new.execute(items)
           end
         end
-        puts
       end
 
       def benchmark_workflow_with_retry
-        puts "Workflow with Retry Logic (occasional failures)"
-        puts "-" * 80
-
         # Worker that fails occasionally
         failing_worker = Class.new(Fractor::Worker) do
           @@count = 0
@@ -149,7 +129,6 @@ module Fractor
             workflow.new.execute(items)
           end
         end
-        puts
       end
     end
   end

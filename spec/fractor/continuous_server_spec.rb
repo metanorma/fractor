@@ -220,7 +220,7 @@ RSpec.describe Fractor::ContinuousServer do
       log_contents = File.read(log_path)
       expect(log_contents).to include("Continuous server started")
 
-      File.delete(log_path) if File.exist?(log_path)
+      FileUtils.rm_f(log_path)
     end
 
     it "closes log file on cleanup" do
@@ -243,7 +243,7 @@ RSpec.describe Fractor::ContinuousServer do
       log_file_handle = server.instance_variable_get(:@log_file)
       expect(log_file_handle).to be_nil
 
-      File.delete(log_path) if File.exist?(log_path)
+      FileUtils.rm_f(log_path)
     end
   end
 

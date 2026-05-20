@@ -3,7 +3,7 @@
 require "fractor"
 
 # Load support files
-Dir[File.join(__dir__, "support", "**", "*.rb")].sort.each do |file|
+Dir[File.join(__dir__, "support", "**", "*.rb")].each do |file|
   require file
 end
 

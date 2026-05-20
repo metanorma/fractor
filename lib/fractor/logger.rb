@@ -37,10 +37,10 @@ module Fractor
     # @return [Logger] Configured logger instance
     def create_default_logger
       # Get log level from environment variable or use INFO as default
-      level = parse_log_level(ENV["FRACTOR_LOG_LEVEL"]) || Logger::INFO
+      level = parse_log_level(ENV.fetch("FRACTOR_LOG_LEVEL", nil)) || Logger::INFO
 
       # Get output destination from environment variable or use STDOUT as default
-      output = parse_log_output(ENV["FRACTOR_LOG_OUTPUT"]) || $stdout
+      output = parse_log_output(ENV.fetch("FRACTOR_LOG_OUTPUT", nil)) || $stdout
 
       create_logger_for_output(output, level)
     end
@@ -224,7 +224,7 @@ module Fractor
     end
 
     # Initialize with defaults - check FRACTOR_DEBUG environment variable
-    @enabled = ["1", "true"].include?(ENV["FRACTOR_DEBUG"])
+    @enabled = ["1", "true"].include?(ENV.fetch("FRACTOR_DEBUG", nil))
     @level = @enabled ? :debug : :info
   end
 end

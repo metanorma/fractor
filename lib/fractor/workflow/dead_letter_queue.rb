@@ -150,7 +150,7 @@ module Fractor
       # @return [Array<Entry>] Entries in time range
       def by_time_range(start_time, end_time = Time.now)
         filter do |entry|
-          entry.timestamp >= start_time && entry.timestamp <= end_time
+          entry.timestamp.between?(start_time, end_time)
         end
       end
 
@@ -312,7 +312,7 @@ module Fractor
 
       def clear
         @mutex.synchronize do
-          File.delete(@file_path) if File.exist?(@file_path)
+          FileUtils.rm_f(@file_path)
         end
       end
 

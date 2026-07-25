@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
 
   spec.summary = "Function-driven Ractors framework for Ruby"
   spec.description = "Fractor is a lightweight Ruby framework designed to simplify the process of distributing computational work across multiple Ractors."
-  spec.homepage = "https://github.com/ribose/fractor"
+  spec.homepage = "https://github.com/metanorma/fractor"
   spec.required_ruby_version = ">= 3.0.0"
 
   spec.metadata["allowed_push_host"] = "https://rubygems.org"

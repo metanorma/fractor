@@ -5,7 +5,7 @@ require_relative "lib/fractor/version"
 Gem::Specification.new do |spec|
   spec.name = "fractor"
   spec.version = Fractor::VERSION
-  spec.authors = ["Ronald Tse"]
+  spec.authors       = ["Ribose Inc."]
   spec.email = ["ronald.tse@ribose.com"]
 
   spec.summary = "Function-driven Ractors framework for Ruby"
